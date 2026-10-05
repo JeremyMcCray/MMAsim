@@ -12,8 +12,8 @@
   const expo = (dt, k) => 1 - Math.exp(-dt * k);
 
   // ---------- dimensions ----------
-  const THIGH = 0.47, SHIN = 0.45, UPPER = 0.3, FORE = 0.28;
-  const HIP_H = 0.86, SHOULDER_Y = 0.5, SHOULDER_X = 0.23, HIP_X = 0.12;
+  const THIGH = 0.51, SHIN = 0.49, UPPER = 0.33, FORE = 0.31;
+  const HIP_H = 0.92, SHOULDER_Y = 0.5, SHOULDER_X = 0.23, HIP_X = 0.12;
 
   // ---------- poses (torso-space hand targets, body-space foot targets) ----------
   // h: hip height, lean: torso pitch (rad, + forward), yaw: torso twist, roll,

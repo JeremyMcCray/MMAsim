@@ -80,7 +80,9 @@
   const HAND_GUARD = { lh: [0.34, 0.15, 1.27], rh: [0.22, -0.16, 1.24] };
   const FOOT_STANCE = { ll: [0.2, 0.16, 0], rl: [-0.24, -0.2, 0] };
   const TIP_R = { hand: 0.09, foot: 0.1, knee: 0.1 };
-  const ARM_REACH = 0.64, LEG_REACH = 0.96, KNEE_REACH = 0.5;
+  const ARM_REACH = 0.71, LEG_REACH = 1.04, KNEE_REACH = 0.54;
+  // rig proportions: limbs ~7% longer than the original rig, hips 6 cm higher
+  const REACH_SCALE = 1.06, Y_SHIFT = 0.06;
 
   // [windup, active, recover, damage, stamina] for lead (left) and rear (right) limbs
   const KIND_STATS = {
@@ -167,10 +169,12 @@
           key: limb + '_' + kind, limb, kind, bit: LIMB_BIT[limb], name: ks.names[lead ? 0 : 1],
           w: v[0], a: v[1], r: v[2], dmg: v[3], stam: v[4], part: ks.part, push: !!ks.push,
           tip: hand ? 'hand' : kind === 'knee' ? 'knee' : 'foot',
-          pivot: hand ? [0, s * 0.23, 1.36] : [0, s * 0.12, 0.86],
+          pivot: hand ? [0, s * 0.23, 1.36 + Y_SHIFT] : [0, s * 0.12, 0.86 + Y_SHIFT],
           reach: hand ? ARM_REACH : kind === 'knee' ? KNEE_REACH : LEG_REACH
         };
         st.path = hand ? handPath(limb, kind, st.w, st.a, st.r) : legPath(limb, kind, st.w, st.a, st.r);
+        // stretch the authored paths to the longer rig: more forward reach, hands carried higher, kicks a touch taller
+        for (const k of st.path) { if (k[1] > 0) k[1] *= REACH_SCALE; k[3] = hand ? k[3] + Y_SHIFT : k[3] * (1 + Y_SHIFT); }
         // impact keyframe: furthest-forward keyframe inside the active window
         let imp = null, best = -1e9, prev = null;
         for (let i = 0; i < st.path.length; i++) {
@@ -682,21 +686,21 @@
     _hitboxes(o, f) {
       const fr = this._frame(o, f); // o's frame, facing f
       const W = (p) => [o.x + fr.fx * p[0] + fr.lx * p[1], p[2], o.z + fr.fz * p[0] + fr.lz * p[1]];
-      let head = [0.06, 0, 1.52], torsoA = [0.0, 0, 0.95], torsoB = [0.03, 0, 1.2];
+      let head = [0.06, 0, 1.52 + Y_SHIFT], torsoA = [0.0, 0, 0.95 + Y_SHIFT], torsoB = [0.03, 0, 1.2 + Y_SHIFT];
       const a = o.act;
-      if (a.type === 'dodge' && a.t < 0.32) { head = [-0.08, 0.34, 1.36]; torsoB = [-0.02, 0.12, 1.16]; }
+      if (a.type === 'dodge' && a.t < 0.32) { head = [-0.08, 0.34, 1.36 + Y_SHIFT]; torsoB = [-0.02, 0.12, 1.16 + Y_SHIFT]; }
       else if (a.type === 'hit') {
-        if (a.name === 'head') head = [-0.14, 0, 1.5];
-        else if (a.name === 'body') { head = [0.2, 0, 1.3]; torsoB = [0.15, 0, 1.12]; }
-        else head = [0.06, 0.1, 1.42];
-      } else if (a.type === 'stumble' || a.type === 'takedown') { head = [0.32, 0, 1.2]; torsoB = [0.25, 0, 1.1]; }
-      else if (o.blocking) head = [0.0, 0, 1.46];
+        if (a.name === 'head') head = [-0.14, 0, 1.5 + Y_SHIFT];
+        else if (a.name === 'body') { head = [0.2, 0, 1.3 + Y_SHIFT]; torsoB = [0.15, 0, 1.12 + Y_SHIFT]; }
+        else head = [0.06, 0.1, 1.42 + Y_SHIFT];
+      } else if (a.type === 'stumble' || a.type === 'takedown') { head = [0.32, 0, 1.2 + Y_SHIFT]; torsoB = [0.25, 0, 1.1 + Y_SHIFT]; }
+      else if (o.blocking) head = [0.0, 0, 1.46 + Y_SHIFT];
       if (o.rocked > 0 && a.type !== 'hit') head[2] -= 0.05;
       const hw = W(head);
       return [
         { part: 'head', a: hw, b: hw, r: PART_R.head },
         { part: 'body', a: W(torsoA), b: W(torsoB), r: PART_R.body },
-        { part: 'legs', a: W([0, 0, 0.1]), b: W([0, 0, 0.82]), r: PART_R.legs }
+        { part: 'legs', a: W([0, 0, 0.1]), b: W([0, 0, 0.82 + Y_SHIFT]), r: PART_R.legs }
       ];
     }
 
