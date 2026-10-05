@@ -84,15 +84,15 @@
 
   // [windup, active, recover, damage, stamina] for lead (left) and rear (right) limbs
   const KIND_STATS = {
-    straight: { lead: [0.13, 0.07, 0.20, 1.5, 2.5], rear: [0.22, 0.08, 0.32, 3.0, 4.5], part: 'head', names: ['jab', 'cross'] },
-    hook:     { lead: [0.22, 0.08, 0.30, 2.9, 5.0], rear: [0.26, 0.08, 0.34, 3.5, 5.5], part: 'head', names: ['lead hook', 'right hook'] },
-    uppercut: { lead: [0.20, 0.08, 0.30, 2.8, 5.0], rear: [0.25, 0.08, 0.34, 3.6, 5.5], part: 'head', names: ['lead uppercut', 'rear uppercut'] },
-    overhand: { lead: [0.28, 0.09, 0.40, 3.2, 6.0], rear: [0.32, 0.09, 0.42, 4.2, 7.0], part: 'head', names: ['looping left', 'overhand right'] },
-    hkick:    { lead: [0.30, 0.10, 0.42, 4.3, 9.0], rear: [0.36, 0.10, 0.48, 5.4, 10 ], part: 'head', names: ['lead head kick', 'head kick'] },
-    bkick:    { lead: [0.26, 0.10, 0.38, 3.1, 7.0], rear: [0.30, 0.10, 0.42, 3.8, 8.0], part: 'body', names: ['lead body kick', 'body kick'] },
-    lkick:    { lead: [0.20, 0.10, 0.30, 2.3, 5.0], rear: [0.24, 0.10, 0.34, 2.8, 6.0], part: 'legs', names: ['lead low kick', 'low kick'] },
-    teep:     { lead: [0.18, 0.10, 0.30, 2.0, 5.0], rear: [0.24, 0.10, 0.34, 2.6, 6.0], part: 'body', names: ['teep', 'rear teep'], push: true },
-    knee:     { lead: [0.18, 0.08, 0.30, 2.8, 6.0], rear: [0.20, 0.08, 0.32, 3.4, 6.5], part: 'body', names: ['lead knee', 'knee'] }
+    straight: { lead: [0.12, 0.07, 0.16, 1.5, 2.5], rear: [0.20, 0.08, 0.24, 3.0, 4.5], part: 'head', names: ['jab', 'cross'] },
+    hook:     { lead: [0.20, 0.08, 0.22, 2.9, 5.0], rear: [0.24, 0.08, 0.26, 3.5, 5.5], part: 'head', names: ['lead hook', 'right hook'] },
+    uppercut: { lead: [0.18, 0.08, 0.22, 2.8, 5.0], rear: [0.23, 0.08, 0.26, 3.6, 5.5], part: 'head', names: ['lead uppercut', 'rear uppercut'] },
+    overhand: { lead: [0.26, 0.09, 0.30, 3.2, 6.0], rear: [0.30, 0.09, 0.32, 4.2, 7.0], part: 'head', names: ['looping left', 'overhand right'] },
+    hkick:    { lead: [0.28, 0.10, 0.34, 4.3, 9.0], rear: [0.34, 0.10, 0.38, 5.4, 10 ], part: 'head', names: ['lead head kick', 'head kick'] },
+    bkick:    { lead: [0.24, 0.10, 0.30, 3.1, 7.0], rear: [0.28, 0.10, 0.34, 3.8, 8.0], part: 'body', names: ['lead body kick', 'body kick'] },
+    lkick:    { lead: [0.18, 0.10, 0.24, 2.3, 5.0], rear: [0.22, 0.10, 0.28, 2.8, 6.0], part: 'legs', names: ['lead low kick', 'low kick'] },
+    teep:     { lead: [0.16, 0.10, 0.24, 2.0, 5.0], rear: [0.22, 0.10, 0.28, 2.6, 6.0], part: 'body', names: ['teep', 'rear teep'], push: true },
+    knee:     { lead: [0.16, 0.08, 0.24, 2.8, 6.0], rear: [0.18, 0.08, 0.26, 3.4, 6.5], part: 'body', names: ['lead knee', 'knee'] }
   };
 
   function handPath(limb, kind, w, a, r) {
@@ -101,7 +101,7 @@
     const G = [0, g[0], g[1], g[2]], E = [end, g[0], g[1], g[2]];
     switch (kind) {
       case 'straight': return [G, [w, g[0] - 0.08, s * 0.17, 1.3], [w + a * 0.75, lead ? 0.92 : 1.0, s * 0.02, 1.5], [w + a, lead ? 0.88 : 0.96, s * 0.02, 1.49], E];
-      case 'hook':     return [G, [w, 0.15, s * 0.45, 1.42], [w + a * 0.35, 0.62, s * 0.36, 1.5], [w + a * 0.8, 0.88, -s * 0.06, 1.5], [w + a, 0.8, -s * 0.3, 1.48], E];
+      case 'hook':     return [G, [w, 0.28, s * 0.4, 1.4], [w + a * 0.35, 0.64, s * 0.3, 1.5], [w + a * 0.8, 0.86, -s * 0.06, 1.5], [w + a, 0.72, -s * 0.3, 1.48], E];
       case 'uppercut': return [G, [w, 0.2, s * 0.2, 1.0], [w + a * 0.7, 0.72, s * 0.05, 1.5], [w + a, 0.66, s * 0.04, 1.74], E];
       case 'overhand': return [G, [w, -0.05, s * 0.3, 1.6], [w + a * 0.3, 0.45, s * 0.18, 1.82], [w + a * 0.8, 0.92, -s * 0.05, 1.5], [w + a, 0.84, -s * 0.1, 1.36], E];
     }
@@ -110,12 +110,27 @@
     const s = limb === 'll' ? 1 : -1;
     const f = FOOT_STANCE[limb], end = w + a + r;
     const G = [0, f[0], f[1], f[2]], E = [end, f[0], f[1], f[2]];
+    // Roundhouse kicks: the foot lifts out to the kicker's own side (the knee chambers high and
+    // the hips turn over), then whips ACROSS the target in an arc and follows through past it.
+    // s*0.6 is "out on the kicking side"; -s*0.45 is "past the centre line on the far side".
+    const round = (chamberY, midY, hitY, hitF, followY) => [
+      G,
+      [w * 0.45, f[0] + 0.1, s * 0.42, chamberY * 0.45],
+      [w, 0.3, s * 0.6, chamberY],
+      [w + a * 0.35, hitF - 0.2, s * 0.4, midY],
+      [w + a * 0.7, hitF, -s * 0.02, hitY],
+      [w + a, hitF - 0.35, -s * 0.5, followY],
+      [w + a + r * 0.45, 0.15, s * 0.3, chamberY * 0.5],
+      E
+    ];
     switch (kind) {
-      case 'hkick': return [G, [w * 0.5, f[0] + 0.15, s * 0.28, 0.35], [w, 0.4, s * 0.32, 0.85], [w + a * 0.7, 1.08, -s * 0.08, 1.5], [w + a, 0.85, -s * 0.45, 1.3], E];
-      case 'bkick': return [G, [w * 0.5, f[0] + 0.15, s * 0.28, 0.3], [w, 0.4, s * 0.32, 0.62], [w + a * 0.7, 1.1, -s * 0.05, 1.1], [w + a, 0.85, -s * 0.4, 0.9], E];
-      case 'lkick': return [G, [w * 0.5, f[0] + 0.1, s * 0.28, 0.2], [w, 0.35, s * 0.3, 0.38], [w + a * 0.7, 1.0, -s * 0.1, 0.42], [w + a, 0.7, -s * 0.45, 0.4], E];
-      case 'teep':  return [G, [w, 0.3, s * 0.12, 0.65], [w + a * 0.7, 1.12, s * 0.05, 1.02], [w + a, 1.05, s * 0.05, 1.0], E];
-      case 'knee':  return [G, [w, 0.05, s * 0.12, 0.55], [w + a * 0.7, 0.6, s * 0.05, 1.05], [w + a, 0.5, s * 0.05, 1.1], E];
+      case 'hkick': return round(0.75, 1.2, 1.48, 1.05, 1.3);
+      case 'bkick': return round(0.55, 0.9, 1.08, 1.08, 0.95);
+      case 'lkick': return round(0.32, 0.4, 0.42, 1.0, 0.45);
+      // teep: knee comes up in front, then the foot drives straight out and back
+      case 'teep':  return [G, [w * 0.6, 0.2, s * 0.12, 0.45], [w, 0.3, s * 0.1, 0.7], [w + a * 0.7, 1.12, s * 0.05, 1.02], [w + a, 1.05, s * 0.05, 1.0], [w + a + r * 0.5, 0.3, s * 0.12, 0.3], E];
+      // knee: the path is the KNEE itself — it drives up and forward as the hips thrust in
+      case 'knee':  return [G, [w, 0.12, s * 0.1, 0.5], [w + a * 0.7, 0.58, s * 0.06, 1.02], [w + a, 0.52, s * 0.06, 1.08], [w + a + r * 0.5, 0.15, s * 0.1, 0.45], E];
     }
   }
 
@@ -244,6 +259,8 @@
       dmg: { head: 0, body: 0, legs: 0 },
       stam: 100,
       act: { type: 'idle', name: '', t: 0, dur: 0, hit: false },
+      buf: null,          // buffered strike {key, t}
+      combo: 0, comboT: 0, // strikes chained without a pause
       blocking: false,
       rocked: 0,          // seconds remaining rocked
       wobble: 0,          // visual wobble intensity
@@ -257,6 +274,15 @@
     };
   }
   const idleAct = () => ({ type: 'idle', name: '', t: 0, dur: 0, hit: false });
+  // A strike whose active window has passed can be cancelled into the next action (combo flow),
+  // unless it was slipped — an over-committed whiff has to be ridden out.
+  function recovering(f) {
+    const a = f.act;
+    if (a.type !== 'strike') return false;
+    const st = STRIKES[a.name];
+    return !a.slipped && a.t >= (st.w + st.a) * a.tf;
+  }
+  const BUFFER_T = 0.3; // seconds a buffered strike press stays valid
 
   class Sim {
     constructor(opts) {
@@ -503,7 +529,14 @@
         const inp = this.inputs[i];
         const held = inp.held, pressed = inp.pressed;
         const striking = f.act.type === 'strike';
-        const busy = f.act.type !== 'idle' && f.act.type !== 'move';
+        const canCancel = recovering(f);
+        const busy = f.act.type !== 'idle' && f.act.type !== 'move' && !canCancel;
+        if (f.comboT > 0) { f.comboT -= dt; if (f.comboT <= 0) f.combo = 0; }
+        // a limb pressed while a strike is still live is remembered and fired the moment it can be
+        if (striking && !canCancel && (pressed & LIMB_BITS)) {
+          const key = this._pickStrikeKey(f, pressed, held, false);
+          if (key) f.buf = { key, t: S.t };
+        }
         const sign = i === 0 ? 1 : -1; // direction towards opponent along (ux,uz)
 
         // facing vector towards opponent
@@ -545,8 +578,11 @@
             }
           } else if (pressed & LIMB_BITS) {
             const key = this._pickStrikeKey(f, pressed, held, false);
-            if (key) this._startStrike(f, key);
+            if (key) this._startStrike(f, key, canCancel);
+          } else if (f.buf && S.t - f.buf.t <= BUFFER_T) {
+            this._startStrike(f, f.buf.key, canCancel);
           }
+          if (f.buf && (f.act.type !== 'strike' || S.t - f.buf.t > BUFFER_T || f.act.t === 0)) f.buf = null;
         }
 
         // keep inside cage
@@ -578,12 +614,20 @@
       return STRIKES[key] ? key : limb + '_' + DEFAULT_MOVESET[mod][limb];
     }
 
-    _startStrike(f, key) {
+    _startStrike(f, key, chained) {
       const st = STRIKES[key];
       if (f.stam < 3) return;
-      const tf = (1.15 - f.stats.spd * 0.3) * (1 + (1 - f.stam / 100) * 0.4) * (f.rocked > 0 ? 1.3 : 1);
-      f.stam = Math.max(0, f.stam - st.stam * (f.stam < 25 ? 0.6 : 1));
-      f.act = { type: 'strike', name: key, t: 0, dur: (st.w + st.a + st.r) * tf, tf, hit: false, tip: null, tipT: null, slipped: false };
+      let tf = (1.15 - f.stats.spd * 0.3) * (1 + (1 - f.stam / 100) * 0.4) * (f.rocked > 0 ? 1.3 : 1);
+      if (chained) {
+        // flowing straight out of the last strike: quicker, up to a 3-strike rhythm; the same limb twice in a row is slower
+        f.combo = Math.min(3, f.combo + 1);
+        const same = f.act.type === 'strike' && STRIKES[f.act.name].limb === st.limb;
+        tf *= same ? 1.0 : (1 - 0.06 * f.combo);
+      } else f.combo = 0;
+      f.comboT = 0.45;
+      f.buf = null;
+      f.stam = Math.max(0, f.stam - st.stam * (f.stam < 25 ? 0.6 : 1) * (chained ? 1.1 : 1));
+      f.act = { type: 'strike', name: key, t: 0, dur: (st.w + st.a + st.r) * tf, tf, hit: false, tip: null, tipT: null, slipped: false, chained: !!chained };
       f.blocking = false;
       f.rs.thrown++;
     }
@@ -700,15 +744,17 @@
         if (st.push) { o.x += fr.fx * 0.2; o.z += fr.fz * 0.2; }
         return;
       }
-      // hit reaction
-      const stun = 0.2 + dmg * 0.025;
+      // hit reaction — each extra hit landed while still stunned stuns less, so a combo can't lock someone up forever
+      o.hitChain = (o.act.type === 'hit' && this.state.t - (o.lastHitT || -9) < 0.7) ? (o.hitChain || 0) + 1 : 0;
+      o.lastHitT = this.state.t;
+      const stun = (0.2 + dmg * 0.025) * Math.pow(0.6, o.hitChain);
       o.act = { type: 'hit', name: part, t: 0, dur: stun, hit: false };
       o.blocking = false;
       // pushback (teeps shove hard)
       const pb = st.push ? Math.min(0.6, 0.25 + dmg * 0.05) : Math.min(0.35, dmg * 0.04);
       o.x += fr.fx * pb; o.z += fr.fz * pb;
       const ev = this._emit({ k: 'hit', i: f.idx, j: o.idx, name: st.name, kind: st.kind, part, intended: st.part, dmg: Math.round(dmg * 10) / 10, counter, big: dmg >= 3.6,
-        phys: Math.round(phys * 100) / 100, jammed: jamF < 0.7, momentum: speedF > 1.15 && jamF >= 0.7, at });
+        phys: Math.round(phys * 100) / 100, jammed: jamF < 0.7, momentum: speedF > 1.15 && jamF >= 0.7, combo: f.combo, at });
       this._afterHit(f, o, part, dmg, ev, false);
     }
 
@@ -830,7 +876,7 @@
       const ti = this.inputs[top.idx], bi = this.inputs[bot.idx];
       top.rs.ctrl += dt; G.ctrlT += dt; G.idleT += dt;
       top.blocking = false; bot.blocking = false;
-      const topBusy = top.act.type !== 'idle';
+      const topBusy = top.act.type !== 'idle' && !recovering(top);
       const botBusy = bot.act.type !== 'idle';
 
       // --- submission in progress: arrow-sequence duel ---
@@ -902,7 +948,7 @@
           return;
         } else if (ti.pressed & LIMB_BITS && !(ti.held & IN.BLOCK)) {
           const key = this._pickStrikeKey(top, ti.pressed, ti.held, true);
-          if (key) { this._startStrike(top, key); G.idleT = 0; }
+          if (key) { this._startStrike(top, key, recovering(top)); G.idleT = 0; }
         }
       }
 
@@ -970,6 +1016,7 @@
         if (ev.buckled) return n(ev.j) + "'s leg buckles from that " + ev.name + '!';
         if (ev.winded) return 'That ' + ev.name + ' takes the wind out of ' + n(ev.j) + '.';
         if (ev.momentum) return n(ev.j) + ' walks into a ' + ev.name + where + '!';
+        if (ev.combo >= 2) return n(ev.i) + ' follows up with a ' + ev.name + where + (ev.combo >= 3 ? ' — beautiful combination!' : '.');
         if (ev.big) return n(ev.i) + ' lands a heavy ' + ev.name + where + '.';
         if (ev.jammed) return n(ev.i) + "'s " + ev.name + ' is smothered' + where + ' — no room on it.';
         return n(ev.i) + ' lands a ' + ev.name + where + '.';
@@ -995,7 +1042,7 @@
   }
 
   const API = { IN, STRIKES, ROSTER, SUBS, Sim, describe, CAGE_R, DT,
-    LIMBS, LIMB_BIT, LIMB_NAME, MODS, MOD_BIT, HAND_KINDS, LEG_KINDS, KIND_LABEL, KIND_STATS, DEFAULT_MOVESET, normalizeMoveset, modOf, strikeTip, TIP_R };
+    LIMBS, LIMB_BIT, LIMB_NAME, MODS, MOD_BIT, HAND_KINDS, LEG_KINDS, KIND_LABEL, KIND_STATS, DEFAULT_MOVESET, normalizeMoveset, modOf, strikeTip, TIP_R, recovering };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   root.MMASim = API;
 })(typeof window !== 'undefined' ? window : globalThis);

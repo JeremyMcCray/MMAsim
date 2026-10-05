@@ -7,7 +7,7 @@
 <meta name="description" content="Cage Rules: a 3D one-on-one mixed martial arts simulation you can play online against a friend, right in the browser.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700;900&family=Barlow:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style.css?v=4">
 </head>
 <body>
 <canvas id="gl"></canvas>
@@ -130,7 +130,7 @@
       </div>
       <div class="opt-col">
         <h3>STRIKES</h3>
-        <p class="opt-help">Each limb key throws a different strike depending on which modifier you are holding. Strikes only do damage when the hand or foot actually reaches the target: step in to add power, and don't throw long shots from the clinch.</p>
+        <p class="opt-help">Each limb key throws a different strike depending on which modifier you are holding. Strikes only do damage when the hand or foot actually reaches the target: step in to add power, and don't throw long shots from the clinch. Press the next strike while one is still landing to chain it.</p>
         <table class="moves" id="moveTable"></table>
         <h3>ON THE GROUND</h3>
         <p class="opt-help">On top the hands punch; hold <b data-mod="mod1">Q</b> for elbows, <b data-mod="mod2">E</b> for hammer fists, <b data-mod="mod3">R</b> for body shots. The leg keys throw knees to the body.</p>
@@ -152,11 +152,11 @@
   if (typeof THREE === 'undefined') document.write('<script src="lib/three.min.js"><\/script>');
   if (typeof Peer === 'undefined') document.write('<script src="lib/peerjs.min.js"><\/script>');
 </script>
-<script src="js/sim.js"></script>
-<script src="js/ai.js"></script>
-<script src="js/render.js"></script>
-<script src="js/net.js"></script>
-<script src="js/audio.js"></script>
-<script src="js/main.js"></script>
+<script src="js/sim.js?v=4"></script>
+<script src="js/ai.js?v=4"></script>
+<script src="js/render.js?v=4"></script>
+<script src="js/net.js?v=4"></script>
+<script src="js/audio.js?v=4"></script>
+<script src="js/main.js?v=4"></script>
 </body>
 </html>

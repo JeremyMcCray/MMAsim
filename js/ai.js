@@ -1,7 +1,7 @@
 /* CPU opponent for practice mode. Produces {held, pressed} input masks from sim state. */
 (function (root) {
   'use strict';
-  const { IN, STRIKES, MODS, LIMBS, LIMB_BIT, MOD_BIT, DEFAULT_MOVESET } = root.MMASim;
+  const { IN, STRIKES, MODS, LIMBS, LIMB_BIT, MOD_BIT, DEFAULT_MOVESET, recovering } = root.MMASim;
 
   class CpuBrain {
     constructor(idx, difficulty) {
@@ -76,8 +76,11 @@
       if (!(held & IN.BLOCK) || r() < 0.3) held |= this.lateral;
 
       // offence (discrete decisions)
-      if (this.timer <= 0 && !(held & IN.BLOCK) && me.act.type !== 'strike') {
-        this.timer = 0.12 + (1 - d) * 0.25 + r() * 0.2;
+      const free = me.act.type !== 'strike' || recovering(me);
+      if (this.timer <= 0 && !(held & IN.BLOCK) && free) {
+        // chain: right after a strike, a good fighter usually throws the next one straight away
+        const chaining = me.act.type === 'strike' && me.combo < 3 && r() < 0.35 + d * 0.5;
+        this.timer = chaining ? 0.02 : 0.12 + (1 - d) * 0.25 + r() * 0.2;
         const aggr = tired ? 0.15 : 0.45 + d * 0.4;
         if (dist <= 1.7 && r() < aggr) {
           // takedown?
@@ -136,7 +139,7 @@
       let held = 0;
       if (G.sub) { this.held = 0; this._playSeq(G.sub.att, dt); return; }
       if (G.escape > 55 && r() < 0.6) held |= IN.BLOCK; // posture up, kill the escape
-      if (this.timer <= 0 && me.act.type === 'idle') {
+      if (this.timer <= 0 && (me.act.type === 'idle' || recovering(me))) {
         this.timer = 0.25 + (1 - d) * 0.4 + r() * 0.3;
         const subWant = me.stats.bjj * 0.35 + (op.stam < 35 ? 0.2 : 0) + (op.rocked > 0 ? 0.3 : 0) - (me.stam < 30 ? 0.3 : 0);
         if ((me.stats.bjj > 0.45 || op.rocked > 0 || op.stam < 25) && r() < subWant * 0.18 && me.stam > 35) { this.pressed |= IN.GRAPPLE; held &= ~IN.BLOCK; }

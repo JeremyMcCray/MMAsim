@@ -77,6 +77,13 @@ works from any camera angle.
   damage. Short weapons (uppercuts, hooks, knees) are for the pocket;
   straights, teeps and kicks need room. A kick aimed at the head can
   still catch the body if that is what is in the way.
+* **Combos flow.** As soon as a strike has landed (or whiffed) you can throw
+  the next one straight out of the recovery, and a press made while a strike
+  is still in the air is buffered and fires the instant it can. Chained
+  strikes come out a little quicker (up to three in a rhythm); doubling up
+  on the same limb doesn't get the bonus. A strike that gets slipped has to
+  be ridden out. Hits landed on an already‑stunned opponent stun for less,
+  so a combination can't lock someone up forever.
 * Landing on an opponent mid‑windup is a **counter** (+35 %). Slipping
   (Shift) moves your head off line: head shots whiff and the attacker
   over‑commits, but body and leg strikes still land. Blocks absorb 85 %

@@ -24,7 +24,7 @@
       h: HIP_H, lean: 0.08, yaw: 0.25, roll: 0,
       lh: [-0.14, 0.42, 0.34], rh: [0.16, 0.38, 0.22],
       lf: [-0.16, 0.2], rf: [0.2, -0.24], lfy: 0, rfy: 0, lfz: null, rfz: null,
-      hp: 0.05, hy: -0.15, lie: 0, ox: 0, oz: 0, elbowOut: 0.5, hipYaw: 0, lPole: [0, 0, 1], rPole: [0, 0, 1]
+      hp: 0.05, hy: -0.15, lie: 0, ox: 0, oz: 0, elbowOut: 0.5, elbowUp: 0, hipYaw: 0, lPole: [0, 0, 1], rPole: [0, 0, 1]
     }, o);
   }
   const POSES = {
@@ -55,22 +55,22 @@
   const STRIKE_POSES = {
     straight: [P({ yaw: 0.5, lean: 0.05, lh: [-0.14, 0.44, 0.3], rh: [0.26, 0.36, 0.0] }),
                P({ yaw: -0.55, lean: 0.25, lh: [-0.22, 0.45, 0.25], rh: [-0.05, 0.48, 0.92], oz: 0.12, hp: 0.1 })],
-    hook: [P({ yaw: 0.6, lean: 0.1, lh: [-0.14, 0.44, 0.3], rh: [0.42, 0.4, -0.05], elbowOut: 1.2 }),
-           P({ yaw: -0.75, lean: 0.15, roll: -0.15, lh: [-0.22, 0.45, 0.25], rh: [-0.3, 0.5, 0.55], elbowOut: 1.4, oz: 0.1 })],
+    hook: [P({ yaw: 0.55, lean: 0.1, lh: [-0.14, 0.44, 0.3], rh: [0.36, 0.42, 0.15], elbowOut: 1.0, elbowUp: 0.9 }),
+           P({ yaw: -0.8, lean: 0.12, roll: -0.12, lh: [-0.22, 0.45, 0.25], rh: [-0.25, 0.5, 0.55], elbowOut: 1.2, elbowUp: 1.3, oz: 0.08 })],
     uppercut: [P({ yaw: 0.45, lean: 0.22, h: HIP_H - 0.06, lh: [-0.14, 0.44, 0.3], rh: [0.3, 0.12, 0.12], hp: 0.15 }),
                P({ yaw: -0.4, lean: -0.1, h: HIP_H + 0.01, lh: [-0.2, 0.45, 0.28], rh: [0.0, 0.62, 0.5], oz: 0.08, hp: -0.1 })],
-    overhand: [P({ yaw: 0.55, lean: 0.0, lh: [-0.14, 0.44, 0.3], rh: [0.38, 0.62, -0.12], elbowOut: 1.0 }),
-               P({ yaw: -0.6, lean: 0.4, roll: -0.2, lh: [-0.24, 0.4, 0.25], rh: [-0.1, 0.45, 0.8], oz: 0.14, hp: 0.25, elbowOut: 0.8 })],
-    hkick: [P({ yaw: 0.3, lean: 0.0, roll: 0.1, h: HIP_H - 0.06, hipYaw: -0.35, lh: [-0.2, 0.5, 0.3], rh: [0.3, 0.45, 0.0], rf: [0.42, 0.25], rfy: 0.72, rPole: [1, 0.1, 0.3], lf: [-0.08, 0.0] }),
-            P({ yaw: 0.35, lean: -0.25, roll: -0.55, h: HIP_H - 0.04, hipYaw: -1.1, lh: [-0.05, 0.55, 0.25], rh: [0.45, 0.25, -0.35], rf: [-0.5, 0.55], rfy: 1.4, rPole: [0.9, 0.5, 0.1], lf: [-0.05, -0.05], oz: 0.08 })],
-    bkick: [P({ yaw: 0.3, lean: 0.0, roll: 0.1, h: HIP_H - 0.06, hipYaw: -0.3, lh: [-0.2, 0.5, 0.3], rh: [0.3, 0.45, 0.0], rf: [0.4, 0.25], rfy: 0.6, rPole: [1, 0, 0.3], lf: [-0.08, 0.0] }),
-            P({ yaw: 0.3, lean: -0.15, roll: -0.4, h: HIP_H - 0.05, hipYaw: -0.9, lh: [-0.05, 0.55, 0.25], rh: [0.45, 0.3, -0.3], rf: [-0.45, 0.65], rfy: 1.0, rPole: [1, 0.3, 0.2], lf: [-0.05, -0.05], oz: 0.08 })],
-    lkick: [P({ yaw: 0.3, lean: 0.05, h: HIP_H - 0.06, hipYaw: -0.25, lh: [-0.2, 0.5, 0.3], rh: [0.3, 0.45, 0.0], rf: [0.38, 0.2], rfy: 0.45, rPole: [1, 0, 0.4], lf: [-0.08, 0.0] }),
-            P({ yaw: 0.25, lean: 0.1, roll: -0.3, h: HIP_H - 0.07, hipYaw: -0.8, lh: [-0.05, 0.5, 0.3], rh: [0.45, 0.3, -0.3], rf: [-0.4, 0.75], rfy: 0.4, rPole: [1, 0.1, 0.4], lf: [-0.05, -0.05], oz: 0.1 })],
-    knee: [P({ yaw: 0.3, lean: 0.1, lh: [-0.14, 0.5, 0.3], rh: [0.2, 0.5, 0.25], rf: [0.26, -0.4] }),
-           P({ yaw: -0.2, lean: -0.1, lh: [-0.1, 0.4, 0.4], rh: [0.15, 0.4, 0.4], rf: [0.1, 0.4], rfy: 0.8, lf: [-0.1, 0.0], oz: 0.08 })],
-    teep: [P({ yaw: 0.2, lean: 0.12, h: HIP_H - 0.04, lh: [-0.14, 0.48, 0.3], rh: [0.18, 0.46, 0.22], rf: [0.2, 0.0], rfy: 0.5, rPole: [0.2, 0, 1], lf: [-0.1, 0.0] }),
-           P({ yaw: 0.1, lean: -0.25, h: HIP_H - 0.02, lh: [-0.16, 0.5, 0.26], rh: [0.2, 0.46, 0.18], rf: [0.1, 0.95], rfy: 1.0, rPole: [0.2, 0.3, 1], lf: [-0.1, -0.05], oz: 0.06, hp: -0.1 })],
+    overhand: [P({ yaw: 0.55, lean: -0.05, lh: [-0.14, 0.44, 0.3], rh: [0.38, 0.62, -0.12], elbowOut: 1.0, elbowUp: 1.0 }),
+               P({ yaw: -0.6, lean: 0.42, roll: -0.25, lh: [-0.24, 0.4, 0.25], rh: [-0.1, 0.45, 0.8], oz: 0.14, hp: 0.25, elbowOut: 0.8, elbowUp: 0.5 })],
+    hkick: [P({ yaw: -0.1, lean: 0.0, roll: 0.15, h: HIP_H - 0.05, hipYaw: -0.5, lh: [-0.18, 0.5, 0.3], rh: [0.34, 0.3, -0.05], rf: [0.42, 0.25], rfy: 0.72, rPole: [1, 0.3, 0.1], lf: [-0.1, 0.02], lPole: [0.4, 0, 1] }),
+            P({ yaw: -0.9, lean: -0.5, roll: 0.5, h: HIP_H + 0.02, hipYaw: -1.4, lh: [0.05, 0.42, 0.28], rh: [0.3, -0.15, -0.3], rf: [-0.5, 0.55], rfy: 1.4, rPole: [0.9, 0.6, 0.0], lf: [-0.1, 0.02], lPole: [0.9, 0, 0.4], oz: 0.1, hp: 0.1, hy: 0.7 })],
+    bkick: [P({ yaw: -0.1, lean: 0.0, roll: 0.12, h: HIP_H - 0.05, hipYaw: -0.45, lh: [-0.18, 0.5, 0.3], rh: [0.34, 0.3, -0.05], rf: [0.4, 0.25], rfy: 0.6, rPole: [1, 0.2, 0.1], lf: [-0.1, 0.02], lPole: [0.4, 0, 1] }),
+            P({ yaw: -0.8, lean: -0.35, roll: 0.4, h: HIP_H - 0.02, hipYaw: -1.25, lh: [0.05, 0.42, 0.28], rh: [0.3, -0.12, -0.3], rf: [-0.45, 0.65], rfy: 1.0, rPole: [0.9, 0.4, 0.1], lf: [-0.1, 0.02], lPole: [0.9, 0, 0.4], oz: 0.1, hp: 0.1, hy: 0.6 })],
+    lkick: [P({ yaw: -0.1, lean: 0.08, roll: 0.1, h: HIP_H - 0.07, hipYaw: -0.4, lh: [-0.18, 0.5, 0.3], rh: [0.34, 0.3, -0.05], rf: [0.38, 0.2], rfy: 0.45, rPole: [1, 0.1, 0.2], lf: [-0.1, 0.02], lPole: [0.4, 0, 1] }),
+            P({ yaw: -0.75, lean: -0.1, roll: 0.3, h: HIP_H - 0.1, hipYaw: -1.2, lh: [0.05, 0.42, 0.28], rh: [0.3, -0.1, -0.3], rf: [-0.4, 0.75], rfy: 0.4, rPole: [0.9, 0.2, 0.2], lf: [-0.1, 0.02], lPole: [0.9, 0, 0.4], oz: 0.12, hp: 0.15, hy: 0.55 })],
+    knee: [P({ yaw: 0.25, lean: 0.15, h: HIP_H - 0.04, lh: [-0.14, 0.5, 0.3], rh: [0.2, 0.5, 0.25], rf: [0.2, -0.3], rfy: 0.1, lf: [-0.14, 0.1] }),
+           P({ yaw: -0.15, lean: -0.35, h: HIP_H - 0.02, lh: [-0.12, 0.35, 0.45], rh: [0.14, 0.35, 0.45], rf: [0.1, 0.4], rfy: 0.8, rPole: [0.2, 0.3, 1], lf: [-0.14, 0.1], oz: 0.16, hp: 0.1 })],
+    teep: [P({ yaw: 0.2, lean: 0.12, h: HIP_H - 0.04, lh: [-0.14, 0.48, 0.3], rh: [0.18, 0.46, 0.22], rf: [0.2, 0.0], rfy: 0.5, rPole: [0.2, 0.2, 1], lf: [-0.12, 0.02] }),
+           P({ yaw: 0.1, lean: -0.3, h: HIP_H - 0.03, lh: [-0.16, 0.5, 0.26], rh: [0.2, 0.46, 0.18], rf: [0.1, 0.95], rfy: 1.0, rPole: [0.2, 0.4, 1], lf: [-0.12, 0.02], oz: 0.1, hp: -0.1 })],
     // ground strikes (top position)
     gpunch: [P({ h: 0.52, lean: 0.35, yaw: -0.3, lh: [-0.2, -0.05, 0.4], rh: [0.25, 0.2, 0.25], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 }),
              P({ h: 0.48, lean: 0.75, yaw: 0.0, lh: [-0.2, -0.05, 0.4], rh: [0.05, -0.3, 0.55], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 })],
@@ -212,6 +212,7 @@
       this._v = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
       this._pole = new THREE.Vector3();
       this._tipV = new THREE.Vector3();
+      this._eul = new THREE.Euler(); this._qHip = new THREE.Quaternion(); this._yAxis = new THREE.Vector3(0, 1, 0);
       this._tipArr = [0, 0, 0];
     }
 
@@ -280,10 +281,11 @@
         const over = Math.hypot(lx - sx, ly - sy, lz - sz) - (UPPER + FORE + 0.07);
         if (over > 0) { p.oz += Math.min(0.32, over); p.lean += Math.min(0.25, over * 0.6); }
       } else {
-        const hx = (st.limb === 'll' ? -HIP_X : HIP_X) + p.ox, hy = p.h - 0.08, hz = p.oz;
+        const hx0 = st.limb === 'll' ? -HIP_X : HIP_X;
+        const hx = hx0 * Math.cos(p.hipYaw) + p.ox, hy = p.h - 0.08, hz = -hx0 * Math.sin(p.hipYaw) + p.oz;
         const reach = st.tip === 'knee' ? THIGH : THIGH + SHIN;
         const over = Math.hypot(lx - hx, ly - hy, lz - hz) - (reach + 0.02);
-        if (over > 0) { p.oz += Math.min(0.3, over * 0.9); p.h -= Math.min(0.08, over * 0.25); }
+        if (over > 0) { p.oz += Math.min(0.28, over * 0.9); if (st.tip !== 'knee') p.h -= Math.min(0.06, over * 0.2); }
       }
       return { st, lx, ly, lz, hand };
     }
@@ -316,7 +318,8 @@
       this._tp = target;
       const speed = (f.act.type === 'strike' || f.act.type === 'hit' || f.act.type === 'dodge') ? 26 : 12;
       lerpPose(this.pose, target, expo(dt, speed), this.pose);
-      const p = this.pose;
+      // overrides (striking limb, lunge) are applied to a per-frame copy so they never feed back into the smoothing
+      const p = copyPose(this.pose, this._rp); this._rp = p;
 
       // procedural: breathing bob, rocked wobble, footwork
       const bob = Math.sin(time * 2.1 + f.idx) * 0.012;
@@ -328,7 +331,10 @@
       this.root.rotation.set(0, this.yaw, 0);
       this.body.position.set(p.ox, p.h + bob, p.oz);
       this.body.rotation.set(p.lie, p.hipYaw, 0);
-      this.torso.rotation.set(p.lean + wob * 0.5, p.yaw, p.roll + wob);
+      // torso angles are authored in the root frame so a turned-over hip (kicks) doesn't change what lean/roll mean
+      this._eul.set(p.lean + wob * 0.5, p.yaw, p.roll + wob);
+      this.torso.quaternion.setFromEuler(this._eul);
+      if (p.hipYaw) { this._qHip.setFromAxisAngle(this._yAxis, -p.hipYaw); this.torso.quaternion.premultiply(this._qHip); }
       this.neck.rotation.set(p.hp, p.hy, 0);
 
       if (ov) {
@@ -339,22 +345,26 @@
           this.root.localToWorld(t); this.torso.worldToLocal(t);
           const tgt = ov.st.limb === 'lh' ? p.lh : p.rh;
           tgt[0] = t.x; tgt[1] = t.y; tgt[2] = t.z;
+          const keep = ov.st.limb === 'lh' ? this.pose.lh : this.pose.rh; // so the limb eases back from where it really was
+          keep[0] = t.x; keep[1] = t.y; keep[2] = t.z;
         } else {
           // feet are already in the root frame; a knee strike carries the foot tucked under the knee
           const left = ov.st.limb === 'll';
           const fxz = left ? p.lf : p.rf;
-          if (ov.st.tip === 'knee') { fxz[0] = ov.lx; fxz[1] = ov.lz - 0.2; if (left) p.lfy = ov.ly - SHIN * 0.8; else p.rfy = ov.ly - SHIN * 0.8; }
+          if (ov.st.tip === 'knee') { fxz[0] = ov.lx; fxz[1] = ov.lz - 0.22; if (left) p.lfy = ov.ly - SHIN * 0.85; else p.rfy = ov.ly - SHIN * 0.85; }
           else { fxz[0] = ov.lx; fxz[1] = ov.lz; if (left) p.lfy = ov.ly; else p.rfy = ov.ly; }
+          const kxz = left ? this.pose.lf : this.pose.rf; kxz[0] = fxz[0]; kxz[1] = fxz[1];
+          if (left) this.pose.lfy = p.lfy; else this.pose.rfy = p.rfy;
         }
       }
 
       // ---- IK arms (torso frame) ----
       const v = this._v;
       v[0].set(-SHOULDER_X, SHOULDER_Y, 0); v[1].fromArray(p.lh);
-      this._pole.set(-1, -0.4 - p.elbowOut * 0.3, -0.6); // elbows down/out/back
+      this._pole.set(-1, -0.4 - p.elbowOut * 0.3 + p.elbowUp, -0.6); // elbows down/out/back (raised for hooks)
       solveIK(v[0], v[1], UPPER, FORE, this._pole, this.lSh, this.lEl);
       v[0].set(SHOULDER_X, SHOULDER_Y, 0); v[1].fromArray(p.rh);
-      this._pole.set(1, -0.4 - p.elbowOut * 0.3, -0.6);
+      this._pole.set(1, -0.4 - p.elbowOut * 0.3 + p.elbowUp, -0.6);
       solveIK(v[0], v[1], UPPER, FORE, this._pole, this.rSh, this.rEl);
 
       // ---- IK legs (body frame) ----
