@@ -337,11 +337,11 @@
           // movement
           let mx = 0, mz = 0;
           const slow = (1 - f.dmg.legs / 140) * (f.rocked > 0 ? 0.45 : 1) * (0.7 + f.stam / 330) * (f.blocking ? 0.6 : 1);
-          const spd = (0.85 + f.stats.spd * 0.5) * slow; // ~1.2 m/s forward
+          const spd = (1.9 + f.stats.spd * 1.0) * slow;
           if (held & IN.FWD) { mx += fx; mz += fz; }
           if (held & IN.BACK) { mx -= fx * 0.8; mz -= fz * 0.8; }
-          if (held & IN.LEFT) { mx += lx * 0.6; mz += lz * 0.6; }
-          if (held & IN.RIGHT) { mx -= lx * 0.6; mz -= lz * 0.6; }
+          if (held & IN.LEFT) { mx += lx * 0.85; mz += lz * 0.85; }
+          if (held & IN.RIGHT) { mx -= lx * 0.85; mz -= lz * 0.85; }
           if (mx || mz) {
             f.x += mx * spd * dt; f.z += mz * spd * dt;
             f.act = { type: 'move', name: '', t: 0, dur: 0, hit: false };

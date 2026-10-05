@@ -291,7 +291,7 @@
         let lfx = p.lf[0], lfz = p.lf[1], rfx = p.rf[0], rfz = p.rf[1];
         let lfy = p.lfy, rfy = p.rfy;
         if (moving) {
-          this.stepPhase += dt * 6.5;
+          this.stepPhase += dt * 9;
           const s = Math.sin(this.stepPhase), c = Math.cos(this.stepPhase);
           lfz += s * 0.12; rfz -= s * 0.12;
           lfy += Math.max(0, c) * 0.08; rfy += Math.max(0, -c) * 0.08;
@@ -364,27 +364,34 @@
     const postMat = new THREE.MeshStandardMaterial({ color: 0x111115, roughness: 0.6, metalness: 0.4 });
     const padMat = new THREE.MeshStandardMaterial({ color: 0x1b1b22, roughness: 0.8 });
     const accent = new THREE.MeshStandardMaterial({ color: 0xc9a227, roughness: 0.5, metalness: 0.3, emissive: 0x3a2a05 });
+    const segments = [];
     for (let i = 0; i < N; i++) {
       const a0 = (i / N) * Math.PI * 2 + Math.PI / N, a1 = ((i + 1) / N) * Math.PI * 2 + Math.PI / N;
       const x0 = Math.cos(a0) * R, z0 = Math.sin(a0) * R, x1 = Math.cos(a1) * R, z1 = Math.sin(a1) * R;
-      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, H, 10), postMat);
+      // per-segment material clones so the fence nearest the camera can fade out
+      const fM = fenceMat.clone(), pM = postMat.clone(), dM = padMat.clone(), aM = accent.clone();
+      for (const m of [pM, dM, aM]) m.transparent = true;
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, H, 10), pM);
       post.position.set(x0, H / 2, z0); post.castShadow = true; g.add(post);
-      const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, H - 0.3, 10), padMat);
+      const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, H - 0.3, 10), dM);
       pad.position.set(x0, H / 2 + 0.05, z0); g.add(pad);
       // panel
       const len = Math.hypot(x1 - x0, z1 - z0);
-      const panel = new THREE.Mesh(new THREE.PlaneGeometry(len, H - 0.25), fenceMat);
+      const panel = new THREE.Mesh(new THREE.PlaneGeometry(len, H - 0.25), fM);
       panel.position.set((x0 + x1) / 2, (H - 0.25) / 2 + 0.05, (z0 + z1) / 2);
       panel.lookAt(0, (H - 0.25) / 2 + 0.05, 0);
       g.add(panel);
       // top rail padding + bottom rail
-      const rail = new THREE.Mesh(new THREE.BoxGeometry(len, 0.14, 0.14), padMat);
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(len, 0.14, 0.14), dM);
       rail.position.set((x0 + x1) / 2, H - 0.02, (z0 + z1) / 2); rail.lookAt(0, H - 0.02, 0); g.add(rail);
-      const rail2 = new THREE.Mesh(new THREE.BoxGeometry(len, 0.05, 0.08), accent);
+      const rail2 = new THREE.Mesh(new THREE.BoxGeometry(len, 0.05, 0.08), aM);
       rail2.position.set((x0 + x1) / 2, H + 0.07, (z0 + z1) / 2); rail2.lookAt(0, H + 0.07, 0); g.add(rail2);
       const base = new THREE.Mesh(new THREE.BoxGeometry(len, 0.12, 0.1), padMat);
       base.position.set((x0 + x1) / 2, 0.06, (z0 + z1) / 2); base.lookAt(0, 0.06, 0); g.add(base);
+      const am = (a0 + a1) / 2;
+      segments.push({ dir: [Math.cos(am), Math.sin(am)], postDir: [Math.cos(a0), Math.sin(a0)], mats: [fM, dM, aM], postMats: [pM, dM], meshes: [post, pad, panel, rail, rail2] });
     }
+    g.userData.segments = segments;
     // arena floor + crowd
     const floor = new THREE.Mesh(new THREE.CircleGeometry(40, 48), new THREE.MeshStandardMaterial({ color: 0x08080b, roughness: 1 }));
     floor.rotation.x = -Math.PI / 2; floor.position.y = -0.7; floor.receiveShadow = true; g.add(floor);
@@ -447,7 +454,7 @@
       const rig = new THREE.Mesh(new THREE.TorusGeometry(5.2, 0.12, 8, 48), new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0xfff0d0, emissiveIntensity: 0.9 }));
       rig.rotation.x = Math.PI / 2; rig.position.y = 7.5; this.scene.add(rig);
 
-      buildArena(this.scene);
+      this.arena = buildArena(this.scene);
       this.models = [];
       this.groundAxis = new THREE.Vector3(1, 0, 0);
       this.lastGround = false;
@@ -526,13 +533,26 @@
       if (sx * this.camSide.x + sz * this.camSide.z < 0) { sx = -sx; sz = -sz; }
       this.camSide.x += (sx - this.camSide.x) * expo(dt, 3); this.camSide.z += (sz - this.camSide.z) * expo(dt, 3); this.camSide.normalize();
       const ground = !!S.ground;
-      const want = ground ? 4.6 : clamp(4.2 + dist * 1.1, 4.6, 7.5);
-      const height = ground ? 2.6 : 1.75 + dist * 0.12;
+      const want = ground ? 4.8 : clamp(4.4 + dist * 1.1, 4.8, 7.6);
+      const height = ground ? 3.1 : 2.55 + dist * 0.15;
       const tx = mx + this.camSide.x * want, tz = mz + this.camSide.z * want;
       // don't let camera go through the far crowd: clamp radius
       this.camPos.x += (tx - this.camPos.x) * expo(dt, 4); this.camPos.z += (tz - this.camPos.z) * expo(dt, 4); this.camPos.y += (height - this.camPos.y) * expo(dt, 4);
       this.camTarget.x += (mx - this.camTarget.x) * expo(dt, 5); this.camTarget.z += (mz - this.camTarget.z) * expo(dt, 5);
-      this.camTarget.y += ((ground ? 0.5 : 1.0) - this.camTarget.y) * expo(dt, 4);
+      this.camTarget.y += ((ground ? 0.45 : 0.95) - this.camTarget.y) * expo(dt, 4);
+      // fade the cage segments that sit between the camera and the action
+      const cl = Math.hypot(this.camPos.x, this.camPos.z) || 1, cx = this.camPos.x / cl, cz = this.camPos.z / cl;
+      const outside = cl > 3.6;
+      for (const seg of this.arena.userData.segments) {
+        const d = seg.dir[0] * cx + seg.dir[1] * cz;
+        const near = outside || cl > 2.2;
+        const o = near ? (d > 0.92 ? 0.08 : d > 0.55 ? 0.08 + (0.92 - d) / 0.37 * 0.92 : 1) : 1;
+        for (const m of seg.mats) { m.opacity += (o - m.opacity) * expo(dt, 8); }
+        const dp = seg.postDir[0] * cx + seg.postDir[1] * cz;
+        const op = (near && dp > 0.6) ? 0.1 : 1;
+        for (const m of seg.postMats) { if (m !== seg.mats[1]) m.opacity += (op - m.opacity) * expo(dt, 8); }
+        for (const mesh of seg.meshes) mesh.castShadow = mesh.material.opacity > 0.5;
+      }
       this.camera.position.copy(this.camPos);
       if (this.shake > 0) {
         this.camera.position.x += (Math.random() - 0.5) * 0.08 * this.shake;
