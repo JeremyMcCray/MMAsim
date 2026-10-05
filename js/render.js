@@ -291,7 +291,7 @@
         let lfx = p.lf[0], lfz = p.lf[1], rfx = p.rf[0], rfz = p.rf[1];
         let lfy = p.lfy, rfy = p.rfy;
         if (moving) {
-          this.stepPhase += dt * 9;
+          this.stepPhase += dt * 6.5;
           const s = Math.sin(this.stepPhase), c = Math.cos(this.stepPhase);
           lfz += s * 0.12; rfz -= s * 0.12;
           lfy += Math.max(0, c) * 0.08; rfy += Math.max(0, -c) * 0.08;

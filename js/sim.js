@@ -336,7 +336,7 @@
           // movement
           let mx = 0, mz = 0;
           const slow = (1 - f.dmg.legs / 140) * (f.rocked > 0 ? 0.45 : 1) * (0.7 + f.stam / 330) * (f.blocking ? 0.6 : 1);
-          const spd = (1.9 + f.stats.spd * 1.0) * slow;
+          const spd = (0.95 + f.stats.spd * 0.55) * slow; // ~1.3-1.4 m/s
           if (held & IN.FWD) { mx += fx; mz += fz; }
           if (held & IN.BACK) { mx -= fx * 0.8; mz -= fz * 0.8; }
           if (held & IN.LEFT) { mx += lx * 0.85; mz += lz * 0.85; }
