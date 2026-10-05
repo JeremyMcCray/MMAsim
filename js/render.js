@@ -24,7 +24,7 @@
       h: HIP_H, lean: 0.08, yaw: 0.25, roll: 0,
       lh: [-0.14, 0.42, 0.34], rh: [0.16, 0.38, 0.22],
       lf: [-0.16, 0.2], rf: [0.2, -0.24], lfy: 0, rfy: 0, lfz: null, rfz: null,
-      hp: 0.05, hy: -0.15, lie: 0, ox: 0, oz: 0, elbowOut: 0.5
+      hp: 0.05, hy: -0.15, lie: 0, ox: 0, oz: 0, elbowOut: 0.5, hipYaw: 0, lPole: [0, 0, 1], rPole: [0, 0, 1]
     }, o);
   }
   const POSES = {
@@ -57,14 +57,14 @@
             P({ yaw: -0.55, lean: 0.25, lh: [-0.22, 0.45, 0.25], rh: [-0.05, 0.48, 0.92], oz: 0.12, hp: 0.1 })],
     hook: [P({ yaw: 0.6, lean: 0.1, lh: [-0.14, 0.44, 0.3], rh: [0.42, 0.4, -0.05], elbowOut: 1.2 }),
            P({ yaw: -0.75, lean: 0.15, roll: -0.15, lh: [-0.22, 0.45, 0.25], rh: [-0.3, 0.5, 0.55], elbowOut: 1.4, oz: 0.1 })],
-    hkick: [P({ yaw: 0.6, lean: -0.15, h: HIP_H - 0.05, lh: [-0.18, 0.5, 0.3], rh: [0.3, 0.45, 0.0], rf: [0.3, -0.5], lf: [-0.1, 0.05] }),
-            P({ yaw: -0.6, lean: -0.5, roll: -0.4, h: HIP_H - 0.04, lh: [-0.1, 0.55, 0.3], rh: [0.4, 0.3, -0.3], rf: [-0.15, 0.7], rfy: 1.45, lf: [-0.05, 0.0], oz: 0.1 })],
-    bkick: [P({ yaw: 0.6, lean: -0.1, h: HIP_H - 0.05, lh: [-0.18, 0.5, 0.3], rh: [0.3, 0.45, 0.0], rf: [0.3, -0.5], lf: [-0.1, 0.05] }),
-            P({ yaw: -0.6, lean: -0.3, roll: -0.3, h: HIP_H - 0.04, lh: [-0.1, 0.55, 0.3], rh: [0.4, 0.3, -0.3], rf: [-0.1, 0.75], rfy: 0.95, lf: [-0.05, 0.0], oz: 0.1 })],
+    hkick: [P({ yaw: 0.3, lean: 0.0, roll: 0.1, h: HIP_H - 0.06, hipYaw: -0.35, lh: [-0.2, 0.5, 0.3], rh: [0.3, 0.45, 0.0], rf: [0.42, 0.25], rfy: 0.72, rPole: [1, 0.1, 0.3], lf: [-0.08, 0.0] }),
+            P({ yaw: 0.35, lean: -0.25, roll: -0.55, h: HIP_H - 0.04, hipYaw: -1.1, lh: [-0.05, 0.55, 0.25], rh: [0.45, 0.25, -0.35], rf: [-0.5, 0.55], rfy: 1.4, rPole: [0.9, 0.5, 0.1], lf: [-0.05, -0.05], oz: 0.08 })],
+    bkick: [P({ yaw: 0.3, lean: 0.0, roll: 0.1, h: HIP_H - 0.06, hipYaw: -0.3, lh: [-0.2, 0.5, 0.3], rh: [0.3, 0.45, 0.0], rf: [0.4, 0.25], rfy: 0.6, rPole: [1, 0, 0.3], lf: [-0.08, 0.0] }),
+            P({ yaw: 0.3, lean: -0.15, roll: -0.4, h: HIP_H - 0.05, hipYaw: -0.9, lh: [-0.05, 0.55, 0.25], rh: [0.45, 0.3, -0.3], rf: [-0.45, 0.65], rfy: 1.0, rPole: [1, 0.3, 0.2], lf: [-0.05, -0.05], oz: 0.08 })],
     knee: [P({ yaw: 0.3, lean: 0.1, lh: [-0.14, 0.5, 0.3], rh: [0.2, 0.5, 0.25], rf: [0.26, -0.4] }),
            P({ yaw: -0.2, lean: -0.1, lh: [-0.1, 0.4, 0.4], rh: [0.15, 0.4, 0.4], rf: [0.1, 0.4], rfy: 0.8, lf: [-0.1, 0.0], oz: 0.08 })],
-    lkick: [P({ yaw: 0.6, lean: 0.0, h: HIP_H - 0.05, lh: [-0.18, 0.5, 0.3], rh: [0.3, 0.45, 0.0], rf: [0.3, -0.5], lf: [-0.1, 0.05] }),
-            P({ yaw: -0.7, lean: 0.15, roll: -0.25, h: HIP_H - 0.06, lh: [-0.1, 0.5, 0.3], rh: [0.4, 0.3, -0.3], rf: [-0.25, 0.8], rfy: 0.35, lf: [-0.05, 0.0], oz: 0.12 })],
+    lkick: [P({ yaw: 0.3, lean: 0.05, h: HIP_H - 0.06, hipYaw: -0.25, lh: [-0.2, 0.5, 0.3], rh: [0.3, 0.45, 0.0], rf: [0.38, 0.2], rfy: 0.45, rPole: [1, 0, 0.4], lf: [-0.08, 0.0] }),
+            P({ yaw: 0.25, lean: 0.1, roll: -0.3, h: HIP_H - 0.07, hipYaw: -0.8, lh: [-0.05, 0.5, 0.3], rh: [0.45, 0.3, -0.3], rf: [-0.4, 0.75], rfy: 0.4, rPole: [1, 0.1, 0.4], lf: [-0.05, -0.05], oz: 0.1 })],
     gnp1: [P({ h: 0.52, lean: 0.35, yaw: 0.3, lh: [-0.25, 0.2, 0.25], rh: [0.2, -0.05, 0.4], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 }),
            P({ h: 0.48, lean: 0.75, yaw: 0.0, lh: [-0.05, -0.3, 0.55], rh: [0.2, -0.05, 0.4], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 })],
     gnp2: [P({ h: 0.55, lean: 0.1, yaw: -0.3, lh: [-0.2, -0.05, 0.4], rh: [0.35, 0.55, 0.1], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 }),
@@ -272,7 +272,7 @@
       this.root.position.set(this.px, 0, this.pz);
       this.root.rotation.set(0, this.yaw, 0);
       this.body.position.set(p.ox, p.h + bob, p.oz);
-      this.body.rotation.set(p.lie, 0, 0);
+      this.body.rotation.set(p.lie, p.hipYaw, 0);
       this.torso.rotation.set(p.lean + wob * 0.5, p.yaw, p.roll + wob);
       this.neck.rotation.set(p.hp, p.hy, 0);
 
@@ -296,10 +296,12 @@
           lfz += s * 0.12; rfz -= s * 0.12;
           lfy += Math.max(0, c) * 0.08; rfy += Math.max(0, -c) * 0.08;
         }
-        v[0].set(-HIP_X, -0.08, 0); v[1].set(lfx - p.ox, lfy - (p.h + bob) + 0.05, lfz - p.oz);
-        this._pole.set(0, 0, 1); solveIK(v[0], v[1], THIGH, SHIN, this._pole, this.lHip, this.lKn);
-        v[0].set(HIP_X, -0.08, 0); v[1].set(rfx - p.ox, rfy - (p.h + bob) + 0.05, rfz - p.oz);
-        this._pole.set(0, 0, 1); solveIK(v[0], v[1], THIGH, SHIN, this._pole, this.rHip, this.rKn);
+        const ch = Math.cos(p.hipYaw), sh = Math.sin(p.hipYaw);
+        const toBody = (x, z, out) => { out.x = x * ch - z * sh; out.z = x * sh + z * ch; return out; };
+        toBody(lfx - p.ox, lfz - p.oz, v[1]); v[1].y = lfy - (p.h + bob) + 0.05;
+        v[0].set(-HIP_X, -0.08, 0); this._pole.fromArray(p.lPole); solveIK(v[0], v[1], THIGH, SHIN, this._pole, this.lHip, this.lKn);
+        toBody(rfx - p.ox, rfz - p.oz, v[1]); v[1].y = rfy - (p.h + bob) + 0.05;
+        v[0].set(HIP_X, -0.08, 0); this._pole.fromArray(p.rPole); solveIK(v[0], v[1], THIGH, SHIN, this._pole, this.rHip, this.rKn);
       } else {
         // lying on back: body frame rotated; targets given directly in body frame
         v[0].set(-HIP_X, -0.08, 0); v[1].set(p.lf[0], p.lfy, p.lf[1]);

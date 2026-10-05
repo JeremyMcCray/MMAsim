@@ -545,20 +545,40 @@
       const topBusy = top.act.type !== 'idle';
       const botBusy = bot.act.type !== 'idle';
 
-      // --- submission in progress ---
+      // --- submission in progress: arrow-sequence duel ---
       if (G.sub) {
         const sub = G.sub; sub.t += dt;
-        const rate = (7 + top.stats.bjj * 20) * (1 + (100 - bot.stam) / 220) * (1 + bot.dmg.head / 250) * (bot.rocked > 0 ? 1.5 : 1);
-        sub.prog += rate * dt;
-        // defence: mashing any key
-        const presses = this._countBits(bi.pressed & (IN.BLOCK | IN.DODGE | IN.GRAPPLE | DIR_BITS));
-        if (presses) {
-          sub.prog -= presses * 3.0 * (0.5 + bot.stats.bjj * 0.6) * (0.6 + bot.stam / 250);
-          bot.stam = Math.max(0, bot.stam - presses * 0.3);
+        // slow passive squeeze so the defender can't just wait it out
+        sub.prog += (0.5 + top.stats.bjj * 2) * (1 + (100 - bot.stam) / 150) * (bot.rocked > 0 ? 1.6 : 1) * dt;
+        top.stam = Math.max(0, top.stam - dt * 3);
+        const roles = [[sub.att, ti, top, true], [sub.def, bi, bot, false]];
+        for (const [sq, inp, f, isAtt] of roles) {
+          sq.timer -= dt;
+          let presses = inp.pressed & DIR_BITS;
+          let fail = false, done = false;
+          while (presses) {
+            const bit = presses & -presses; presses &= ~bit;
+            if (bit === sq.keys[sq.idx]) { sq.idx++; if (sq.idx >= sq.keys.length) { done = true; break; } }
+            else { fail = true; break; }
+          }
+          if (!fail && !done && sq.timer <= 0) fail = true;
+          if (done) {
+            sq.done++;
+            if (isAtt) sub.prog += 15 + top.stats.bjj * 12;
+            else sub.prog -= 16 + bot.stats.bjj * 8 + bot.stam / 16;
+            this._newSeq(sq, f, isAtt, bot);
+            this._emit({ k: 'seq', i: f.idx, ok: true });
+          } else if (fail) {
+            sq.fails++;
+            f.stam = Math.max(0, f.stam - 3);
+            this._newSeq(sq, f, isAtt, bot);
+            this._emit({ k: 'seq', i: f.idx, ok: false, fails: sq.fails });
+          }
         }
-        top.stam = Math.max(0, top.stam - dt * 4);
         sub.prog = clamp(sub.prog, 0, 100);
-        if (sub.prog >= 100) {
+        const tapped = sub.prog >= 100 || sub.def.fails >= 3;
+        const broken = !tapped && (sub.prog <= 0 || sub.att.fails >= 3 || top.stam <= 0);
+        if (tapped) {
           this._endRound(true);
           this._emit({ k: 'tap', i: top.idx, j: bot.idx, name: sub.name });
           bot.act = { type: 'down', name: '', t: 0, dur: 99, hit: false };
@@ -567,9 +587,9 @@
           this._finish({ method: 'Submission (' + sub.name + ')', winner: top.idx, round: S.round, time: min + ':' + (sec < 10 ? '0' : '') + sec });
           return;
         }
-        if (sub.t >= sub.dur || top.stam <= 0) {
-          G.sub = null; G.escape = clamp(G.escape + 28, 0, 100);
-          top.stam = Math.max(0, top.stam - 10);
+        if (broken) {
+          G.sub = null; G.escape = clamp(G.escape + 40, 0, 100);
+          top.stam = Math.max(0, top.stam - 14);
           top.act = { type: 'idle', name: '', t: 0, dur: 0, hit: false };
           this._emit({ k: 'subfail', i: top.idx, j: bot.idx, name: sub.name });
         }
@@ -586,7 +606,8 @@
         if (ti.pressed & IN.DODGE) { this._standUp('letup'); return; }
         else if (ti.pressed & IN.GRAPPLE && top.stam > 12) {
           const name = SUBS[Math.floor(this.rand() * SUBS.length)];
-          G.sub = { name, t: 0, dur: 3.2 + top.stats.bjj * 1.5, prog: 8 + top.stats.bjj * 12 };
+          G.sub = { name, t: 0, prog: 40 + top.stats.bjj * 8, att: { keys: [], idx: 0, fails: 0, done: 0, timer: 0, limit: 0 }, def: { keys: [], idx: 0, fails: 0, done: 0, timer: 0, limit: 0 } };
+          this._newSeq(G.sub.att, top, true, bot); this._newSeq(G.sub.def, bot, false, bot);
           top.rs.subs++; G.idleT = 0;
           top.act = { type: 'sub', name, t: 0, dur: 99, hit: false };
           this._emit({ k: 'sub', i: top.idx, j: bot.idx, name });
@@ -635,6 +656,20 @@
       if (G.idleT > 9) { this._standUp('ref'); return; }
     }
 
+    // generate a fresh arrow sequence for one side of the submission duel
+    _newSeq(sq, f, isAtt, bot) {
+      const DIRS = [IN.FWD, IN.LEFT, IN.BACK, IN.RIGHT];
+      let len;
+      if (isAtt) len = 7 - Math.round(f.stats.bjj * 2);                                  // 5..7, better BJJ = shorter
+      else len = 4 + Math.round((1 - f.stats.bjj) * 1.5) + (f.stam < 40 ? 1 : 0) + (f.dmg.head > 50 ? 1 : 0); // 4..8
+      len = clamp(len, 4, 8);
+      sq.keys = [];
+      for (let i = 0; i < len; i++) sq.keys.push(DIRS[Math.floor(this.rand() * 4)]);
+      sq.idx = 0;
+      sq.limit = isAtt ? 0.45 * len + 0.6 : (0.55 * len + 0.8) * (0.85 + f.stam / 650) * (f.rocked > 0 ? 0.85 : 1);
+      sq.timer = sq.limit;
+    }
+
     _countBits(v) { let c = 0; while (v) { c += v & 1; v >>>= 1; } return c; }
   }
 
@@ -663,6 +698,7 @@
       case 'sweepfail': return n(ev.i) + ' tries to sweep but ' + n(ev.j) + ' keeps the position.';
       case 'standup': return ev.reason === 'ref' ? 'The referee stands them up.' : ev.reason === 'letup' ? n(ev.i) + ' is let back to his feet.' : n(ev.i) + ' scrambles back to his feet!';
       case 'sub': return n(ev.i) + ' is hunting for a ' + ev.name + '!';
+      case 'seq': return null;
       case 'subfail': return n(ev.j) + ' works free of the ' + ev.name + '.';
       case 'tap': return "IT'S OVER! " + n(ev.j) + ' taps to the ' + ev.name + '!';
       case 'ko': return "IT'S ALL OVER! " + n(ev.i) + ' wins by ' + ev.method + '!';

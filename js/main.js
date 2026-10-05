@@ -279,6 +279,13 @@
         case 'sweep': A.slam(); feed(text, true); break;
         case 'tdfail': case 'sweepfail': case 'shoot': case 'standup': case 'subfail': feed(text); break;
         case 'sub': A.roar(0.2); feed(text, true); break;
+        case 'seq': {
+          const mine = ev.i === App.myIdx;
+          const row = $(mine ? '#seqMe' : '#seqThem');
+          row.classList.remove('flash-ok', 'flash-bad'); void row.offsetWidth; row.classList.add(ev.ok ? 'flash-ok' : 'flash-bad');
+          if (mine) { if (ev.ok) A.block(); else A.whistle(); }
+          break;
+        }
         case 'tap': A.tap(); feed(text, true); break;
         case 'ko': A.horn(); feed(text, true); break;
         case 'bell':
@@ -330,12 +337,29 @@
     if (S.ground && S.phase === 'fight') {
       g.classList.add('show'); g.classList.toggle('subbing', !!S.ground.sub);
       g.querySelector('.esc .fill').style.width = pct(S.ground.escape);
-      if (S.ground.sub) { g.querySelector('.sub .fill').style.width = pct(S.ground.sub.prog); $('#subName').textContent = S.ground.sub.name.toUpperCase(); }
       const meTop = S.ground.top === App.myIdx;
+      if (S.ground.sub) {
+        const sub = S.ground.sub;
+        g.querySelector('.sub .fill').style.width = pct(sub.prog); $('#subName').textContent = sub.name.toUpperCase();
+        renderSeq($('#seqMe'), meTop ? sub.att : sub.def);
+        renderSeq($('#seqThem'), meTop ? sub.def : sub.att);
+      }
       $('#gTitle').textContent = (S.f[S.ground.top].name + ' ON TOP').toUpperCase();
-      $('#gHint').textContent = S.ground.sub ? (meTop ? 'Squeeze! They are fighting the hold.' : 'MASH keys to defend the submission!')
+      $('#gHint').textContent = S.ground.sub ? (meTop ? 'Enter the W/A/S/D sequence to tighten the hold — 3 misses and you lose it.' : 'Enter the W/A/S/D sequence to escape — 3 misses and you tap!')
         : meTop ? 'J/K/U strike · O body · SPACE submission · hold L to posture · SHIFT stand up' : 'MASH W/A/S/D to escape · hold L to cover · SPACE to sweep when they swing';
     } else g.classList.remove('show');
+  }
+
+  const ARROWS = { 1: '▲', 4: '◀', 2: '▼', 8: '▶' };
+  function renderSeq(row, sq) {
+    const keysEl = row.querySelector('.seq-keys');
+    const sig = sq.keys.join(',') + '|' + sq.idx + '|' + sq.fails;
+    if (row.dataset.sig !== sig) {
+      row.dataset.sig = sig;
+      keysEl.innerHTML = sq.keys.map((k, i) => '<span class="' + (i < sq.idx ? 'done' : i === sq.idx ? 'cur' : '') + '">' + ARROWS[k] + '</span>').join('');
+      row.querySelector('.seq-fails').innerHTML = [0, 1, 2].map(i => '<i class="' + (i < sq.fails ? 'x' : '') + '">✕</i>').join('');
+    }
+    row.querySelector('.seq-timer i').style.width = pct(sq.limit ? sq.timer / sq.limit * 100 : 0);
   }
 
   // ============================================================

@@ -103,12 +103,12 @@
     _top(S, me, op, dt) {
       const r = this.rng, d = this.diff, G = S.ground;
       let held = 0;
-      if (G.sub) { this.held = 0; return; }
+      if (G.sub) { this.held = 0; this._playSeq(G.sub.att, dt); return; }
       if (G.escape > 55 && r() < 0.6) held |= IN.BLOCK; // posture up, kill the escape
       if (this.timer <= 0 && me.act.type === 'idle') {
         this.timer = 0.25 + (1 - d) * 0.4 + r() * 0.3;
         const subWant = me.stats.bjj * 0.35 + (op.stam < 35 ? 0.2 : 0) + (op.rocked > 0 ? 0.3 : 0) - (me.stam < 30 ? 0.3 : 0);
-        if ((me.stats.bjj > 0.45 || op.rocked > 0 || op.stam < 25) && r() < subWant * 0.45 && me.stam > 20) { this.pressed |= IN.GRAPPLE; held &= ~IN.BLOCK; }
+        if ((me.stats.bjj > 0.45 || op.rocked > 0 || op.stam < 25) && r() < subWant * 0.18 && me.stam > 35) { this.pressed |= IN.GRAPPLE; held &= ~IN.BLOCK; }
         else if (r() < 0.75 && me.stam > 10) {
           held &= ~IN.BLOCK;
           const k = r();
@@ -118,15 +118,23 @@
       this.held = held;
     }
 
+    // play the arrow-sequence duel: press rate and accuracy scale with difficulty
+    _playSeq(sq, dt) {
+      const r = this.rng, d = this.diff;
+      const rate = (2.2 + d * 3.3) * dt;
+      if (r() < rate) {
+        const acc = 0.95 + d * 0.045;
+        const want = sq.keys[sq.idx];
+        if (r() < acc) this.pressed |= want;
+        else { const DIRS = [IN.FWD, IN.LEFT, IN.BACK, IN.RIGHT].filter(k => k !== want); this.pressed |= DIRS[Math.floor(r() * 3)]; }
+      }
+    }
+
     _bottom(S, me, op, dt) {
       const r = this.rng, d = this.diff, G = S.ground;
       let held = 0;
       const mashRate = (4 + d * 5) * dt; // presses per second
-      if (G.sub) {
-        if (r() < mashRate * 1.4) this.pressed |= (r() < 0.5 ? IN.BLOCK : IN.DODGE);
-        if (r() < mashRate) this.pressed |= IN.LEFT;
-        this.held = 0; return;
-      }
+      if (G.sub) { this.held = 0; this._playSeq(G.sub.def, dt); return; }
       const topStriking = op.act.type === 'strike' && !op.act.hit;
       if (topStriking && r() < 0.4 + d * 0.5) held |= IN.BLOCK;
       if (r() < mashRate && me.stam > 5) this.pressed |= [IN.FWD, IN.BACK, IN.LEFT, IN.RIGHT][Math.floor(r() * 4)];
