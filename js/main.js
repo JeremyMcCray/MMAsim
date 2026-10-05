@@ -3,7 +3,7 @@
    ============================================================ */
 (function () {
   'use strict';
-  const { IN, Sim, ROSTER, describe, LIMBS, LIMB_NAME, MODS, HAND_KINDS, LEG_KINDS, KIND_LABEL, DEFAULT_MOVESET, normalizeMoveset } = window.MMASim;
+  const { IN, Sim, ROSTER, describe, LIMBS, LIMB_NAME, MODS, HAND_KINDS, LEG_KINDS, KIND_LABEL, DEFAULT_MOVESET, normalizeMoveset, POS_NAME, MOVES, SUBS_BY, BOTTOM_CAN_STRIKE } = window.MMASim;
   const { CpuBrain } = window.MMAAI;
   const { Renderer } = window.MMARender;
   const { Net } = window.MMANet;
@@ -322,15 +322,12 @@
         case 'kd': A.slam(); centerMsg('KNOCKDOWN!', 1400); feed(text, true); break;
         case 'td': A.slam(); feed(text, true); break;
         case 'sweep': A.slam(); feed(text, true); break;
-        case 'tdfail': case 'sweepfail': case 'shoot': case 'standup': case 'subfail': feed(text); break;
+        case 'tdfail': case 'shoot': case 'standup': case 'subfail': feed(text); break;
         case 'sub': A.roar(0.2); feed(text, true); break;
-        case 'seq': {
-          const mine = ev.i === App.myIdx;
-          const row = $(mine ? '#seqMe' : '#seqThem');
-          row.classList.remove('flash-ok', 'flash-bad'); void row.offsetWidth; row.classList.add(ev.ok ? 'flash-ok' : 'flash-bad');
-          if (mine) { if (ev.ok) A.block(); else A.whistle(); }
-          break;
-        }
+        case 'gattempt': feed(text); break;
+        case 'gresult': if (ev.ok) { A.slam(); feed(text, !!(ev.flip || ev.stand)); } else { A.block(); feed(text); } break;
+        case 'subescape': A.whistle(); feed(text, true); break;
+        case 'subhold': A.block(); feed(text); break;
         case 'tap': A.tap(); feed(text, true); break;
         case 'ko': A.horn(); feed(text, true); break;
         case 'bell':
@@ -378,35 +375,40 @@
     $('#roundLbl').textContent = App.paused ? 'PAUSED' : S.phase === 'break' ? 'BREAK ' + Math.ceil(10 - S.phaseT) : 'ROUND ' + S.round + '/' + S.rounds;
     const c = Math.max(0, S.clock); $('#clock').textContent = Math.floor(c / 60) + ':' + String(Math.floor(c % 60)).padStart(2, '0');
     $('#pingLbl').textContent = App.net && App.net.connected ? App.net.ping + ' ms' : (App.mode === 'practice' ? 'CPU' : '');
-    // grapple panel
+    // ground panel
     const g = $('#grapple');
     if (S.ground && S.phase === 'fight') {
-      g.classList.add('show'); g.classList.toggle('subbing', !!S.ground.sub);
-      g.querySelector('.esc .fill').style.width = pct(S.ground.escape);
-      const meTop = S.ground.top === App.myIdx;
-      if (S.ground.sub) {
-        const sub = S.ground.sub;
+      const G = S.ground;
+      g.classList.add('show'); g.classList.toggle('subbing', !!G.sub);
+      const meTop = G.top === App.myIdx, role = meTop ? 'top' : 'bottom';
+      $('#gTitle').textContent = (POS_NAME[G.pos] + ' · ' + S.f[G.top].name + ' on top').toUpperCase();
+      // transition attempt
+      const ar = $('#attRow');
+      if (G.trans) {
+        ar.classList.add('show');
+        $('#attName').textContent = (G.trans.by === App.myIdx ? 'YOU: ' : S.f[G.trans.by].name.toUpperCase() + ': ') + G.trans.name.toUpperCase();
+        ar.querySelector('.fill').style.width = pct(G.trans.t / G.trans.dur * 100);
+        ar.classList.toggle('mine', G.trans.by === App.myIdx);
+      } else ar.classList.remove('show');
+      if (G.sub) {
+        const sub = G.sub, mineAtt = sub.att === App.myIdx;
         g.querySelector('.sub .fill').style.width = pct(sub.prog); $('#subName').textContent = sub.name.toUpperCase();
-        renderSeq($('#seqMe'), meTop ? sub.att : sub.def);
-        renderSeq($('#seqThem'), meTop ? sub.def : sub.att);
+        $('#subState').textContent = (sub.squeezing ? 'SQUEEZING' : 'LOOSE') + (sub.defending ? ' · DEFENDING' : '');
+        $('#gHint').textContent = mineAtt
+          ? 'Hold ' + kn('grapple') + ' to squeeze (burns stamina) — let go to breathe, but they can slip out when it\'s loose.'
+          : 'Hold ' + kn('block') + ' to fight the hold (slows it). Tap ' + kn('grapple') + ' to attempt an escape — best when the squeeze is loose.';
+      } else {
+        const moves = MOVES[role][G.pos], subs = SUBS_BY[role][G.pos];
+        const parts = [];
+        for (const dir in moves) parts.push(kn(dir.toLowerCase() === 'fwd' ? 'fwd' : dir.toLowerCase()) + '+' + kn('grapple') + ' ' + moves[dir].name);
+        if (subs.length) parts.push(kn('grapple') + ' ' + (subs.length > 1 ? 'submission' : subs[0]));
+        if (role === 'top' || BOTTOM_CAN_STRIKE[G.pos]) parts.push(kn('lh') + '/' + kn('rh') + '/' + kn('ll') + '/' + kn('rl') + ' strike');
+        parts.push('hold ' + kn('block') + (role === 'top' ? ' base (deny escapes)' : ' frame (deny passes, cover up)'));
+        if (role === 'top') parts.push(kn('dodge') + ' let them up');
+        const cd = G.cd[App.myIdx] > 0 ? ' · recovering ' + G.cd[App.myIdx].toFixed(1) + 's' : '';
+        $('#gHint').textContent = parts.join(' · ') + cd;
       }
-      $('#gTitle').textContent = (S.f[S.ground.top].name + ' ON TOP').toUpperCase();
-      $('#gHint').textContent = S.ground.sub ? (meTop ? 'Enter the W/A/S/D sequence to tighten the hold — 3 misses and you lose it.' : 'Enter the W/A/S/D sequence to escape — 3 misses and you tap!')
-        : meTop ? kn('lh') + '/' + kn('rh') + ' punch (hold ' + kn('mod1') + ' elbows, ' + kn('mod2') + ' hammer fists, ' + kn('mod3') + ' body) · ' + kn('ll') + '/' + kn('rl') + ' knees · ' + kn('grapple') + ' submission · hold ' + kn('block') + ' to posture · ' + kn('dodge') + ' stand up'
-          : 'MASH ' + [kn('fwd'), kn('left'), kn('back'), kn('right')].join('/') + ' to escape · hold ' + kn('block') + ' to cover · ' + kn('grapple') + ' to sweep when they swing';
     } else g.classList.remove('show');
-  }
-
-  const ARROWS = { 1: '▲', 4: '◀', 2: '▼', 8: '▶' };
-  function renderSeq(row, sq) {
-    const keysEl = row.querySelector('.seq-keys');
-    const sig = sq.keys.join(',') + '|' + sq.idx + '|' + sq.fails;
-    if (row.dataset.sig !== sig) {
-      row.dataset.sig = sig;
-      keysEl.innerHTML = sq.keys.map((k, i) => '<span class="' + (i < sq.idx ? 'done' : i === sq.idx ? 'cur' : '') + '">' + ARROWS[k] + '</span>').join('');
-      row.querySelector('.seq-fails').innerHTML = [0, 1, 2].map(i => '<i class="' + (i < sq.fails ? 'x' : '') + '">✕</i>').join('');
-    }
-    row.querySelector('.seq-timer i').style.width = pct(sq.limit ? sq.timer / sq.limit * 100 : 0);
   }
 
   // ============================================================

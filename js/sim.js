@@ -203,7 +203,51 @@
     }
   })();
 
-  const SUBS = ['armbar', 'rear-naked choke', 'guillotine', 'kimura', 'triangle choke'];
+  const SUBS = ['armbar', 'rear-naked choke', 'guillotine', 'kimura', 'triangle choke', 'americana', 'arm triangle'];
+
+  // ---------- Ground positions ----------
+  // Named from the top fighter's point of view. The bottom fighter 'has guard' in guard / half guard.
+  const POS_NAME = { guard: 'closed guard', half: 'half guard', side: 'side control', mount: 'mount', back: 'back control' };
+  // top strike damage multiplier by position, and whether the bottom can strike up
+  const POS_STRIKE = { guard: 0.6, half: 0.7, side: 0.85, mount: 1.1, back: 0.8 };
+  const BOTTOM_CAN_STRIKE = { guard: true, half: true, side: false, mount: false, back: false };
+  // transition attempts: GRAPPLE pressed while holding a direction. Every attempt is timed and can be denied
+  // by the other fighter holding BLOCK (basing / framing). to = new position, flip = reversal (attacker ends
+  // on top in that position), stand = back to the feet, failTo = position the attacker gets punished into.
+  const MOVES = {
+    top: {
+      guard: { FWD: { name: 'pass the guard', to: 'half', base: 0.42, dur: 0.9, stam: 6 } },
+      half:  { FWD: { name: 'pass to side control', to: 'side', base: 0.42, dur: 0.8, stam: 6 } },
+      side:  { FWD: { name: 'take mount', to: 'mount', base: 0.4, dur: 0.8, stam: 6 } },
+      mount: {},
+      back:  {}
+    },
+    bottom: {
+      guard: { FWD: { name: 'stand up', stand: true, base: 0.48, dur: 1.0, stam: 7, failTo: 'half' },
+               LEFT: { name: 'sweep', flip: 'half', base: 0.40, dur: 0.9, stam: 8 }, RIGHT: { name: 'sweep', flip: 'half', base: 0.40, dur: 0.9, stam: 8 } },
+      half:  { BACK: { name: 'recover guard', to: 'guard', base: 0.60, dur: 0.7, stam: 4 },
+               FWD: { name: 'stand up', stand: true, base: 0.40, dur: 1.0, stam: 8, failTo: 'side' },
+               LEFT: { name: 'sweep', flip: 'half', base: 0.35, dur: 0.9, stam: 8 }, RIGHT: { name: 'sweep', flip: 'half', base: 0.35, dur: 0.9, stam: 8 } },
+      side:  { BACK: { name: 'shrimp to half guard', to: 'half', base: 0.55, dur: 0.8, stam: 6 },
+               FWD: { name: 'turn and stand', stand: true, base: 0.34, dur: 1.1, stam: 9, failTo: 'back' } },
+      mount: { BACK: { name: 'elbow escape to half guard', to: 'half', base: 0.50, dur: 0.9, stam: 7 },
+               LEFT: { name: 'bridge and roll', flip: 'guard', base: 0.37, dur: 0.9, stam: 9 }, RIGHT: { name: 'bridge and roll', flip: 'guard', base: 0.37, dur: 0.9, stam: 9 } },
+      back:  { BACK: { name: 'turn in to half guard', to: 'half', base: 0.50, dur: 1.0, stam: 7 },
+               FWD: { name: 'stand up', stand: true, base: 0.32, dur: 1.2, stam: 9 } }
+    }
+  };
+  // submissions available by role and position (GRAPPLE with no direction)
+  const SUBS_BY = {
+    top:    { guard: ['guillotine'], half: ['kimura'], side: ['kimura', 'americana'], mount: ['armbar', 'arm triangle'], back: ['rear-naked choke'] },
+    bottom: { guard: ['triangle choke', 'armbar', 'guillotine'], half: ['kimura'], side: [], mount: [], back: [] }
+  };
+  // where the defender ends up after escaping a submission
+  function subEscapePos(attRole, pos) {
+    if (attRole === 'bottom') return pos === 'guard' ? 'side' : 'side'; // scrambled out of the guard
+    return { mount: 'half', side: 'half', half: 'guard', back: 'half', guard: 'guard' }[pos];
+  }
+  const DIR_KEYS = { FWD: IN.FWD, BACK: IN.BACK, LEFT: IN.LEFT, RIGHT: IN.RIGHT };
+  function dirOf(held) { for (const k in DIR_KEYS) if (held & DIR_KEYS[k]) return k; return null; }
 
   const CAGE_R = 3.9;      // max fighter radius from centre
   const MIN_DIST = 0.78;   // body collision distance
@@ -300,7 +344,7 @@
         roundLen: this.settings.roundLen,
         f: [makeFighter(0, p[0].fighter || 'striker', p[0].name, p[0].color, p[0].moveset),
             makeFighter(1, p[1].fighter || 'wrestler', p[1].name, p[1].color, p[1].moveset)],
-        ground: null,             // { top, bottom, escape, sub, ctrlT, idleT }
+        ground: null,             // { top, bottom, pos, trans, sub, ctrlT, idleT, cd:[..] }
         cards: [],                // per round [{p0, p1, j:[[10,9],[10,9],[10,9]]}]
         result: null,
         evSeq: 0
@@ -454,9 +498,9 @@
         f.wobble = Math.max(0, f.wobble - dt * 0.8);
         let regen = 2.2 + f.stats.car * 4.5;
         regen *= (1 - f.dmg.body / 160);
-        if (f.blocking) regen *= 0.35;
+        if (f.blocking) regen *= 0.75;
         if (f.act.type === 'move') regen *= 0.55;
-        if (f.ground === 'bottom') regen *= 0.7;
+        if (f.ground === 'bottom') regen *= (S.ground && (S.ground.pos === 'mount' || S.ground.pos === 'back')) ? 0.45 : 0.7;
         if (S.ground && S.ground.sub) regen = 0;
         f.stam = clamp(f.stam + regen * dt, 0, 100);
       }
@@ -505,7 +549,7 @@
         if (f.dmg.head >= 100) method = 'KO';
         else if (f.dmg.body >= 100) method = 'TKO (body)';
         else if (f.dmg.legs >= 100) method = 'TKO (leg kicks)';
-        else if (f.ground === 'bottom' && f.dmg.head >= 92 && f.act.type === 'hit') method = 'TKO (ground strikes)';
+        else if (f.ground && f.dmg.head >= 92 && f.act.type === 'hit') method = 'TKO (ground strikes)';
         if (method) {
           f.act = { type: 'down', name: '', t: 0, dur: 99, hit: false };
           o.act = { type: 'celebrate', name: '', t: 0, dur: 99, hit: false };
@@ -550,12 +594,12 @@
         // movement — allowed while striking at half speed, so you can step into (or away from) shots
         if (!busy || striking) {
           let mx = 0, mz = 0;
-          const slow = (1 - f.dmg.legs / 140) * (f.rocked > 0 ? 0.45 : 1) * (0.7 + f.stam / 330) * (f.blocking ? 0.6 : 1) * (striking ? 0.5 : 1);
+          const slow = (1 - f.dmg.legs / 140) * (f.rocked > 0 ? 0.45 : 1) * (0.7 + f.stam / 330) * (f.blocking ? 0.8 : 1) * (striking ? 0.5 : 1);
           const spd = (1.9 + f.stats.spd * 1.0) * slow;
           if (held & IN.FWD) { mx += fx; mz += fz; }
           if (held & IN.BACK) { mx -= fx * 0.8; mz -= fz * 0.8; }
-          if (held & IN.LEFT) { mx += lx * 0.85; mz += lz * 0.85; }
-          if (held & IN.RIGHT) { mx -= lx * 0.85; mz -= lz * 0.85; }
+          if (held & IN.LEFT) { mx -= lx; mz -= lz; }
+          if (held & IN.RIGHT) { mx += lx; mz += lz; }
           if (mx || mz) {
             f.vx = mx * spd; f.vz = mz * spd;
             f.x += f.vx * dt; f.z += f.vz * dt;
@@ -619,10 +663,12 @@
       if (f.stam < 3) return;
       let tf = (1.15 - f.stats.spd * 0.3) * (1 + (1 - f.stam / 100) * 0.4) * (f.rocked > 0 ? 1.3 : 1);
       if (chained) {
-        // flowing straight out of the last strike: quicker, up to a 3-strike rhythm; the same limb twice in a row is slower
+        // a strike sets up the one from the OTHER side of the body (jab -> cross, left hook -> right hook,
+        // cross -> left hook, kick -> opposite-hand punch): that follow-up comes out quicker. Same side: no bonus.
         f.combo = Math.min(3, f.combo + 1);
-        const same = f.act.type === 'strike' && STRIKES[f.act.name].limb === st.limb;
-        tf *= same ? 1.0 : (1 - 0.06 * f.combo);
+        const prevLimb = f.act.type === 'strike' ? STRIKES[f.act.name].limb : null;
+        const prevSide = prevLimb ? prevLimb[0] : null; // 'l' or 'r'
+        tf *= prevSide && prevSide !== st.limb[0] ? 0.85 : 1.0;
       } else f.combo = 0;
       f.comboT = 0.45;
       f.buf = null;
@@ -747,7 +793,7 @@
       // hit reaction — each extra hit landed while still stunned stuns less, so a combo can't lock someone up forever
       o.hitChain = (o.act.type === 'hit' && this.state.t - (o.lastHitT || -9) < 0.7) ? (o.hitChain || 0) + 1 : 0;
       o.lastHitT = this.state.t;
-      const stun = (0.2 + dmg * 0.025) * Math.pow(0.6, o.hitChain);
+      const stun = (0.2 + dmg * 0.025) * 0.6 * Math.pow(0.6, o.hitChain);
       o.act = { type: 'hit', name: part, t: 0, dur: stun, hit: false };
       o.blocking = false;
       // pushback (teeps shove hard)
@@ -783,7 +829,8 @@
     _resolveGroundStrike(f, st) {
       const S = this.state, o = S.f[1 - f.idx];
       if (!S.ground) return;
-      let dmg = st.dmg * (0.7 + f.stats.pow * 0.6) * (0.6 + 0.4 * f.stam / 100) * lerp(0.85, 1.15, this.rand());
+      const posMul = f.ground === 'top' ? POS_STRIKE[S.ground.pos] : 0.5;
+      let dmg = st.dmg * posMul * (0.7 + f.stats.pow * 0.6) * (0.6 + 0.4 * f.stam / 100) * lerp(0.85, 1.15, this.rand());
       if (o.rocked > 0) dmg *= 1.25;
       if (f.rocked > 0) dmg *= 0.7;
       let blocked = false;
@@ -791,10 +838,9 @@
       o.dmg[st.part] = clamp(o.dmg[st.part] + dmg, 0, 100);
       f.rs.landed++; f.rs.sig += dmg;
       if (blocked) { this._emit({ k: 'block', i: f.idx, j: o.idx, name: st.name, part: st.part }); return; }
-      const stun = 0.2 + dmg * 0.025;
-      o.act = { type: 'hit', name: st.part, t: 0, dur: stun * 0.8, hit: false };
+      const stun = (0.2 + dmg * 0.025) * 0.5;
+      o.act = { type: 'hit', name: st.part, t: 0, dur: stun, hit: false };
       S.ground.idleT = 0;
-      S.ground.escape = clamp(S.ground.escape + 4, 0, 100);
       const ev = this._emit({ k: 'hit', i: f.idx, j: o.idx, name: st.name, kind: st.kind, part: st.part, intended: st.part, dmg: Math.round(dmg * 10) / 10, counter: false, big: dmg >= 3.6, ground: true });
       this._afterHit(f, o, st.part, dmg, ev, true);
     }
@@ -806,7 +852,7 @@
       this._emit({ k: 'kd', i: att.idx, j: vic.idx });
       vic.rocked = Math.max(vic.rocked, 3);
       if (vic.dmg.head >= 84) { vic.dmg.head = 100; return; } // flash KO, caught by stoppage check
-      this._enterGround(att, vic, 'kd');
+      this._enterGround(att, vic, 'kd', 'half');
     }
 
     _resolveTakedown(f) {
@@ -829,7 +875,7 @@
         f.rs.td++;
         o.stam = Math.max(0, o.stam - 6);
         this._emit({ k: 'td', i: f.idx, j: o.idx });
-        this._enterGround(f, o, 'td');
+        this._enterGround(f, o, 'td', (o.act.type === 'strike' || o.rocked > 0) && f.stats.wre > 0.7 ? 'half' : 'guard');
       } else {
         f.act = { type: 'stumble', name: 'td', t: 0, dur: 0.95, hit: false };
         f.stam = Math.max(0, f.stam - 6);
@@ -838,7 +884,7 @@
       }
     }
 
-    _enterGround(top, bottom, how) {
+    _enterGround(top, bottom, how, pos) {
       const S = this.state;
       const mx = (top.x + bottom.x) / 2, mz = (top.z + bottom.z) / 2;
       // keep off the fence a bit
@@ -847,10 +893,10 @@
       top.x = cx; top.z = cz; bottom.x = cx; bottom.z = cz;
       top.vx = top.vz = bottom.vx = bottom.vz = 0;
       top.ground = 'top'; bottom.ground = 'bottom';
-      top.blocking = false; bottom.blocking = false;
+      top.blocking = false; bottom.blocking = false; top.buf = null; bottom.buf = null;
       top.act = idleAct();
       bottom.act = { type: 'hit', name: 'head', t: 0, dur: how === 'kd' ? 0.8 : 0.5, hit: false };
-      S.ground = { top: top.idx, bottom: bottom.idx, escape: how === 'kd' ? 10 : 0, sub: null, ctrlT: 0, idleT: 0 };
+      S.ground = { top: top.idx, bottom: bottom.idx, pos: pos || 'guard', trans: null, sub: null, ctrlT: 0, idleT: 0, cd: [0, 0] };
     }
 
     _standUp(reason) {
@@ -859,6 +905,7 @@
       top.ground = null; bot.ground = null;
       top.act = idleAct();
       bot.act = idleAct();
+      top.posture = false;
       // separate
       const ang = this.rand() * Math.PI * 2;
       bot.x = clamp(bot.x + Math.cos(ang) * 0.9, -CAGE_R, CAGE_R); bot.z = clamp(bot.z + Math.sin(ang) * 0.9, -CAGE_R, CAGE_R);
@@ -867,8 +914,27 @@
       this._emit({ k: 'standup', i: bot.idx, reason });
     }
 
+    _setPos(pos) {
+      const S = this.state, G = S.ground;
+      G.pos = pos; G.idleT = 0;
+    }
+    // reversal: the bottom fighter becomes the top fighter
+    _flip(pos) {
+      const S = this.state, G = S.ground;
+      const top = S.f[G.top], bot = S.f[G.bottom];
+      top.ground = 'bottom'; bot.ground = 'top';
+      G.top = bot.idx; G.bottom = top.idx;
+      top.posture = false; bot.posture = false;
+      this._setPos(pos);
+    }
+
     // ---------------------------------------------------------
     //  GROUND
+    //  - GRAPPLE + direction: a timed transition attempt (pass / escape / sweep / stand). The other fighter
+    //    holds BLOCK to base and deny it. Attempts have a cooldown so they can't be spammed.
+    //  - GRAPPLE alone: submission (if one is available from this position). Hold to squeeze.
+    //  - Limb keys: strikes (power depends on position; bottom can only strike from guard / half guard).
+    //  - BLOCK: top postures / bases, bottom covers and frames.
     // ---------------------------------------------------------
     _groundTick(dt) {
       const S = this.state, G = S.ground;
@@ -876,128 +942,139 @@
       const ti = this.inputs[top.idx], bi = this.inputs[bot.idx];
       top.rs.ctrl += dt; G.ctrlT += dt; G.idleT += dt;
       top.blocking = false; bot.blocking = false;
-      const topBusy = top.act.type !== 'idle' && !recovering(top);
-      const botBusy = bot.act.type !== 'idle';
+      G.cd[0] = Math.max(0, G.cd[0] - dt); G.cd[1] = Math.max(0, G.cd[1] - dt);
 
-      // --- submission in progress: arrow-sequence duel ---
-      if (G.sub) {
-        const sub = G.sub; sub.t += dt;
-        // slow passive squeeze so the defender can't just wait it out
-        sub.prog += (0.5 + top.stats.bjj * 2) * (1 + (100 - bot.stam) / 150) * (bot.rocked > 0 ? 1.6 : 1) * dt;
-        top.stam = Math.max(0, top.stam - dt * 3);
-        const roles = [[sub.att, ti, top, true], [sub.def, bi, bot, false]];
-        for (const [sq, inp, f, isAtt] of roles) {
-          sq.timer -= dt;
-          let presses = inp.pressed & DIR_BITS;
-          let fail = false, done = false;
-          while (presses) {
-            const bit = presses & -presses; presses &= ~bit;
-            if (bit === sq.keys[sq.idx]) { sq.idx++; if (sq.idx >= sq.keys.length) { done = true; break; } }
-            else { fail = true; break; }
-          }
-          if (!fail && !done && sq.timer <= 0) fail = true;
-          if (done) {
-            sq.done++;
-            if (isAtt) sub.prog += 15 + top.stats.bjj * 12;
-            else sub.prog -= 16 + bot.stats.bjj * 8 + bot.stam / 16;
-            this._newSeq(sq, f, isAtt, bot);
-            this._emit({ k: 'seq', i: f.idx, ok: true });
-          } else if (fail) {
-            sq.fails++;
-            f.stam = Math.max(0, f.stam - 3);
-            this._newSeq(sq, f, isAtt, bot);
-            this._emit({ k: 'seq', i: f.idx, ok: false, fails: sq.fails });
-          }
-        }
-        sub.prog = clamp(sub.prog, 0, 100);
-        const tapped = sub.prog >= 100 || sub.def.fails >= 3;
-        const broken = !tapped && (sub.prog <= 0 || sub.att.fails >= 3 || top.stam <= 0);
-        if (tapped) {
-          this._endRound(true);
-          this._emit({ k: 'tap', i: top.idx, j: bot.idx, name: sub.name });
-          bot.act = { type: 'down', name: '', t: 0, dur: 99, hit: false };
-          top.act = { type: 'celebrate', name: '', t: 0, dur: 99, hit: false };
-          const min = Math.floor((S.roundLen - S.clock) / 60), sec = Math.floor((S.roundLen - S.clock) % 60);
-          this._finish({ method: 'Submission (' + sub.name + ')', winner: top.idx, round: S.round, time: min + ':' + (sec < 10 ? '0' : '') + sec });
-          return;
-        }
-        if (broken) {
-          G.sub = null; G.escape = clamp(G.escape + 40, 0, 100);
-          top.stam = Math.max(0, top.stam - 14);
-          top.act = idleAct();
-          this._emit({ k: 'subfail', i: top.idx, j: bot.idx, name: sub.name });
-        }
-        return;
-      }
+      if (G.sub) { this._subTick(dt); return; }
+      if (G.trans) { this._transTick(dt); if (!S.ground || G.trans) return; }
 
-      // --- TOP player ---
-      if (!topBusy) {
-        if (ti.held & IN.BLOCK) {
-          // posture / control: freeze escape, slowly drain bottom
-          G.escape = Math.max(0, G.escape - dt * 6);
-          top.posture = true;
-        } else top.posture = false;
-        if (ti.pressed & IN.DODGE) { this._standUp('letup'); return; }
-        else if (ti.pressed & IN.GRAPPLE && top.stam > 12) {
-          const name = SUBS[Math.floor(this.rand() * SUBS.length)];
-          G.sub = { name, t: 0, prog: 40 + top.stats.bjj * 8, att: { keys: [], idx: 0, fails: 0, done: 0, timer: 0, limit: 0 }, def: { keys: [], idx: 0, fails: 0, done: 0, timer: 0, limit: 0 } };
-          this._newSeq(G.sub.att, top, true, bot); this._newSeq(G.sub.def, bot, false, bot);
-          top.rs.subs++; G.idleT = 0;
-          top.act = { type: 'sub', name, t: 0, dur: 99, hit: false };
-          this._emit({ k: 'sub', i: top.idx, j: bot.idx, name });
-          return;
-        } else if (ti.pressed & LIMB_BITS && !(ti.held & IN.BLOCK)) {
-          const key = this._pickStrikeKey(top, ti.pressed, ti.held, true);
-          if (key) { this._startStrike(top, key, recovering(top)); G.idleT = 0; }
-        }
-      }
-
-      // --- BOTTOM player ---
-      if (!botBusy) {
-        const presses = this._countBits(bi.pressed & DIR_BITS);
-        if (presses) {
-          const gain = presses * 1.6 * (0.45 + (bot.stats.wre * 0.5 + bot.stats.bjj * 0.6)) * (0.5 + bot.stam / 200) * (bot.rocked > 0 ? 0.4 : 1) * (top.posture ? 0.35 : 1);
-          G.escape = clamp(G.escape + gain, 0, 100);
-          bot.stam = Math.max(0, bot.stam - presses * 0.25);
-        }
-        if (bi.pressed & IN.GRAPPLE && bot.stam > 8 && bot.rocked <= 0) {
-          // sweep / reversal attempt
-          let p = 0.05 + bot.stats.bjj * 0.22 - top.stats.wre * 0.22 + (top.act.type === 'strike' ? 0.2 : 0) + (100 - top.stam) / 350;
-          p = clamp(p, 0.05, 0.85);
-          bot.stam = Math.max(0, bot.stam - 10);
-          G.idleT = 0;
-          if (this.rand() < p) {
-            top.ground = 'bottom'; bot.ground = 'top';
-            G.top = bot.idx; G.bottom = top.idx; G.escape = 0;
-            top.act = { type: 'hit', name: 'body', t: 0, dur: 0.6, hit: false };
-            bot.act = idleAct();
-            bot.rs.td++; // reversal counts like a takedown
-            this._emit({ k: 'sweep', i: bot.idx, j: top.idx });
-            return;
-          } else {
-            G.escape = Math.max(0, G.escape - 12);
-            bot.act = { type: 'hit', name: 'body', t: 0, dur: 0.45, hit: false };
-            this._emit({ k: 'sweepfail', i: bot.idx, j: top.idx });
+      const roles = [[top, ti, 'top'], [bot, bi, 'bottom']];
+      for (const [f, inp, role] of roles) {
+        const o = role === 'top' ? bot : top;
+        const busy = f.act.type !== 'idle'; // no recovery-cancels on the mat: ground strikes are deliberate
+        f.posture = !!(inp.held & IN.BLOCK) && !busy;
+        if (inp.held & IN.BLOCK) f.stam = Math.max(0, f.stam - dt * (role === 'top' ? 2.5 : 3.5)); // basing / framing is work
+        if (busy) continue;
+        if (role === 'top' && (inp.pressed & IN.DODGE)) { this._standUp('letup'); return; }
+        if (inp.pressed & IN.GRAPPLE && f.rocked <= 0) {
+          const dir = dirOf(inp.held);
+          const mv = dir && MOVES[role][G.pos][dir];
+          if (mv) { if (G.cd[f.idx] <= 0 && f.stam >= mv.stam) this._startTrans(f, o, role, mv); return; }
+          const subs = SUBS_BY[role][G.pos];
+          if (subs.length && f.stam > 15 && G.cd[f.idx] <= 0) { this._startSub(f, o, role, subs[Math.floor(this.rand() * subs.length)]); return; }
+        } else if ((inp.pressed & LIMB_BITS) && !(inp.held & IN.BLOCK)) {
+          if (role === 'top' || BOTTOM_CAN_STRIKE[G.pos]) {
+            const key = this._pickStrikeKey(f, inp.pressed, inp.held, true);
+            if (key) { this._startStrike(f, key, false); G.idleT = 0; }
           }
         }
       }
-
-      if (G.escape >= 100) { this._standUp('escape'); return; }
-      if (G.idleT > 9) { this._standUp('ref'); return; }
+      if (G.idleT > 12) { this._standUp('ref'); return; }
     }
 
-    // generate a fresh arrow sequence for one side of the submission duel
-    _newSeq(sq, f, isAtt, bot) {
-      const DIRS = [IN.FWD, IN.LEFT, IN.BACK, IN.RIGHT];
-      let len;
-      if (isAtt) len = 7 - Math.round(f.stats.bjj * 2);                                  // 5..7, better BJJ = shorter
-      else len = 4 + Math.round((1 - f.stats.bjj) * 1.5) + (f.stam < 40 ? 1 : 0) + (f.dmg.head > 50 ? 1 : 0); // 4..8
-      len = clamp(len, 4, 8);
-      sq.keys = [];
-      for (let i = 0; i < len; i++) sq.keys.push(DIRS[Math.floor(this.rand() * 4)]);
-      sq.idx = 0;
-      sq.limit = isAtt ? 0.45 * len + 0.6 : (0.55 * len + 0.8) * (0.85 + f.stam / 650) * (f.rocked > 0 ? 0.85 : 1);
-      sq.timer = sq.limit;
+    _startTrans(f, o, role, mv) {
+      const G = this.state.ground;
+      f.stam = Math.max(0, f.stam - mv.stam);
+      G.trans = { by: f.idx, role, name: mv.name, mv, t: 0, dur: mv.dur };
+      G.idleT = 0;
+      f.act = { type: 'trans', name: mv.name, t: 0, dur: mv.dur, hit: false };
+      this._emit({ k: 'gattempt', i: f.idx, j: o.idx, name: mv.name });
+    }
+
+    _transTick(dt) {
+      const S = this.state, G = S.ground, T = G.trans;
+      const f = S.f[T.by], o = S.f[1 - T.by];
+      T.t += dt;
+      if (T.t < T.dur) return;
+      // resolve
+      const mv = T.mv, att = f.stats, def = o.stats;
+      let p = mv.base;
+      if (T.role === 'top') p += att.wre * 0.3 + att.bjj * 0.25 - def.bjj * 0.3 - def.wre * 0.15;
+      else p += att.bjj * 0.3 + att.wre * 0.25 - def.wre * 0.25 - def.bjj * 0.15;
+      p += (f.stam - o.stam) / 300;
+      const denied = !!(this.inputs[o.idx].held & IN.BLOCK) && o.stam > 5;
+      if (denied) p -= 0.16;                                          // based / framed
+      if (o.act.type === 'strike') p += 0.2;                            // caught swinging
+      if (o.rocked > 0) p += 0.3;
+      if (f.rocked > 0) p -= 0.3;
+      if (T.role === 'bottom') p -= f.dmg.head / 400;
+      p = clamp(p, 0.05, 0.95);
+      G.trans = null; G.cd[f.idx] = 0.6; G.idleT = 0;
+      f.act = idleAct();
+      if (this.rand() < p) {
+        if (mv.stand) { this._emit({ k: 'gresult', i: f.idx, j: o.idx, ok: true, name: mv.name, stand: true }); this._standUp('escape'); return; }
+        if (mv.flip) { f.rs.td++; this._flip(mv.flip); this._emit({ k: 'gresult', i: f.idx, j: o.idx, ok: true, name: mv.name, flip: true, pos: mv.flip }); return; }
+        this._setPos(mv.to);
+        this._emit({ k: 'gresult', i: f.idx, j: o.idx, ok: true, name: mv.name, pos: mv.to });
+      } else {
+        f.stam = Math.max(0, f.stam - 4);
+        f.act = { type: 'hit', name: 'body', t: 0, dur: 0.45, hit: false }; // exposed for a moment
+        // a read attempt (denied while they were basing) can be punished with a worse position
+        const punished = mv.failTo && denied && this.rand() < 0.6;
+        if (punished) this._setPos(mv.failTo);
+        this._emit({ k: 'gresult', i: f.idx, j: o.idx, ok: false, name: mv.name, pos: punished ? mv.failTo : null, denied });
+      }
+    }
+
+    _startSub(f, o, role, name) {
+      const G = this.state.ground;
+      G.sub = { name, att: f.idx, def: o.idx, role, prog: 12 + f.stats.bjj * 12, t: 0, squeezing: false, escCd: 0.4 };
+      G.idleT = 0;
+      f.act = { type: 'sub', name, t: 0, dur: 99, hit: false };
+      o.act = { type: 'caught', name, t: 0, dur: 99, hit: false };
+      f.rs.subs++;
+      this._emit({ k: 'sub', i: f.idx, j: o.idx, name });
+    }
+
+    _subTick(dt) {
+      const S = this.state, G = S.ground, sub = G.sub;
+      const att = S.f[sub.att], def = S.f[sub.def];
+      const ai = this.inputs[att.idx], di = this.inputs[def.idx];
+      sub.t += dt;
+      sub.escCd = Math.max(0, sub.escCd - dt);
+      sub.squeezing = !!(ai.held & IN.GRAPPLE);
+      sub.defending = !!(di.held & IN.BLOCK);
+      if (sub.squeezing) {
+        let rate = (5 + att.stats.bjj * 7) * (1 + (100 - def.stam) / 200) * (def.rocked > 0 ? 1.5 : 1);
+        if (sub.defending) rate *= 0.4;
+        sub.prog += rate * dt;
+        att.stam = Math.max(0, att.stam - dt * 6);
+      } else sub.prog -= 5 * dt;
+      if (sub.defending) def.stam = Math.max(0, def.stam - dt * 3);
+      // escape attempt
+      if ((di.pressed & IN.GRAPPLE) && sub.escCd <= 0) {
+        sub.escCd = 1.2;
+        let p = 0.2 + def.stats.bjj * 0.35 - att.stats.bjj * 0.2 + (1 - sub.prog / 100) * 0.25 + (sub.squeezing ? 0 : 0.3) + (att.stam < 30 ? 0.15 : 0) - (def.rocked > 0 ? 0.2 : 0);
+        p = clamp(p, 0.05, 0.9);
+        def.stam = Math.max(0, def.stam - 5);
+        if (this.rand() < p) {
+          const pos = subEscapePos(sub.role, G.pos);
+          G.sub = null; att.act = { type: 'hit', name: 'body', t: 0, dur: 0.5, hit: false }; def.act = idleAct();
+          G.cd[att.idx] = 0.8;
+          this._emit({ k: 'subescape', i: def.idx, j: att.idx, name: sub.name });
+          if (sub.role === 'bottom') { /* the top scrambles out of the guard */ }
+          this._setPos(pos);
+          return;
+        }
+        sub.prog += 6;
+        this._emit({ k: 'subhold', i: att.idx, j: def.idx, name: sub.name });
+      }
+      sub.prog = clamp(sub.prog, 0, 100);
+      if (sub.prog >= 100) {
+        this._endRound(true);
+        this._emit({ k: 'tap', i: att.idx, j: def.idx, name: sub.name });
+        def.act = { type: 'down', name: '', t: 0, dur: 99, hit: false };
+        att.act = { type: 'celebrate', name: '', t: 0, dur: 99, hit: false };
+        const min = Math.floor((S.roundLen - S.clock) / 60), sec = Math.floor((S.roundLen - S.clock) % 60);
+        this._finish({ method: 'Submission (' + sub.name + ')', winner: att.idx, round: S.round, time: min + ':' + (sec < 10 ? '0' : '') + sec });
+        return;
+      }
+      if (sub.prog <= 0 || att.stam <= 1) {
+        G.sub = null; G.cd[att.idx] = 1.0;
+        att.stam = Math.max(0, att.stam - 6);
+        att.act = { type: 'hit', name: 'body', t: 0, dur: 0.6, hit: false };
+        def.act = idleAct();
+        this._emit({ k: 'subfail', i: att.idx, j: def.idx, name: sub.name });
+      }
     }
 
     _countBits(v) { let c = 0; while (v) { c += v & 1; v >>>= 1; } return c; }
@@ -1028,11 +1105,20 @@
       case 'shoot': return n(ev.i) + ' shoots for the takedown...';
       case 'td': return 'Takedown complete — ' + n(ev.i) + ' is on top.';
       case 'tdfail': return ev.sprawl ? n(ev.j) + ' sprawls and stuffs it!' : ev.air ? n(ev.i) + ' shoots at air.' : n(ev.j) + ' defends the takedown.';
-      case 'sweep': return 'REVERSAL! ' + n(ev.i) + ' sweeps and takes top position!';
-      case 'sweepfail': return n(ev.i) + ' tries to sweep but ' + n(ev.j) + ' keeps the position.';
+      case 'gattempt': return n(ev.i) + (ev.name.indexOf('stand') >= 0 ? ' tries to ' : ' works to ') + ev.name + '...';
+      case 'gresult': {
+        if (ev.ok) {
+          if (ev.stand) return n(ev.i) + ' gets back to his feet!';
+          if (ev.flip) return 'REVERSAL! ' + n(ev.i) + ' sweeps into ' + POS_NAME[ev.pos] + '!';
+          return n(ev.i) + ' ' + (ev.name.indexOf('pass') >= 0 ? 'passes to ' : ev.name.indexOf('mount') >= 0 ? 'takes the ' : 'gets to ') + POS_NAME[ev.pos] + '.';
+        }
+        if (ev.pos) return n(ev.j) + ' punishes the attempt — ' + POS_NAME[ev.pos] + '!';
+        return ev.denied ? n(ev.j) + ' shuts down the ' + ev.name + '.' : n(ev.i) + ' can\'t ' + ev.name + '.';
+      }
+      case 'subescape': return n(ev.i) + ' slips out of the ' + ev.name + '!';
+      case 'subhold': return n(ev.i) + ' keeps the ' + ev.name + ' locked in.';
       case 'standup': return ev.reason === 'ref' ? 'The referee stands them up.' : ev.reason === 'letup' ? n(ev.i) + ' is let back to his feet.' : n(ev.i) + ' scrambles back to his feet!';
       case 'sub': return n(ev.i) + ' is hunting for a ' + ev.name + '!';
-      case 'seq': return null;
       case 'subfail': return n(ev.j) + ' works free of the ' + ev.name + '.';
       case 'tap': return "IT'S OVER! " + n(ev.j) + ' taps to the ' + ev.name + '!';
       case 'ko': return "IT'S ALL OVER! " + n(ev.i) + ' wins by ' + ev.method + '!';
@@ -1041,7 +1127,7 @@
     return null;
   }
 
-  const API = { IN, STRIKES, ROSTER, SUBS, Sim, describe, CAGE_R, DT,
+  const API = { IN, STRIKES, ROSTER, SUBS, POS_NAME, MOVES, SUBS_BY, BOTTOM_CAN_STRIKE, Sim, describe, CAGE_R, DT,
     LIMBS, LIMB_BIT, LIMB_NAME, MODS, MOD_BIT, HAND_KINDS, LEG_KINDS, KIND_LABEL, KIND_STATS, DEFAULT_MOVESET, normalizeMoveset, modOf, strikeTip, TIP_R, recovering };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   root.MMASim = API;

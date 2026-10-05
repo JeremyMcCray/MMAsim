@@ -47,7 +47,28 @@
     top: P({ h: 0.5, lean: 0.55, yaw: 0, lh: [-0.2, -0.05, 0.4], rh: [0.2, -0.05, 0.4], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3, hy: 0 }),
     topPosture: P({ h: 0.55, lean: 0.25, yaw: 0, lh: [-0.2, 0.1, 0.45], rh: [0.2, 0.1, 0.45], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.35, hy: 0 }),
     topSub: P({ h: 0.38, lean: 1.15, yaw: 0.3, lh: [-0.1, -0.2, 0.55], rh: [0.2, -0.15, 0.5], lf: [-0.3, -0.5], rf: [0.3, -0.45], hp: 0.1, hy: 0.3 }),
-    topHit: P({ h: 0.5, lean: -0.1, yaw: 0.2, lh: [-0.3, 0.3, 0.3], rh: [0.3, 0.3, 0.3], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: -0.3 })
+    topHit: P({ h: 0.5, lean: -0.1, yaw: 0.2, lh: [-0.3, 0.3, 0.3], rh: [0.3, 0.3, 0.3], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: -0.3 }),
+    // --- positional ground poses ---
+    // bottom in closed guard: on the back, legs wrapped high around the top's waist
+    bottomGuard: P({ lie: -Math.PI / 2, h: 0.22, lean: 0.3, yaw: 0, lh: [-0.18, 0.45, 0.35], rh: [0.18, 0.42, 0.33], lf: [-0.3, 0.42], rf: [0.3, 0.42], lfy: -0.05, rfy: -0.05, hp: 0.4, hy: 0 }),
+    // half guard: one leg hooked, the other flat
+    bottomHalf: P({ lie: -Math.PI / 2, h: 0.2, lean: 0.25, yaw: 0.15, lh: [-0.18, 0.45, 0.35], rh: [0.18, 0.42, 0.33], lf: [-0.28, 0.3], rf: [0.22, -0.2], lfy: -0.15, rfy: -0.5, hp: 0.4, hy: 0 }),
+    // flat on the back (side control / mount): framing with the arms, legs flat
+    bottomFlat: P({ lie: -Math.PI / 2, h: 0.18, lean: 0.1, yaw: 0, lh: [-0.2, 0.55, 0.3], rh: [0.2, 0.52, 0.3], lf: [-0.22, -0.2], rf: [0.22, -0.2], lfy: -0.5, rfy: -0.5, hp: 0.3, hy: 0 }),
+    // turtled (back control): on hands and knees
+    turtle: P({ lie: 0, h: 0.48, lean: 1.35, yaw: 0, lh: [-0.22, -0.25, 0.42], rh: [0.22, -0.25, 0.42], lf: [-0.22, -0.4], rf: [0.22, -0.4], lfy: 0, rfy: 0, hp: 0.2, hy: 0 }),
+    // bottom attacking a submission from the guard: legs high, pulling the top down
+    bottomSub: P({ lie: -Math.PI / 2, h: 0.24, lean: 0.5, yaw: 0, lh: [-0.14, 0.15, 0.6], rh: [0.14, 0.15, 0.6], lf: [-0.2, 0.55], rf: [0.2, 0.55], lfy: 0.2, rfy: 0.25, hp: 0.5, hy: 0 }),
+    // top inside the guard: kneeling, posture mid
+    topGuard: P({ h: 0.5, lean: 0.5, yaw: 0, lh: [-0.2, -0.1, 0.42], rh: [0.2, -0.1, 0.42], lf: [-0.28, -0.5], rf: [0.28, -0.5], hp: 0.3, hy: 0 }),
+    // side control: chest down across them, hips low
+    topSide: P({ h: 0.42, lean: 1.0, yaw: 0.2, lh: [-0.25, -0.2, 0.5], rh: [0.25, -0.25, 0.45], lf: [-0.3, -0.5], rf: [0.3, -0.35], hp: 0.2, hy: 0.2 }),
+    // mount: sat upright on the hips, knees wide
+    topMount: P({ h: 0.56, lean: 0.25, yaw: 0, lh: [-0.2, 0.25, 0.4], rh: [0.2, 0.25, 0.4], lf: [-0.4, -0.2], rf: [0.4, -0.2], hp: 0.35, hy: 0 }),
+    // back control: chest on their back, hooks in, arms around the neck
+    topBack: P({ h: 0.62, lean: 1.1, yaw: 0, lh: [-0.15, -0.3, 0.5], rh: [0.15, -0.25, 0.55], lf: [-0.3, -0.4], rf: [0.3, -0.4], hp: 0.2, hy: 0 }),
+    // caught in a submission from the bottom: bent down, head pulled in
+    topCaught: P({ h: 0.4, lean: 1.25, yaw: 0.2, lh: [-0.2, -0.3, 0.55], rh: [0.3, -0.1, 0.4], lf: [-0.3, -0.5], rf: [0.3, -0.45], hp: 0.3, hy: 0.3 })
   };
   // strike keyframes per strike kind: [windup, hit], authored for the RIGHT limb (rear side, orthodox).
   // Left-limb strikes use mirrored copies (upper body only for punches, so the stance stays orthodox).
@@ -99,6 +120,9 @@
   }
   const STRIKE_POSES_L = {};
   for (const k in STRIKE_POSES) STRIKE_POSES_L[k] = STRIKE_POSES[k].map(p => mirrorPose(p, !!HAND_KINDS[k]));
+
+  // top fighter placement relative to the bottom fighter's hips: [along the ground axis (+ = towards their head), across]
+  const GROUND_OFF = { guard: [-0.32, 0], half: [-0.26, 0.08], side: [0.12, 0.42], mount: [-0.02, 0], back: [-0.48, 0] };
 
   function lerpPose(a, b, t, out) {
     out = out || {};
@@ -156,19 +180,30 @@
       const shortsMat = new THREE.MeshStandardMaterial({ color, roughness: 0.6 });
       const gloveMat = new THREE.MeshStandardMaterial({ color: idx === 0 ? 0xc62828 : 0x1e5bd6, roughness: 0.5 });
       const hairMat = new THREE.MeshStandardMaterial({ color: 0x1a120c, roughness: 0.9 });
-      this.mats = { skinMat, shortsMat, gloveMat };
+      // separate skin materials per damage region so bruising can be shown where the damage is
+      const headMat = skinMat.clone(), bodyMat = skinMat.clone(), legMat = skinMat.clone();
+      this.mats = { skinMat, shortsMat, gloveMat, headMat, bodyMat, legMat };
+      this.skinBase = new THREE.Color(skin);
 
       this.root = new THREE.Group();
       this.body = new THREE.Group(); this.root.add(this.body);           // hips; y = hip height
       this.torso = new THREE.Group(); this.body.add(this.torso);         // pitch / yaw
       // pelvis + shorts
       const pelvis = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.26, 0.24), shortsMat); pelvis.position.y = 0.0; pelvis.castShadow = true; this.torso.add(pelvis);
-      const abs = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.19, 0.22, 12), skinMat); abs.position.y = 0.22; abs.castShadow = true; this.torso.add(abs);
-      const chest = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.3, 0.27), skinMat); chest.position.y = 0.42; chest.castShadow = true; this.torso.add(chest);
+      const abs = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.19, 0.22, 12), bodyMat); abs.position.y = 0.22; abs.castShadow = true; this.torso.add(abs);
+      const chest = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.3, 0.27), bodyMat); chest.position.y = 0.42; chest.castShadow = true; this.torso.add(chest);
       const trap = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.22, 0.1, 10), skinMat); trap.position.y = 0.6; this.torso.add(trap);
       // head
       this.neck = new THREE.Group(); this.neck.position.y = 0.62; this.torso.add(this.neck);
-      const head = new THREE.Mesh(new THREE.SphereGeometry(0.125, 16, 14), skinMat); head.position.y = 0.13; head.castShadow = true; this.neck.add(head);
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.125, 16, 14), headMat); head.position.y = 0.13; head.castShadow = true; this.neck.add(head);
+      // blood: a cut over the eye, a bloody nose/mouth, and a smear on the chest (shown as damage climbs)
+      const bloodMat = new THREE.MeshStandardMaterial({ color: 0x8a0f12, roughness: 0.35, transparent: true, opacity: 0 });
+      this.bloodMat = bloodMat;
+      const cut = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.018, 0.02), bloodMat); cut.position.set(0.05, 0.18, 0.105); cut.rotation.z = 0.3; this.neck.add(cut);
+      const nose = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.06, 0.02), bloodMat); nose.position.set(0, 0.09, 0.118); this.neck.add(nose);
+      const cheek = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), bloodMat); cheek.position.set(-0.07, 0.12, 0.085); cheek.scale.set(1, 1.3, 0.5); this.neck.add(cheek);
+      const smear = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.22, 0.01), bloodMat); smear.position.set(0.02, 0.4, 0.14); this.torso.add(smear);
+      this.blood = { cut, nose, cheek, smear };
       const hair = new THREE.Mesh(new THREE.SphereGeometry(0.128, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.5), hairMat); hair.position.y = 0.15; hair.scale.set(1, 0.8, 1); this.neck.add(hair);
       const brow = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.025, 0.04), hairMat); brow.position.set(0, 0.17, 0.115); this.neck.add(brow);
       this.head = head;
@@ -191,12 +226,12 @@
       const lTh = limb(THIGH, 0.095, shortsMat, 0.075); this.lHip.add(lTh);
       const rTh = limb(THIGH, 0.095, shortsMat, 0.075); this.rHip.add(rTh);
       // skin lower thigh
-      const lThSkin = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.078, THIGH * 0.45, 10), skinMat); lThSkin.position.y = -THIGH * 0.75; lTh.add(lThSkin);
-      const rThSkin = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.078, THIGH * 0.45, 10), skinMat); rThSkin.position.y = -THIGH * 0.75; rTh.add(rThSkin);
+      const lThSkin = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.078, THIGH * 0.45, 10), legMat); lThSkin.position.y = -THIGH * 0.75; lTh.add(lThSkin);
+      const rThSkin = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.078, THIGH * 0.45, 10), legMat); rThSkin.position.y = -THIGH * 0.75; rTh.add(rThSkin);
       this.lKn = new THREE.Group(); this.lKn.position.y = -THIGH; lTh.add(this.lKn);
       this.rKn = new THREE.Group(); this.rKn.position.y = -THIGH; rTh.add(this.rKn);
-      const lSh = limb(SHIN, 0.065, skinMat, 0.05); this.lKn.add(lSh);
-      const rSh = limb(SHIN, 0.065, skinMat, 0.05); this.rKn.add(rSh);
+      const lSh = limb(SHIN, 0.065, legMat, 0.05); this.lKn.add(lSh);
+      const rSh = limb(SHIN, 0.065, legMat, 0.05); this.rKn.add(rSh);
       const foot = () => { const f = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.06, 0.24), skinMat); f.position.set(0, -SHIN - 0.02, 0.06); f.castShadow = true; return f; };
       lSh.add(foot()); rSh.add(foot());
 
@@ -212,11 +247,31 @@
       this._v = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
       this._pole = new THREE.Vector3();
       this._tipV = new THREE.Vector3();
+      this._dmgC = new THREE.Color(); this._red = new THREE.Color(0.75, 0.25, 0.22); this._bruise = new THREE.Color(0.38, 0.22, 0.42);
       this._eul = new THREE.Euler(); this._qHip = new THREE.Quaternion(); this._yAxis = new THREE.Vector3(0, 1, 0);
       this._tipArr = [0, 0, 0];
     }
 
-    setColors(color, skin) { this.mats.shortsMat.color.setHex(color); this.mats.skinMat.color.setHex(skin); }
+    setColors(color, skin) { this.mats.shortsMat.color.setHex(color); this.skinBase.setHex(skin); for (const k of ['skinMat', 'headMat', 'bodyMat', 'legMat']) this.mats[k].color.setHex(skin); }
+
+    // bruising + blood per damage region
+    updateDamage(f) {
+      const B = this.skinBase, fl = Math.max(0, this.flash);
+      const tint = (mat, d) => {
+        // reddens first (0-45), then darkens towards purple-blue bruising (45-100)
+        const c = this._dmgC.copy(B);
+        const red = Math.min(1, d / 45), br = Math.max(0, (d - 40) / 60);
+        c.lerp(this._red, red * 0.35); c.lerp(this._bruise, br * 0.55);
+        mat.color.copy(c);
+        mat.emissive.setRGB(fl * 0.6, fl * 0.1, fl * 0.1);
+      };
+      tint(this.mats.headMat, f.dmg.head); tint(this.mats.bodyMat, f.dmg.body); tint(this.mats.legMat, f.dmg.legs);
+      this.mats.skinMat.emissive.setRGB(fl * 0.6, fl * 0.1, fl * 0.1);
+      const h = f.dmg.head;
+      this.bloodMat.opacity = h > 25 ? Math.min(1, (h - 25) / 30) : 0;
+      this.blood.cut.visible = h > 25; this.blood.nose.visible = h > 40; this.blood.cheek.visible = h > 55; this.blood.smear.visible = h > 60;
+      this.blood.smear.scale.y = 0.4 + Math.min(1, (h - 60) / 40) * 0.8;
+    }
 
     // compute target pose from sim state
     targetPose(f, S, out) {
@@ -225,14 +280,24 @@
       if (S.phase === 'over' && S.result && S.result.winner === f.idx) pose = POSES.celebrate;
       else if (a.type === 'down') pose = POSES.down;
       else if (f.ground === 'bottom') {
-        if (a.type === 'hit') pose = POSES.bottomHit;
-        else if (S.ground && S.ground.sub) pose = POSES.bottomHit;
-        else pose = (this.inputHint & IN.BLOCK) ? POSES.bottomBlock : POSES.bottom;
+        const pos = S.ground ? S.ground.pos : 'guard';
+        const base = pos === 'guard' ? POSES.bottomGuard : pos === 'half' ? POSES.bottomHalf : pos === 'back' ? POSES.turtle : POSES.bottomFlat;
+        if (a.type === 'strike') return this._strikePose(f, out, base);
+        if (a.type === 'sub') pose = POSES.bottomSub;
+        else if (a.type === 'hit') pose = pos === 'back' ? POSES.turtle : POSES.bottomHit;
+        else if (a.type === 'caught') pose = POSES.bottomHit;
+        else if (a.type === 'trans') return lerpPose(base, pos === 'back' ? POSES.bottomHalf : POSES.bottomHit, 0.35 + 0.25 * Math.sin(a.t * 14), out);
+        else if ((this.inputHint & IN.BLOCK) && pos !== 'back') return lerpPose(base, POSES.bottomBlock, 0.6, out);
+        else pose = base;
       } else if (f.ground === 'top') {
-        if (a.type === 'strike') return this._strikePose(f, out);
-        if (a.type === 'sub') pose = POSES.topSub;
+        const pos = S.ground ? S.ground.pos : 'guard';
+        const base = pos === 'guard' ? POSES.topGuard : pos === 'half' ? POSES.top : pos === 'side' ? POSES.topSide : pos === 'mount' ? POSES.topMount : POSES.topBack;
+        if (a.type === 'strike') return this._strikePose(f, out, base);
+        if (a.type === 'sub') pose = pos === 'back' ? POSES.topBack : POSES.topSub;
+        else if (a.type === 'caught') pose = POSES.topCaught;
         else if (a.type === 'hit') pose = POSES.topHit;
-        else pose = f.posture ? POSES.topPosture : POSES.top;
+        else if (a.type === 'trans') return lerpPose(base, POSES.topPosture, 0.35 + 0.25 * Math.sin(a.t * 14), out);
+        else pose = f.posture ? POSES.topPosture : base;
       } else {
         switch (a.type) {
           case 'strike': return this._strikePose(f, out);
@@ -252,13 +317,18 @@
       return copyPose(pose, out);
     }
 
-    _strikePose(f, out) {
+    _strikePose(f, out, groundBase) {
       const a = f.act, st = STRIKES[a.name];
       const left = st.limb === 'lh' || st.limb === 'll';
-      const kf = (left ? STRIKE_POSES_L : STRIKE_POSES)[st.kind] || STRIKE_POSES.straight;
+      let kf = (left ? STRIKE_POSES_L : STRIKE_POSES)[st.kind] || STRIKE_POSES.straight;
       const tf = a.tf || 1;
       const w = st.w * tf, ac = st.a * tf, r = st.r * tf;
-      const base = f.ground === 'top' ? POSES.top : POSES.idle;
+      const base = groundBase || (f.ground ? POSES.top : POSES.idle);
+      if (f.ground === 'bottom' && st.ground) {
+        // striking up from the back: blend the ground punch keyframes onto the lying pose
+        const kfB = kf.map(k => Object.assign(copyPose(base), { lh: k.lh.map((v, i) => i === 1 ? v + 0.45 : v), rh: k.rh.map((v, i) => i === 1 ? v + 0.45 : v) }));
+        kf = kfB;
+      }
       if (a.t < w) return lerpPose(base, kf[0], smooth(clamp(a.t / w, 0, 1)), out);
       if (a.t < w + ac) return lerpPose(kf[0], kf[1], smooth(clamp((a.t - w) / (ac * 0.6), 0, 1)), out);
       return lerpPose(kf[1], base, smooth(clamp((a.t - w - ac) / r, 0, 1)), out);
@@ -296,8 +366,16 @@
       if (S.ground && f.ground) {
         const ax = groundAxis.x, az = groundAxis.z;
         // top keeps facing +axis; bottom lies with head towards +axis (local -Z after lying back)
-        if (f.ground === 'bottom') { tyaw = Math.atan2(-ax, -az); tx = f.x; tz = f.z; }
-        else { tyaw = Math.atan2(ax, az); tx = f.x - ax * 0.1; tz = f.z - az * 0.1; }
+        const pos = S.ground.pos || 'guard';
+        if (f.ground === 'bottom') {
+          tyaw = pos === 'back' ? Math.atan2(ax, az) : Math.atan2(-ax, -az);  // turtled: faces +axis
+          tx = f.x; tz = f.z;
+        } else {
+          const off = GROUND_OFF[pos] || GROUND_OFF.guard;   // [along axis, across axis]
+          const px = -az, pz = ax;                            // perpendicular
+          tx = f.x + ax * off[0] + px * off[1]; tz = f.z + az * off[0] + pz * off[1];
+          tyaw = pos === 'side' ? Math.atan2(-px, -pz) : Math.atan2(ax, az);
+        }
       } else if (f.act.type === 'down') {
         tyaw = this.yaw;
       } else if (S.phase === 'break') {
@@ -393,10 +471,9 @@
       }
       this.blob.material.opacity = p.lie < -0.5 ? 0.15 : 0.35;
 
-      // hit flash on skin
+      // hit flash + accumulated damage on the skin
       if (this.flash > 0) { this.flash -= dt * 4; }
-      const fl = Math.max(0, this.flash);
-      this.mats.skinMat.emissive.setRGB(fl * 0.6, fl * 0.1, fl * 0.1);
+      this.updateDamage(f);
     }
 
     headWorld(out) { return this.head.getWorldPosition(out); }

@@ -91,13 +91,29 @@ works from any camera angle.
   opponent back.
 * **Wrestling** — takedown success depends on both wrestling stats,
   whether the defender is sprawling (holding block), caught mid‑strike,
-  rocked or tired. Failed shots leave you stumbling.
-* **Ground** — the top fighter strikes, postures or hunts submissions; the
-  bottom fighter mashes directions to build escape, covers up, or times a
-  sweep when the top player swings. The ref stands up a stalled position.
-* **Submissions** — a progress meter driven by the attacker's BJJ, and the
-  defender's stamina, head damage and mash rate. Fail and you burn stamina
-  and give up escape progress.
+  rocked or tired. Failed shots leave you stumbling. A takedown lands in
+  closed guard (half guard if the shooter is a strong wrestler who caught
+  you swinging); a knockdown lands in half guard.
+* **Ground positions** — closed guard → half guard → side control → mount,
+  plus back control. The top fighter advances with **takedown key + W**
+  (pass / take mount); the bottom fighter works with **takedown key + a
+  direction**: S recovers guard or shrimps out, W stands up (a wall‑walk
+  from guard, a riskier turn‑and‑stand from side control), A/D sweeps or
+  bridges for a reversal. Every attempt is a timed move the other fighter
+  can see coming and deny by holding block (basing / framing), which costs
+  them stamina; a failed attempt leaves you exposed, and some failures are
+  punished with a worse position (a failed stand‑up from side control gives
+  up your back). Attempts have a short cooldown — no mashing. Strikes hit
+  hardest from mount; the bottom fighter can only strike from guard.
+* **Submissions** — available from the right positions for both fighters
+  (bottom: triangle, armbar, guillotine from guard, kimura from half guard;
+  top: guillotine, kimura, americana, armbar, arm triangle, rear‑naked
+  choke). Press the takedown key with no direction to attack, then **hold it
+  to squeeze**: the hold tightens while you burn stamina. The defender holds
+  block to fight the hands (slows it, costs stamina) and taps the takedown
+  key to attempt an escape — timing it when the attacker lets go to breathe
+  gives the best odds. Escapes improve the defender's position; running out
+  of gas on a hold loses it. The referee stands up a stalled fight.
 * **Scoring** — three judges, 10‑point must. Rounds are scored on damage,
   volume, takedowns, control time, submission attempts and knockdowns;
   dominant rounds are 10‑8. Three (or 1 / 5) rounds, 1–5 minutes each.

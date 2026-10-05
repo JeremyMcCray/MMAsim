@@ -30,8 +30,8 @@
       const d = this.diff;
 
       if (S.ground) {
-        if (me.ground === 'top') this._top(S, me, op, dt);
-        else this._bottom(S, me, op, dt);
+        this._ground(S, me, op, dt, me.ground === 'top' ? 'top' : 'bottom');
+        if (this.modT > 0) { this.modT -= dt; this.held |= this.modHeld; }
         return { held: this.held, pressed: this.pressed };
       }
 
@@ -134,52 +134,72 @@
       return w[0][0];
     }
 
-    _top(S, me, op, dt) {
+    // ---------- ground ----------
+    _ground(S, me, op, dt, role) {
       const r = this.rng, d = this.diff, G = S.ground;
+      const { MOVES, SUBS_BY, BOTTOM_CAN_STRIKE } = root.MMASim;
       let held = 0;
-      if (G.sub) { this.held = 0; this._playSeq(G.sub.att, dt); return; }
-      if (G.escape > 55 && r() < 0.6) held |= IN.BLOCK; // posture up, kill the escape
-      if (this.timer <= 0 && (me.act.type === 'idle' || recovering(me))) {
-        this.timer = 0.25 + (1 - d) * 0.4 + r() * 0.3;
-        const subWant = me.stats.bjj * 0.35 + (op.stam < 35 ? 0.2 : 0) + (op.rocked > 0 ? 0.3 : 0) - (me.stam < 30 ? 0.3 : 0);
-        if ((me.stats.bjj > 0.45 || op.rocked > 0 || op.stam < 25) && r() < subWant * 0.18 && me.stam > 35) { this.pressed |= IN.GRAPPLE; held &= ~IN.BLOCK; }
-        else if (r() < 0.75 && me.stam > 10) {
-          held &= ~IN.BLOCK;
-          const k = r();
-          if (k < 0.5) this.pressed |= (r() < 0.5 ? IN.LHAND : IN.RHAND);                       // punches
-          else if (k < 0.7) { this.pressed |= IN.RHAND; held |= IN.MOD1; }                        // elbow
-          else if (k < 0.85) { this.pressed |= (r() < 0.5 ? IN.LHAND : IN.RHAND); held |= IN.MOD2; } // hammer fist
-          else this.pressed |= (r() < 0.5 ? IN.LLEG : IN.RLEG);                                   // knee to the body
+      // --- submission in progress ---
+      if (G.sub) {
+        const sub = G.sub;
+        if (sub.att === this.idx) {
+          // squeeze while there's gas, let it breathe when running low (and bait the escape)
+          const squeeze = me.stam > 18 && (sub.prog > 35 || r() < 0.85);
+          if (squeeze) held |= IN.GRAPPLE;
+        } else {
+          // defend: hand-fight (block) most of the time, attempt an escape when the squeeze lets up or on a timer
+          if (r() < 0.75 + d * 0.2) held |= IN.BLOCK;
+          this.timer -= dt;
+          if (this.timer <= 0 || (!sub.squeezing && r() < 0.3)) { this.pressed |= IN.GRAPPLE; this.timer = 1.6 + (1 - d) * 1.5 + r() * 1.0; }
+        }
+        this.held = held; return;
+      }
+      // --- someone is attempting a transition: deny it by basing / framing ---
+      if (G.trans) {
+        if (G.trans.by !== this.idx && me.stam > 20 && r() < 0.3 + d * 0.45) held |= IN.BLOCK;
+        this.held = held; return;
+      }
+      const free = me.act.type === 'idle';
+      if (!free) { this.held = held; return; }
+      this.timer -= dt;
+      if (this.timer > 0) { this.held = held; return; }
+      this.timer = 0.3 + (1 - d) * 0.5 + r() * 0.4;
+      const moves = MOVES[role][G.pos], subs = SUBS_BY[role][G.pos];
+      const cdOk = G.cd[this.idx] <= 0;
+      // candidate actions with weights
+      const w = [];
+      if (cdOk && me.stam > 20) {
+        for (const dir in moves) {
+          const mv = moves[dir];
+          let wt = 0;
+          if (role === 'top') wt = 1.2 + me.stats.wre * 1.5 + (G.pos === 'guard' ? 0.5 : 0);
+          else {
+            wt = 1.0 + me.stats.bjj * 1.2 + (G.pos === 'mount' || G.pos === 'back' ? 1.4 : 0) + (me.dmg.head > 50 ? 0.8 : 0);
+            if (mv.stand) wt *= (me.stats.wre > 0.7 ? 1.3 : 0.7) * (op.stam < 40 ? 1.3 : 1);
+            if (mv.flip) wt *= 0.8 + me.stats.bjj * 0.8;
+          }
+          if (op.act.type === 'strike') wt *= 1.6;     // they're swinging: go now
+          if (op.posture || (this.inputsPostureHint)) wt *= 0.6;
+          w.push([{ held: IN[dir], pressed: IN.GRAPPLE }, wt * (0.5 + d * 0.5)]);
         }
       }
-      this.held = held;
-    }
-
-    // play the arrow-sequence duel: press rate and accuracy scale with difficulty
-    _playSeq(sq, dt) {
-      const r = this.rng, d = this.diff;
-      const rate = (2.2 + d * 3.3) * dt;
-      if (r() < rate) {
-        const acc = 0.95 + d * 0.045;
-        const want = sq.keys[sq.idx];
-        if (r() < acc) this.pressed |= want;
-        else { const DIRS = [IN.FWD, IN.LEFT, IN.BACK, IN.RIGHT].filter(k => k !== want); this.pressed |= DIRS[Math.floor(r() * 3)]; }
+      if (cdOk && subs.length && me.stam > 35) {
+        let wt = me.stats.bjj * 2.2 + (op.stam < 35 ? 1.0 : 0) + (op.rocked > 0 ? 1.2 : 0) + (G.pos === 'back' || G.pos === 'mount' ? 1.0 : 0) - (me.stats.bjj < 0.5 ? 1.0 : 0);
+        if (wt > 0) w.push([{ held: 0, pressed: IN.GRAPPLE }, wt * (0.4 + d * 0.6)]);
       }
-    }
-
-    _bottom(S, me, op, dt) {
-      const r = this.rng, d = this.diff, G = S.ground;
-      let held = 0;
-      const mashRate = (4 + d * 5) * dt; // presses per second
-      if (G.sub) { this.held = 0; this._playSeq(G.sub.def, dt); return; }
-      const topStriking = op.act.type === 'strike' && !op.act.hit;
-      if (topStriking && r() < 0.4 + d * 0.5) held |= IN.BLOCK;
-      if (r() < mashRate && me.stam > 5) this.pressed |= [IN.FWD, IN.BACK, IN.LEFT, IN.RIGHT][Math.floor(r() * 4)];
-      if (this.timer <= 0 && me.act.type === 'idle') {
-        this.timer = 0.3 + r() * 0.5;
-        const sweepWant = me.stats.bjj * 0.15 + (topStriking ? 0.25 : 0.02);
-        if (r() < sweepWant * (0.4 + d * 0.6) && me.stam > 12) this.pressed |= IN.GRAPPLE;
+      if (me.stam > 10 && (role === 'top' || BOTTOM_CAN_STRIKE[G.pos])) {
+        const base = role === 'top' ? 2.2 + (G.pos === 'mount' ? 1.5 : 0) + me.stats.pow : 0.7;
+        const k = r();
+        const strike = k < 0.5 ? { held: 0, pressed: r() < 0.5 ? IN.LHAND : IN.RHAND } : k < 0.7 ? { held: IN.MOD1, pressed: IN.RHAND } : k < 0.85 ? { held: IN.MOD2, pressed: r() < 0.5 ? IN.LHAND : IN.RHAND } : { held: 0, pressed: r() < 0.5 ? IN.LLEG : IN.RLEG };
+        w.push([strike, base]);
       }
+      // posture / rest
+      w.push([{ held: IN.BLOCK, pressed: 0 }, (role === 'top' ? 0.8 : 1.2) + (me.stam < 30 ? 1.5 : 0) + (role === 'bottom' && op.act.type === 'strike' ? 2.5 : 0) + (role === 'bottom' && me.dmg.head > 60 ? 2 : 0)]);
+      let tot = 0; for (const x of w) tot += x[1];
+      let k = r() * tot, pick = w[w.length - 1][0];
+      for (const x of w) { k -= x[1]; if (k <= 0) { pick = x[0]; break; } }
+      held |= pick.held; this.pressed |= pick.pressed;
+      this.modHeld = pick.held & (IN.MOD1 | IN.MOD2 | IN.MOD3); this.modT = 0.12;
       this.held = held;
     }
   }
