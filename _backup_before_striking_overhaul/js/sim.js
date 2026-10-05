@@ -3,16 +3,6 @@
    Pure, deterministic (seeded), fixed-step. No DOM, no Three.js.
    Runs on the host (or locally in practice mode); clients only
    receive snapshots of `sim.state`.
-
-   Striking model (v2): every strike is a limb (left/right hand or
-   leg) + a kind chosen by the fighter's moveset and the modifier
-   being held. Each strike has an authored path for the striking
-   tip (fist / foot / knee) in the attacker's frame. While the
-   strike is live the sim sweeps that tip against the opponent's
-   head / torso / legs hitboxes every tick. Damage scales with the
-   closing speed between the tip and the target (moving into a
-   strike hurts more, backing off hurts less) and drops sharply when
-   the limb is jammed (contact before it extends).
    ============================================================ */
 (function (root) {
   'use strict';
@@ -20,41 +10,11 @@
   // ---------- Input bits ----------
   const IN = {
     FWD: 1, BACK: 2, LEFT: 4, RIGHT: 8,
-    LHAND: 16, RHAND: 32, LLEG: 64, RLEG: 128,
-    MOD1: 256, MOD2: 512, MOD3: 1024,
-    BLOCK: 2048, GRAPPLE: 4096, DODGE: 8192
+    JAB: 16, CROSS: 32, HOOK: 64, HKICK: 128, BKICK: 256, LKICK: 512,
+    BLOCK: 1024, GRAPPLE: 2048, DODGE: 4096
   };
-  const LIMB_BITS = IN.LHAND | IN.RHAND | IN.LLEG | IN.RLEG;
+  const STRIKE_BITS = IN.JAB | IN.CROSS | IN.HOOK | IN.HKICK | IN.BKICK | IN.LKICK;
   const DIR_BITS = IN.FWD | IN.BACK | IN.LEFT | IN.RIGHT;
-  const LIMBS = ['lh', 'rh', 'll', 'rl'];
-  const LIMB_BIT = { lh: IN.LHAND, rh: IN.RHAND, ll: IN.LLEG, rl: IN.RLEG };
-  const LIMB_NAME = { lh: 'Left hand', rh: 'Right hand', ll: 'Left leg', rl: 'Right leg' };
-  const MODS = ['none', 'mod1', 'mod2', 'mod3'];
-  const MOD_BIT = { none: 0, mod1: IN.MOD1, mod2: IN.MOD2, mod3: IN.MOD3 };
-  const HAND_KINDS = ['straight', 'hook', 'uppercut', 'overhand'];
-  const LEG_KINDS = ['teep', 'knee', 'bkick', 'hkick', 'lkick'];
-  const KIND_LABEL = { straight: 'Straight', hook: 'Hook', uppercut: 'Uppercut', overhand: 'Overhand', teep: 'Teep', knee: 'Knee', bkick: 'Body kick', hkick: 'Head kick', lkick: 'Low kick' };
-
-  // which strike each limb throws for each held modifier (orthodox stance: left side leads)
-  const DEFAULT_MOVESET = {
-    none: { lh: 'uppercut', rh: 'uppercut', ll: 'teep', rl: 'knee' },
-    mod1: { lh: 'hook', rh: 'hook', ll: 'bkick', rl: 'bkick' },
-    mod2: { lh: 'straight', rh: 'straight', ll: 'hkick', rl: 'hkick' },
-    mod3: { lh: 'overhand', rh: 'overhand', ll: 'lkick', rl: 'lkick' }
-  };
-  function normalizeMoveset(ms) {
-    const out = {};
-    for (const m of MODS) {
-      out[m] = {};
-      for (const l of LIMBS) {
-        const kinds = (l === 'lh' || l === 'rh') ? HAND_KINDS : LEG_KINDS;
-        const v = ms && ms[m] && ms[m][l];
-        out[m][l] = kinds.indexOf(v) >= 0 ? v : DEFAULT_MOVESET[m][l];
-      }
-    }
-    return out;
-  }
-  function modOf(held) { return (held & IN.MOD3) ? 'mod3' : (held & IN.MOD2) ? 'mod2' : (held & IN.MOD1) ? 'mod1' : 'none'; }
 
   // ---------- Roster ----------
   // stats 0..1 : pow (power), spd (speed), chin, wre (wrestling), bjj (submissions / scrambles), car (cardio)
@@ -74,119 +34,23 @@
   };
 
   // ---------- Strikes ----------
-  // Tip paths are authored in the attacker's root frame as [t, fwd, side, height]:
-  // fwd = metres towards the opponent, side = metres to the attacker's LEFT, height = metres above the mat.
-  // t is seconds at time-factor 1; the whole path stretches with the strike's time factor (speed / fatigue).
-  const HAND_GUARD = { lh: [0.34, 0.15, 1.27], rh: [0.22, -0.16, 1.24] };
-  const FOOT_STANCE = { ll: [0.2, 0.16, 0], rl: [-0.24, -0.2, 0] };
-  const TIP_R = { hand: 0.09, foot: 0.1, knee: 0.1 };
-  const ARM_REACH = 0.64, LEG_REACH = 0.96, KNEE_REACH = 0.5;
-
-  // [windup, active, recover, damage, stamina] for lead (left) and rear (right) limbs
-  const KIND_STATS = {
-    straight: { lead: [0.13, 0.07, 0.20, 1.5, 2.5], rear: [0.22, 0.08, 0.32, 3.0, 4.5], part: 'head', names: ['jab', 'cross'] },
-    hook:     { lead: [0.22, 0.08, 0.30, 2.9, 5.0], rear: [0.26, 0.08, 0.34, 3.5, 5.5], part: 'head', names: ['lead hook', 'right hook'] },
-    uppercut: { lead: [0.20, 0.08, 0.30, 2.8, 5.0], rear: [0.25, 0.08, 0.34, 3.6, 5.5], part: 'head', names: ['lead uppercut', 'rear uppercut'] },
-    overhand: { lead: [0.28, 0.09, 0.40, 3.2, 6.0], rear: [0.32, 0.09, 0.42, 4.2, 7.0], part: 'head', names: ['looping left', 'overhand right'] },
-    hkick:    { lead: [0.30, 0.10, 0.42, 4.3, 9.0], rear: [0.36, 0.10, 0.48, 5.4, 10 ], part: 'head', names: ['lead head kick', 'head kick'] },
-    bkick:    { lead: [0.26, 0.10, 0.38, 3.1, 7.0], rear: [0.30, 0.10, 0.42, 3.8, 8.0], part: 'body', names: ['lead body kick', 'body kick'] },
-    lkick:    { lead: [0.20, 0.10, 0.30, 2.3, 5.0], rear: [0.24, 0.10, 0.34, 2.8, 6.0], part: 'legs', names: ['lead low kick', 'low kick'] },
-    teep:     { lead: [0.18, 0.10, 0.30, 2.0, 5.0], rear: [0.24, 0.10, 0.34, 2.6, 6.0], part: 'body', names: ['teep', 'rear teep'], push: true },
-    knee:     { lead: [0.18, 0.08, 0.30, 2.8, 6.0], rear: [0.20, 0.08, 0.32, 3.4, 6.5], part: 'body', names: ['lead knee', 'knee'] }
+  // windup / active / recover (seconds), range (m), base damage, target region, stamina cost
+  const STRIKES = {
+    jab:      { name: 'jab',        bit: IN.JAB,   w: 0.13, a: 0.07, r: 0.20, range: 1.30, dmg: 1.41,  part: 'head', stam: 2.5 },
+    cross:    { name: 'cross',      bit: IN.CROSS, w: 0.22, a: 0.08, r: 0.32, range: 1.35, dmg: 2.94,  part: 'head', stam: 4.5 },
+    hook:     { name: 'hook',       bit: IN.HOOK,  w: 0.26, a: 0.08, r: 1.15, range: 1.15, dmg: 3.43,   part: 'head', stam: 5.5 },
+    hkick:    { name: 'head kick',  bit: IN.HKICK, w: 0.36, a: 0.10, r: 0.48, range: 1.65, dmg: 5.39,   part: 'head', stam: 10 },
+    bkick:    { name: 'body kick',  bit: IN.BKICK, w: 0.30, a: 0.10, r: 0.42, range: 1.55, dmg: 3.79,   part: 'body', stam: 8 },
+    knee:     { name: 'knee',       bit: IN.BKICK, w: 0.18, a: 0.08, r: 0.30, range: 1.05, dmg: 3.18,   part: 'body', stam: 6 },
+    lkick:    { name: 'low kick',   bit: IN.LKICK, w: 0.24, a: 0.10, r: 0.34, range: 1.45, dmg: 2.81,    part: 'legs', stam: 6 },
+    // ground strikes
+    gnp1:     { name: 'ground punch', bit: IN.JAB,   w: 0.18, a: 0.05, r: 0.28, range: 9, dmg: 1.59, part: 'head', stam: 3, ground: true },
+    gnp2:     { name: 'hammer fist',  bit: IN.CROSS, w: 0.24, a: 0.05, r: 0.34, range: 9, dmg: 2.33, part: 'head', stam: 4, ground: true },
+    gnp3:     { name: 'elbow',        bit: IN.HOOK,  w: 0.26, a: 0.05, r: 0.36, range: 9, dmg: 2.69, part: 'head', stam: 4.5, ground: true },
+    gbody:    { name: 'body shot',    bit: IN.BKICK, w: 0.2,  a: 0.05, r: 0.3,  range: 9, dmg: 1.95, part: 'body', stam: 3, ground: true }
   };
-
-  function handPath(limb, kind, w, a, r) {
-    const s = limb === 'lh' ? 1 : -1, lead = limb === 'lh';
-    const g = HAND_GUARD[limb], end = w + a + r;
-    const G = [0, g[0], g[1], g[2]], E = [end, g[0], g[1], g[2]];
-    switch (kind) {
-      case 'straight': return [G, [w, g[0] - 0.08, s * 0.17, 1.3], [w + a * 0.75, lead ? 0.92 : 1.0, s * 0.02, 1.5], [w + a, lead ? 0.88 : 0.96, s * 0.02, 1.49], E];
-      case 'hook':     return [G, [w, 0.15, s * 0.45, 1.42], [w + a * 0.35, 0.62, s * 0.36, 1.5], [w + a * 0.8, 0.88, -s * 0.06, 1.5], [w + a, 0.8, -s * 0.3, 1.48], E];
-      case 'uppercut': return [G, [w, 0.2, s * 0.2, 1.0], [w + a * 0.7, 0.72, s * 0.05, 1.5], [w + a, 0.66, s * 0.04, 1.74], E];
-      case 'overhand': return [G, [w, -0.05, s * 0.3, 1.6], [w + a * 0.3, 0.45, s * 0.18, 1.82], [w + a * 0.8, 0.92, -s * 0.05, 1.5], [w + a, 0.84, -s * 0.1, 1.36], E];
-    }
-  }
-  function legPath(limb, kind, w, a, r) {
-    const s = limb === 'll' ? 1 : -1;
-    const f = FOOT_STANCE[limb], end = w + a + r;
-    const G = [0, f[0], f[1], f[2]], E = [end, f[0], f[1], f[2]];
-    switch (kind) {
-      case 'hkick': return [G, [w * 0.5, f[0] + 0.15, s * 0.28, 0.35], [w, 0.4, s * 0.32, 0.85], [w + a * 0.7, 1.08, -s * 0.08, 1.5], [w + a, 0.85, -s * 0.45, 1.3], E];
-      case 'bkick': return [G, [w * 0.5, f[0] + 0.15, s * 0.28, 0.3], [w, 0.4, s * 0.32, 0.62], [w + a * 0.7, 1.1, -s * 0.05, 1.1], [w + a, 0.85, -s * 0.4, 0.9], E];
-      case 'lkick': return [G, [w * 0.5, f[0] + 0.1, s * 0.28, 0.2], [w, 0.35, s * 0.3, 0.38], [w + a * 0.7, 1.0, -s * 0.1, 0.42], [w + a, 0.7, -s * 0.45, 0.4], E];
-      case 'teep':  return [G, [w, 0.3, s * 0.12, 0.65], [w + a * 0.7, 1.12, s * 0.05, 1.02], [w + a, 1.05, s * 0.05, 1.0], E];
-      case 'knee':  return [G, [w, 0.05, s * 0.12, 0.55], [w + a * 0.7, 0.6, s * 0.05, 1.05], [w + a, 0.5, s * 0.05, 1.1], E];
-    }
-  }
-
-  // tip position [fwd, side, height] at time t (seconds since the strike started), path stretched by tf
-  function strikeTip(st, t, tf, out) {
-    const p = st.path, u = t / (tf || 1);
-    out = out || [0, 0, 0];
-    let k = p[p.length - 1];
-    if (u <= p[0][0]) k = p[0];
-    else {
-      for (let i = 1; i < p.length; i++) {
-        const k1 = p[i];
-        if (u <= k1[0]) {
-          const k0 = p[i - 1], s = (u - k0[0]) / Math.max(1e-6, k1[0] - k0[0]);
-          out[0] = k0[1] + (k1[1] - k0[1]) * s; out[1] = k0[2] + (k1[2] - k0[2]) * s; out[2] = k0[3] + (k1[3] - k0[3]) * s;
-          return out;
-        }
-      }
-    }
-    out[0] = k[1]; out[1] = k[2]; out[2] = k[3];
-    return out;
-  }
-
-  const PART_R = { head: 0.15, body: 0.2, legs: 0.18 };
-  const STRIKES = {};
-  (function buildStrikes() {
-    for (const limb of LIMBS) {
-      const hand = limb === 'lh' || limb === 'rh';
-      const lead = limb === 'lh' || limb === 'll';
-      const s = lead ? 1 : -1;
-      for (const kind of (hand ? HAND_KINDS : LEG_KINDS)) {
-        const ks = KIND_STATS[kind], v = lead ? ks.lead : ks.rear;
-        const st = {
-          key: limb + '_' + kind, limb, kind, bit: LIMB_BIT[limb], name: ks.names[lead ? 0 : 1],
-          w: v[0], a: v[1], r: v[2], dmg: v[3], stam: v[4], part: ks.part, push: !!ks.push,
-          tip: hand ? 'hand' : kind === 'knee' ? 'knee' : 'foot',
-          pivot: hand ? [0, s * 0.23, 1.36] : [0, s * 0.12, 0.86],
-          reach: hand ? ARM_REACH : kind === 'knee' ? KNEE_REACH : LEG_REACH
-        };
-        st.path = hand ? handPath(limb, kind, st.w, st.a, st.r) : legPath(limb, kind, st.w, st.a, st.r);
-        // impact keyframe: furthest-forward keyframe inside the active window
-        let imp = null, best = -1e9, prev = null;
-        for (let i = 0; i < st.path.length; i++) {
-          const k = st.path[i];
-          if (k[0] >= st.w - 1e-6 && k[0] <= st.w + st.a + 1e-6 && k[1] > best) { best = k[1]; imp = k; prev = st.path[i - 1]; }
-        }
-        st.impactT = imp[0];
-        st.expExt = Math.hypot(imp[1] - st.pivot[0], imp[2] - st.pivot[1], imp[3] - st.pivot[2]);
-        const segV = Math.hypot(imp[1] - prev[1], imp[2] - prev[2], imp[3] - prev[3]) / Math.max(1e-6, imp[0] - prev[0]);
-        st.refSpeed = segV * 0.9;
-        // root-to-root distance at which a clean impact lands on the intended region of a square-on opponent
-        st.range = imp[1] + 0.06 + PART_R[st.part] + TIP_R[st.tip];
-        STRIKES[st.key] = st;
-      }
-    }
-    // ground strikes (top position): timed, always in range
-    const G = {
-      gpunch:  { w: 0.18, a: 0.05, r: 0.28, dmg: 1.6,  stam: 3,   part: 'head', names: ['left hand', 'right hand'] },
-      gelbow:  { w: 0.26, a: 0.05, r: 0.36, dmg: 2.7,  stam: 4.5, part: 'head', names: ['left elbow', 'right elbow'] },
-      ghammer: { w: 0.24, a: 0.05, r: 0.34, dmg: 2.3,  stam: 4,   part: 'head', names: ['left hammer fist', 'right hammer fist'] },
-      gbody:   { w: 0.20, a: 0.05, r: 0.30, dmg: 1.95, stam: 3,   part: 'body', names: ['left to the body', 'right to the body'] },
-      gknee:   { w: 0.22, a: 0.05, r: 0.32, dmg: 2.2,  stam: 3.5, part: 'body', names: ['left knee to the body', 'right knee to the body'] }
-    };
-    for (const kind in G) {
-      const g = G[kind];
-      const limbs = kind === 'gknee' ? ['ll', 'rl'] : ['lh', 'rh'];
-      limbs.forEach((limb, i) => {
-        STRIKES[limb + '_' + kind] = { key: limb + '_' + kind, limb, kind, bit: LIMB_BIT[limb], name: g.names[i], w: g.w, a: g.a, r: g.r, dmg: g.dmg, stam: g.stam, part: g.part, ground: true, range: 9 };
-      });
-    }
-  })();
+  // fix hook recover typo-proof
+  STRIKES.hook.r = 0.34;
 
   const SUBS = ['armbar', 'rear-naked choke', 'guillotine', 'kimura', 'triangle choke'];
 
@@ -207,40 +71,13 @@
   const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
   const lerp = (a, b, t) => a + (b - a) * t;
 
-  // closest points between segments P0-P1 and Q0-Q1 (Ericson, Real-Time Collision Detection).
-  // Returns [distance, s (param on P), t (param on Q)].
-  function segSegClosest(p0x, p0y, p0z, p1x, p1y, p1z, q0x, q0y, q0z, q1x, q1y, q1z) {
-    const d1x = p1x - p0x, d1y = p1y - p0y, d1z = p1z - p0z;
-    const d2x = q1x - q0x, d2y = q1y - q0y, d2z = q1z - q0z;
-    const rx = p0x - q0x, ry = p0y - q0y, rz = p0z - q0z;
-    const a = d1x * d1x + d1y * d1y + d1z * d1z, e = d2x * d2x + d2y * d2y + d2z * d2z, f = d2x * rx + d2y * ry + d2z * rz;
-    let s = 0, t = 0;
-    if (a <= 1e-9 && e <= 1e-9) { s = t = 0; }
-    else if (a <= 1e-9) { s = 0; t = clamp(f / e, 0, 1); }
-    else {
-      const c = d1x * rx + d1y * ry + d1z * rz;
-      if (e <= 1e-9) { t = 0; s = clamp(-c / a, 0, 1); }
-      else {
-        const b = d1x * d2x + d1y * d2y + d1z * d2z, denom = a * e - b * b;
-        s = denom !== 0 ? clamp((b * f - c * e) / denom, 0, 1) : 0;
-        t = (b * s + f) / e;
-        if (t < 0) { t = 0; s = clamp(-c / a, 0, 1); }
-        else if (t > 1) { t = 1; s = clamp((b - c) / a, 0, 1); }
-      }
-    }
-    const cx = p0x + d1x * s - (q0x + d2x * t), cy = p0y + d1y * s - (q0y + d2y * t), cz = p0z + d1z * s - (q0z + d2z * t);
-    return [Math.sqrt(cx * cx + cy * cy + cz * cz), s, t];
-  }
-
-  function makeFighter(idx, key, name, color, moveset) {
+  function makeFighter(idx, key, name, color) {
     const r = ROSTER[key] || ROSTER.balanced;
     return {
       idx, key: r.key, name: name || r.name, style: r.style,
       stats: Object.assign({}, r.stats),
       color: color != null ? color : r.color, skin: r.skin,
-      moveset: normalizeMoveset(moveset),
       x: idx === 0 ? -1.3 : 1.3, z: 0,
-      vx: 0, vz: 0,
       dmg: { head: 0, body: 0, legs: 0 },
       stam: 100,
       act: { type: 'idle', name: '', t: 0, dur: 0, hit: false },
@@ -256,7 +93,6 @@
       lastInput: 0
     };
   }
-  const idleAct = () => ({ type: 'idle', name: '', t: 0, dur: 0, hit: false });
 
   class Sim {
     constructor(opts) {
@@ -272,8 +108,8 @@
         clock: this.settings.roundLen,
         rounds: this.settings.rounds,
         roundLen: this.settings.roundLen,
-        f: [makeFighter(0, p[0].fighter || 'striker', p[0].name, p[0].color, p[0].moveset),
-            makeFighter(1, p[1].fighter || 'wrestler', p[1].name, p[1].color, p[1].moveset)],
+        f: [makeFighter(0, p[0].fighter || 'striker', p[0].name, p[0].color),
+            makeFighter(1, p[1].fighter || 'wrestler', p[1].name, p[1].color)],
         ground: null,             // { top, bottom, escape, sub, ctrlT, idleT }
         cards: [],                // per round [{p0, p1, j:[[10,9],[10,9],[10,9]]}]
         result: null,
@@ -292,6 +128,7 @@
     }
 
     step(dt) {
+      // fixed sub-steps
       // real-time accumulator: exactly 60 ticks per simulated second regardless of monitor refresh rate
       this.acc = (this.acc || 0) + Math.min(dt, 0.25);
       let n = 0;
@@ -333,8 +170,8 @@
       S.clock = this.settings.roundLen;
       S.phase = 'intro'; S.phaseT = 1.2;
       for (const f of S.f) {
-        f.x = f.idx === 0 ? -1.3 : 1.3; f.z = 0; f.vx = 0; f.vz = 0;
-        f.act = idleAct();
+        f.x = f.idx === 0 ? -1.3 : 1.3; f.z = 0;
+        f.act = { type: 'idle', name: '', t: 0, dur: 0, hit: false };
         f.rocked = 0; f.ground = null; f.blocking = false;
       }
       S.ground = null;
@@ -366,7 +203,7 @@
       } else {
         S.phase = 'break'; S.phaseT = 0; S.ground = null;
         for (const f of S.f) {
-          f.ground = null; f.act = idleAct();
+          f.ground = null; f.act = { type: 'idle', name: '', t: 0, dur: 0, hit: false };
           // corner recovery
           f.stam = clamp(f.stam + 45, 0, 100);
           f.dmg.head = Math.max(0, f.dmg.head - 10);
@@ -400,17 +237,9 @@
     _cooldown(dt) {
       for (const f of this.state.f) {
         if (f.act.type !== 'idle' && f.act.type !== 'down') {
-          f.act.t += dt; if (f.act.t >= f.act.dur) f.act = idleAct();
+          f.act.t += dt; if (f.act.t >= f.act.dur) f.act = { type: 'idle', name: '', t: 0, dur: 0, hit: false };
         }
       }
-    }
-
-    // unit vectors of f's frame: fwd towards o, left = fwd rotated 90°
-    _frame(f, o) {
-      const dx = o.x - f.x, dz = o.z - f.z;
-      const d = Math.hypot(dx, dz) || 0.001;
-      const fx = dx / d, fz = dz / d;
-      return { fx, fz, lx: -fz, lz: fx, d };
     }
 
     // ---------------------------------------------------------
@@ -446,21 +275,13 @@
         if (a.type === 'strike') {
           const st = STRIKES[a.name];
           const tf = a.tf;
-          if (st.ground) {
-            if (!a.hit && a.t >= st.w * tf) { a.hit = true; this._resolveGroundStrike(f, st); }
-          } else if (!a.hit && !S.ground) {
-            const t0 = st.w * tf * 0.45, t1 = (st.w + st.a) * tf;
-            if (a.t >= t0) {
-              this._traceStrike(f, st, dt);
-              if (!a.hit && a.t >= t1) { a.hit = true; this._whiff(f, st); }
-            }
-          }
-          if (a.t >= a.dur && f.act === a) f.act = idleAct();
+          if (!a.hit && a.t >= st.w * tf) { a.hit = true; this._resolveStrike(f, st); }
+          if (a.t >= a.dur) f.act = { type: 'idle', name: '', t: 0, dur: 0, hit: false };
         } else if (a.type === 'takedown') {
           if (!a.hit && a.t >= 0.32) { a.hit = true; this._resolveTakedown(f); }
-          if (a.t >= a.dur && f.act === a) f.act = idleAct();
+          if (a.t >= a.dur && f.act === a) f.act = { type: 'idle', name: '', t: 0, dur: 0, hit: false };
         } else if (a.t >= a.dur) {
-          f.act = idleAct();
+          f.act = { type: 'idle', name: '', t: 0, dur: 0, hit: false };
         }
       }
 
@@ -499,38 +320,33 @@
     _standTick(dt, dist, ux, uz) {
       const S = this.state, F = S.f;
       for (let i = 0; i < 2; i++) {
-        const f = F[i];
+        const f = F[i], o = F[1 - i];
         const inp = this.inputs[i];
         const held = inp.held, pressed = inp.pressed;
-        const striking = f.act.type === 'strike';
         const busy = f.act.type !== 'idle' && f.act.type !== 'move';
         const sign = i === 0 ? 1 : -1; // direction towards opponent along (ux,uz)
 
         // facing vector towards opponent
         const fx = ux * sign, fz = uz * sign;
-        // lateral (circle) vector = fighter's left
+        // lateral (circle) vector
         const lx = -fz, lz = fx;
 
         f.blocking = !busy && !!(held & IN.BLOCK) && f.rocked <= 0.4;
-        f.vx = 0; f.vz = 0;
 
-        // movement — allowed while striking at half speed, so you can step into (or away from) shots
-        if (!busy || striking) {
+        if (!busy) {
+          // movement
           let mx = 0, mz = 0;
-          const slow = (1 - f.dmg.legs / 140) * (f.rocked > 0 ? 0.45 : 1) * (0.7 + f.stam / 330) * (f.blocking ? 0.6 : 1) * (striking ? 0.5 : 1);
+          const slow = (1 - f.dmg.legs / 140) * (f.rocked > 0 ? 0.45 : 1) * (0.7 + f.stam / 330) * (f.blocking ? 0.6 : 1);
           const spd = (1.9 + f.stats.spd * 1.0) * slow;
           if (held & IN.FWD) { mx += fx; mz += fz; }
           if (held & IN.BACK) { mx -= fx * 0.8; mz -= fz * 0.8; }
           if (held & IN.LEFT) { mx += lx * 0.85; mz += lz * 0.85; }
           if (held & IN.RIGHT) { mx -= lx * 0.85; mz -= lz * 0.85; }
           if (mx || mz) {
-            f.vx = mx * spd; f.vz = mz * spd;
-            f.x += f.vx * dt; f.z += f.vz * dt;
-            if (!busy) f.act = { type: 'move', name: '', t: 0, dur: 0, hit: false };
-          } else if (f.act.type === 'move') f.act = idleAct();
-        }
+            f.x += mx * spd * dt; f.z += mz * spd * dt;
+            f.act = { type: 'move', name: '', t: 0, dur: 0, hit: false };
+          } else if (f.act.type === 'move') f.act = { type: 'idle', name: '', t: 0, dur: 0, hit: false };
 
-        if (!busy) {
           // actions (press-triggered)
           if (pressed & IN.DODGE && f.stam > 6 && f.rocked <= 0) {
             f.stam -= 5;
@@ -543,8 +359,14 @@
               f.blocking = false;
               this._emit({ k: 'shoot', i });
             }
-          } else if (pressed & LIMB_BITS) {
-            const key = this._pickStrikeKey(f, pressed, held, false);
+          } else if (pressed & STRIKE_BITS) {
+            let key = null;
+            if (pressed & IN.JAB) key = 'jab';
+            else if (pressed & IN.CROSS) key = 'cross';
+            else if (pressed & IN.HOOK) key = 'hook';
+            else if (pressed & IN.HKICK) key = 'hkick';
+            else if (pressed & IN.BKICK) key = dist < 1.1 ? 'knee' : 'bkick';
+            else if (pressed & IN.LKICK) key = 'lkick';
             if (key) this._startStrike(f, key);
           }
         }
@@ -562,195 +384,86 @@
       }
     }
 
-    // limb pressed + modifier held -> strike key, via the fighter's moveset
-    _pickStrikeKey(f, pressed, held, ground) {
-      let limb = null;
-      for (const l of LIMBS) if (pressed & LIMB_BIT[l]) { limb = l; break; }
-      if (!limb) return null;
-      const mod = modOf(held);
-      if (ground) {
-        const hand = limb === 'lh' || limb === 'rh';
-        const kind = !hand ? 'gknee' : mod === 'mod1' ? 'gelbow' : mod === 'mod2' ? 'ghammer' : mod === 'mod3' ? 'gbody' : 'gpunch';
-        return limb + '_' + kind;
-      }
-      const kind = f.moveset[mod][limb];
-      const key = limb + '_' + kind;
-      return STRIKES[key] ? key : limb + '_' + DEFAULT_MOVESET[mod][limb];
-    }
-
     _startStrike(f, key) {
       const st = STRIKES[key];
       if (f.stam < 3) return;
       const tf = (1.15 - f.stats.spd * 0.3) * (1 + (1 - f.stam / 100) * 0.4) * (f.rocked > 0 ? 1.3 : 1);
       f.stam = Math.max(0, f.stam - st.stam * (f.stam < 25 ? 0.6 : 1));
-      f.act = { type: 'strike', name: key, t: 0, dur: (st.w + st.a + st.r) * tf, tf, hit: false, tip: null, tipT: null, slipped: false };
+      f.act = { type: 'strike', name: key, t: 0, dur: (st.w + st.a + st.r) * tf, tf, hit: false };
       f.blocking = false;
       f.rs.thrown++;
     }
 
-    // opponent hitboxes in world space, as capsules {part, a:[x,y,z], b:[x,y,z], r}
-    _hitboxes(o, f) {
-      const fr = this._frame(o, f); // o's frame, facing f
-      const W = (p) => [o.x + fr.fx * p[0] + fr.lx * p[1], p[2], o.z + fr.fz * p[0] + fr.lz * p[1]];
-      let head = [0.06, 0, 1.52], torsoA = [0.0, 0, 0.95], torsoB = [0.03, 0, 1.2];
-      const a = o.act;
-      if (a.type === 'dodge' && a.t < 0.32) { head = [-0.08, 0.34, 1.36]; torsoB = [-0.02, 0.12, 1.16]; }
-      else if (a.type === 'hit') {
-        if (a.name === 'head') head = [-0.14, 0, 1.5];
-        else if (a.name === 'body') { head = [0.2, 0, 1.3]; torsoB = [0.15, 0, 1.12]; }
-        else head = [0.06, 0.1, 1.42];
-      } else if (a.type === 'stumble' || a.type === 'takedown') { head = [0.32, 0, 1.2]; torsoB = [0.25, 0, 1.1]; }
-      else if (o.blocking) head = [0.0, 0, 1.46];
-      if (o.rocked > 0 && a.type !== 'hit') head[2] -= 0.05;
-      const hw = W(head);
-      return [
-        { part: 'head', a: hw, b: hw, r: PART_R.head },
-        { part: 'body', a: W(torsoA), b: W(torsoB), r: PART_R.body },
-        { part: 'legs', a: W([0, 0, 0.1]), b: W([0, 0, 0.82]), r: PART_R.legs }
-      ];
-    }
-
-    // sweep the striking tip against the opponent this tick. The sweep is split at the path's
-    // keyframes so the limb's peak extension is never skipped between two 60 Hz samples.
-    _traceStrike(f, st, dt) {
-      const S = this.state, o = S.f[1 - f.idx], a = f.act;
-      const fr = this._frame(f, o);
-      const world = (t, out) => {
-        const tip = strikeTip(st, t, a.tf, out);
-        const fwd = tip[0], side = tip[1];
-        tip[0] = f.x + fr.fx * fwd + fr.lx * side; tip[1] = tip[2]; tip[2] = f.z + fr.fz * fwd + fr.lz * side;
-        return tip;
-      };
-      const tNow = a.t, tPrev = a.tipT;
-      a.tipT = tNow;
-      if (tPrev == null) { a.tip = world(tNow); return; }
-      if (o.act.type === 'dodge' && o.act.t < 0.32) a.slipped = true;
-      if (o.act.type === 'down') return;
-      // sample times: previous tick, any keyframe crossed since, this tick
-      const times = [tPrev];
-      for (const k of st.path) { const kt = k[0] * a.tf; if (kt > tPrev && kt < tNow) times.push(kt); }
-      times.push(tNow);
-      const hb = this._hitboxes(o, f);
-      const tipR = TIP_R[st.tip];
-      let prev = a.tip, cur = null, best = null, bestR = null, segDt = dt; // a.tip = last tick's world position, so the attacker's own motion counts
-      for (let i = 1; i < times.length && !best; i++) {
-        cur = world(times[i]);
-        let bestD = 1e9;
-        for (const h of hb) {
-          const r = segSegClosest(prev[0], prev[1], prev[2], cur[0], cur[1], cur[2], h.a[0], h.a[1], h.a[2], h.b[0], h.b[1], h.b[2]);
-          if (r[0] > tipR + h.r) continue;
-          const score = r[0] - (h.part === st.part ? 0.1 : 0); // prefer the region the strike is aimed at when boxes overlap
-          if (score < bestD) { best = h; bestR = r; bestD = score; }
-        }
-        segDt = Math.max(1e-4, times[i] - times[i - 1]);
-        if (!best) prev = cur;
-      }
-      if (!best) { a.tip = cur; return; }
-      a.tip = world(tNow);
-      a.hit = true;
-      // entry point: back up from the closest approach along the sweep until the tip just touches the box
-      const dx = cur[0] - prev[0], dy = cur[1] - prev[1], dz = cur[2] - prev[2];
-      const len = Math.hypot(dx, dy, dz) || 1e-6, R = tipR + best.r;
-      const back = Math.sqrt(Math.max(0, R * R - bestR[0] * bestR[0])) / len;
-      const sE = clamp(bestR[1] - back, 0, 1);
-      const wx = prev[0] + dx * sE, wy = prev[1] + dy * sE, wz = prev[2] + dz * sE;
-      // closing speed between the tip and the target along the line of impact
-      const vtx = dx / segDt, vty = dy / segDt, vtz = dz / segDt;
-      const ax = best.b[0] - best.a[0], ay = best.b[1] - best.a[1], az = best.b[2] - best.a[2];
-      const al = ax * ax + ay * ay + az * az;
-      const tq = al > 1e-9 ? clamp(((wx - best.a[0]) * ax + (wy - best.a[1]) * ay + (wz - best.a[2]) * az) / al, 0, 1) : 0;
-      let nx = best.a[0] + ax * tq - wx, ny = best.a[1] + ay * tq - wy, nz = best.a[2] + az * tq - wz;
-      const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
-      const impact = (vtx - o.vx) * nx + vty * ny + (vtz - o.vz) * nz;
-      const speedF = clamp(impact * a.tf / st.refSpeed, 0, 1.6); // ref is at tempo 1: a fighter's own speed is already in the stamina/speed factors
-      // extension: how far the limb got from its pivot compared to a clean impact (jammed strikes land short)
-      const pv = st.pivot;
-      const px = f.x + fr.fx * pv[0] + fr.lx * pv[1], pz = f.z + fr.fz * pv[0] + fr.lz * pv[1];
-      const ext = Math.hypot(wx - px, wy - pv[2], wz - pz) / st.expExt;
-      const jamF = ext < 0.7 ? Math.pow(clamp(ext / 0.7, 0, 1), 2.5) : 1;
-      this._landStrike(f, o, st, best.part, speedF, jamF, [wx, wy, wz], fr);
-    }
-
-    _whiff(f, st) {
-      const o = this.state.f[1 - f.idx];
-      if (f.act.slipped) {
+    _resolveStrike(f, st) {
+      const S = this.state, o = S.f[1 - f.idx];
+      const dx = o.x - f.x, dz = o.z - f.z;
+      const dist = Math.hypot(dx, dz);
+      const onGround = !!st.ground;
+      if (!onGround && dist > st.range + 0.08) { this._emit({ k: 'miss', i: f.idx, name: st.name, whiff: true }); return; }
+      // dodge?
+      if (o.act.type === 'dodge' && o.act.t < 0.32) {
         this._emit({ k: 'miss', i: f.idx, j: o.idx, name: st.name, slipped: true });
         f.act.dur *= 1.35; // over-committed
-      } else this._emit({ k: 'miss', i: f.idx, name: st.name, whiff: true });
-    }
-
-    _landStrike(f, o, st, part, speedF, jamF, at, fr) {
+        return;
+      }
+      // counter?
       const counter = o.act.type === 'strike' && !o.act.hit;
-      const phys = clamp(0.2 + 0.8 * speedF, 0.2, 1.45) * jamF;
-      let dmg = st.dmg * (0.7 + f.stats.pow * 0.6) * (0.8 + 0.2 * f.stam / 100) * lerp(0.88, 1.12, this.rand()) * phys;
+      // damage
+      let dmg = st.dmg * (0.7 + f.stats.pow * 0.6) * (0.6 + 0.4 * f.stam / 100) * lerp(0.85, 1.15, this.rand());
       if (counter) dmg *= 1.35;
       if (o.rocked > 0) dmg *= 1.25;
       if (f.rocked > 0) dmg *= 0.7;
+      if (onGround && st.part === 'head' && f.dmg.head > 0) dmg *= 1; // placeholder parity
       let blocked = false;
       if (o.blocking) {
         blocked = true;
-        if (part === 'legs') dmg *= 0.45; else dmg *= 0.15;
+        if (st.part === 'legs') dmg *= 0.45; else dmg *= 0.15;
         o.stam = Math.max(0, o.stam - st.dmg * 0.35);
+      } else if (onGround && (this.inputs[o.idx].held & IN.BLOCK)) {
+        blocked = true; dmg *= 0.3; o.stam = Math.max(0, o.stam - 1.5);
       }
-      o.dmg[part] = clamp(o.dmg[part] + dmg, 0, 100);
+      o.dmg[st.part] = clamp(o.dmg[st.part] + dmg, 0, 100);
       f.rs.landed++;
       f.rs.sig += dmg;
       if (blocked) {
-        this._emit({ k: 'block', i: f.idx, j: o.idx, name: st.name, part, at });
-        if (st.push) { o.x += fr.fx * 0.2; o.z += fr.fz * 0.2; }
+        this._emit({ k: 'block', i: f.idx, j: o.idx, name: st.name, part: st.part });
         return;
       }
       // hit reaction
       const stun = 0.2 + dmg * 0.025;
-      o.act = { type: 'hit', name: part, t: 0, dur: stun, hit: false };
-      o.blocking = false;
-      // pushback (teeps shove hard)
-      const pb = st.push ? Math.min(0.6, 0.25 + dmg * 0.05) : Math.min(0.35, dmg * 0.04);
-      o.x += fr.fx * pb; o.z += fr.fz * pb;
-      const ev = this._emit({ k: 'hit', i: f.idx, j: o.idx, name: st.name, kind: st.kind, part, intended: st.part, dmg: Math.round(dmg * 10) / 10, counter, big: dmg >= 3.6,
-        phys: Math.round(phys * 100) / 100, jammed: jamF < 0.7, momentum: speedF > 1.15 && jamF >= 0.7, at });
-      this._afterHit(f, o, part, dmg, ev, false);
-    }
-
-    _afterHit(f, o, part, dmg, ev, onGround) {
+      if (!onGround) {
+        o.act = { type: 'hit', name: st.part, t: 0, dur: stun, hit: false };
+        o.blocking = false;
+        // pushback
+        const d = dist || 0.001;
+        const pb = Math.min(0.35, dmg * 0.04);
+        o.x += dx / d * pb; o.z += dz / d * pb;
+      } else {
+        o.act = { type: 'hit', name: st.part, t: 0, dur: stun * 0.8, hit: false };
+        S.ground.idleT = 0;
+        S.ground.escape = clamp(S.ground.escape + 4, 0, 100);
+      }
+      const ev = this._emit({ k: 'hit', i: f.idx, j: o.idx, name: st.name, part: st.part, dmg: Math.round(dmg * 10) / 10, counter, big: dmg >= 3.6 });
       // rocked / knockdown
-      if (part === 'head') {
+      if (st.part === 'head') {
         const thr = (4.6 + o.stats.chin * 4.6) * (1 - o.dmg.head / 170);
         if (o.rocked > 0 && dmg >= 2.8 && !onGround) {
           this._knockdown(f, o);
         } else if (dmg >= thr) {
+          if (o.rocked > 0 && onGround) { /* already down, keep rocked */ }
           o.rocked = Math.max(o.rocked, 2.2 + dmg * 0.06);
           o.wobble = 1;
           ev.rocked = true;
           this._emit({ k: 'rocked', i: f.idx, j: o.idx });
           if (!onGround && dmg >= thr * 1.6) this._knockdown(f, o);
         }
-      } else if (part === 'body' && dmg >= 3.6 && this.rand() < 0.35) {
+      } else if (st.part === 'body' && dmg >= 3.6 && this.rand() < 0.35) {
         o.stam = Math.max(0, o.stam - 12);
         ev.winded = true;
-      } else if (part === 'legs' && o.dmg.legs > 65 && dmg >= 3 && this.rand() < 0.4 && !onGround) {
+      } else if (st.part === 'legs' && o.dmg.legs > 65 && dmg >= 3 && this.rand() < 0.4 && !onGround) {
         o.act = { type: 'stumble', name: 'legs', t: 0, dur: 0.9, hit: false };
         ev.buckled = true;
       }
-    }
-
-    _resolveGroundStrike(f, st) {
-      const S = this.state, o = S.f[1 - f.idx];
-      if (!S.ground) return;
-      let dmg = st.dmg * (0.7 + f.stats.pow * 0.6) * (0.6 + 0.4 * f.stam / 100) * lerp(0.85, 1.15, this.rand());
-      if (o.rocked > 0) dmg *= 1.25;
-      if (f.rocked > 0) dmg *= 0.7;
-      let blocked = false;
-      if (this.inputs[o.idx].held & IN.BLOCK) { blocked = true; dmg *= 0.3; o.stam = Math.max(0, o.stam - 1.5); }
-      o.dmg[st.part] = clamp(o.dmg[st.part] + dmg, 0, 100);
-      f.rs.landed++; f.rs.sig += dmg;
-      if (blocked) { this._emit({ k: 'block', i: f.idx, j: o.idx, name: st.name, part: st.part }); return; }
-      const stun = 0.2 + dmg * 0.025;
-      o.act = { type: 'hit', name: st.part, t: 0, dur: stun * 0.8, hit: false };
-      S.ground.idleT = 0;
-      S.ground.escape = clamp(S.ground.escape + 4, 0, 100);
-      const ev = this._emit({ k: 'hit', i: f.idx, j: o.idx, name: st.name, kind: st.kind, part: st.part, intended: st.part, dmg: Math.round(dmg * 10) / 10, counter: false, big: dmg >= 3.6, ground: true });
-      this._afterHit(f, o, st.part, dmg, ev, true);
     }
 
     _knockdown(att, vic) {
@@ -799,10 +512,9 @@
       const r = Math.hypot(mx, mz), lim = CAGE_R - 0.9;
       const cx = r > lim ? mx * lim / r : mx, cz = r > lim ? mz * lim / r : mz;
       top.x = cx; top.z = cz; bottom.x = cx; bottom.z = cz;
-      top.vx = top.vz = bottom.vx = bottom.vz = 0;
       top.ground = 'top'; bottom.ground = 'bottom';
       top.blocking = false; bottom.blocking = false;
-      top.act = idleAct();
+      top.act = { type: 'idle', name: '', t: 0, dur: 0, hit: false };
       bottom.act = { type: 'hit', name: 'head', t: 0, dur: how === 'kd' ? 0.8 : 0.5, hit: false };
       S.ground = { top: top.idx, bottom: bottom.idx, escape: how === 'kd' ? 10 : 0, sub: null, ctrlT: 0, idleT: 0 };
     }
@@ -811,8 +523,8 @@
       const S = this.state; if (!S.ground) return;
       const top = S.f[S.ground.top], bot = S.f[S.ground.bottom];
       top.ground = null; bot.ground = null;
-      top.act = idleAct();
-      bot.act = idleAct();
+      top.act = { type: 'idle', name: '', t: 0, dur: 0, hit: false };
+      bot.act = { type: 'idle', name: '', t: 0, dur: 0, hit: false };
       // separate
       const ang = this.rand() * Math.PI * 2;
       bot.x = clamp(bot.x + Math.cos(ang) * 0.9, -CAGE_R, CAGE_R); bot.z = clamp(bot.z + Math.sin(ang) * 0.9, -CAGE_R, CAGE_R);
@@ -878,7 +590,7 @@
         if (broken) {
           G.sub = null; G.escape = clamp(G.escape + 40, 0, 100);
           top.stam = Math.max(0, top.stam - 14);
-          top.act = idleAct();
+          top.act = { type: 'idle', name: '', t: 0, dur: 0, hit: false };
           this._emit({ k: 'subfail', i: top.idx, j: bot.idx, name: sub.name });
         }
         return;
@@ -900,8 +612,12 @@
           top.act = { type: 'sub', name, t: 0, dur: 99, hit: false };
           this._emit({ k: 'sub', i: top.idx, j: bot.idx, name });
           return;
-        } else if (ti.pressed & LIMB_BITS && !(ti.held & IN.BLOCK)) {
-          const key = this._pickStrikeKey(top, ti.pressed, ti.held, true);
+        } else if (ti.pressed & STRIKE_BITS && !(ti.held & IN.BLOCK)) {
+          let key = null;
+          if (ti.pressed & IN.JAB) key = 'gnp1';
+          else if (ti.pressed & IN.CROSS) key = 'gnp2';
+          else if (ti.pressed & IN.HOOK) key = 'gnp3';
+          else if (ti.pressed & (IN.BKICK | IN.LKICK | IN.HKICK)) key = 'gbody';
           if (key) { this._startStrike(top, key); G.idleT = 0; }
         }
       }
@@ -924,7 +640,7 @@
             top.ground = 'bottom'; bot.ground = 'top';
             G.top = bot.idx; G.bottom = top.idx; G.escape = 0;
             top.act = { type: 'hit', name: 'body', t: 0, dur: 0.6, hit: false };
-            bot.act = idleAct();
+            bot.act = { type: 'idle', name: '', t: 0, dur: 0, hit: false };
             bot.rs.td++; // reversal counts like a takedown
             this._emit({ k: 'sweep', i: bot.idx, j: top.idx });
             return;
@@ -964,15 +680,12 @@
       case 'bell': return ev.end ? 'End of round ' + ev.round + '.' : 'Round ' + ev.round + ' — FIGHT!';
       case 'round': return 'Round ' + ev.round + ' coming up.';
       case 'hit': {
-        const where = ev.part && ev.intended && ev.part !== ev.intended ? ' to the ' + (ev.part === 'legs' ? 'leg' : ev.part) : '';
-        if (ev.rocked) return n(ev.i) + ' ROCKS ' + n(ev.j) + ' with a ' + ev.name + where + '!';
-        if (ev.counter) return 'Counter ' + ev.name + where + ' by ' + n(ev.i) + '!';
+        if (ev.rocked) return n(ev.i) + ' ROCKS ' + n(ev.j) + ' with a ' + ev.name + '!';
+        if (ev.counter) return 'Counter ' + ev.name + ' by ' + n(ev.i) + '!';
         if (ev.buckled) return n(ev.j) + "'s leg buckles from that " + ev.name + '!';
         if (ev.winded) return 'That ' + ev.name + ' takes the wind out of ' + n(ev.j) + '.';
-        if (ev.momentum) return n(ev.j) + ' walks into a ' + ev.name + where + '!';
-        if (ev.big) return n(ev.i) + ' lands a heavy ' + ev.name + where + '.';
-        if (ev.jammed) return n(ev.i) + "'s " + ev.name + ' is smothered' + where + ' — no room on it.';
-        return n(ev.i) + ' lands a ' + ev.name + where + '.';
+        if (ev.big) return n(ev.i) + ' lands a heavy ' + ev.name + '.';
+        return n(ev.i) + ' lands a ' + ev.name + '.';
       }
       case 'block': return n(ev.j) + ' blocks the ' + ev.name + '.';
       case 'miss': return ev.slipped ? n(ev.j) + ' slips the ' + ev.name + '.' : n(ev.i) + ' misses with the ' + ev.name + '.';
@@ -994,8 +707,7 @@
     return null;
   }
 
-  const API = { IN, STRIKES, ROSTER, SUBS, Sim, describe, CAGE_R, DT,
-    LIMBS, LIMB_BIT, LIMB_NAME, MODS, MOD_BIT, HAND_KINDS, LEG_KINDS, KIND_LABEL, KIND_STATS, DEFAULT_MOVESET, normalizeMoveset, modOf, strikeTip, TIP_R };
+  const API = { IN, STRIKES, ROSTER, SUBS, Sim, describe, CAGE_R, DT };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   root.MMASim = API;
 })(typeof window !== 'undefined' ? window : globalThis);

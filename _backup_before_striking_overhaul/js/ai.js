@@ -1,7 +1,7 @@
 /* CPU opponent for practice mode. Produces {held, pressed} input masks from sim state. */
 (function (root) {
   'use strict';
-  const { IN, STRIKES, MODS, LIMBS, LIMB_BIT, MOD_BIT, DEFAULT_MOVESET } = root.MMASim;
+  const IN = root.MMASim.IN;
 
   class CpuBrain {
     constructor(idx, difficulty) {
@@ -13,11 +13,6 @@
       this.lateral = 0;
       this.latT = 0;
       this.rng = Math.random;
-      this.moveset = DEFAULT_MOVESET;
-      this.modHeld = 0;      // modifier to keep held for the strike we just pressed
-      this.modT = 0;
-      this.rangeMode = 'kick'; // 'punch' = get in the pocket, 'kick' = fight at leg range
-      this.rangeT = 0;
     }
 
     update(S, dt) {
@@ -37,14 +32,7 @@
 
       const dist = Math.hypot(op.x - me.x, op.z - me.z);
       const st = me.stats;
-      // alternate between kicking range and the pocket; wrestlers and grapplers like it close
-      this.rangeT -= dt;
-      if (this.rangeT <= 0) {
-        const closeBias = st.wre > 0.75 ? 0.7 : st.bjj > 0.8 ? 0.6 : 0.45;
-        this.rangeMode = r() < closeBias ? 'punch' : 'kick';
-        this.rangeT = 1.2 + r() * 2.2;
-      }
-      const desired = this.rangeMode === 'punch' ? 0.92 + r() * 0.08 : 1.26 + r() * 0.08;
+      const desired = st.wre > 0.75 ? 1.05 : st.bjj > 0.8 ? 1.15 : 1.3;
       let held = 0;
 
       // reactions (continuous)
@@ -70,8 +58,8 @@
 
       // positioning
       if (this.latT <= 0) { this.lateral = r() < 0.4 ? 0 : (r() < 0.5 ? IN.LEFT : IN.RIGHT); this.latT = 0.6 + r() * 1.2; }
-      if (dist > desired + 0.1) held |= IN.FWD;
-      else if (dist < desired - 0.34 && !(st.wre > 0.75)) held |= IN.BACK;
+      if (dist > desired + 0.25) held |= IN.FWD;
+      else if (dist < desired - 0.35 && !(st.wre > 0.75)) held |= IN.BACK;
       if (tired && dist < 1.6 && r() < 0.5) held |= IN.BACK;
       if (!(held & IN.BLOCK) || r() < 0.3) held |= this.lateral;
 
@@ -85,46 +73,27 @@
           if (dist <= 1.5 && me.stam > 20 && r() < tdWant * (0.4 + d * 0.6)) {
             this.pressed |= IN.GRAPPLE;
           } else {
-            const pick = this._pickStrike(me, op, dist);
-            if (pick) { this.pressed |= pick.limb; this.modHeld = pick.mod; this.modT = 0.12; }
+            this.pressed |= this._pickStrike(me, op, dist);
           }
         }
       }
-      // keep the chosen modifier held for a few frames so the sim reads limb + modifier together
-      this.modT -= dt;
-      if (this.modT > 0) held |= this.modHeld;
       this.held = held;
       return { held, pressed: this.pressed };
     }
 
-    // choose a strike by how well the opponent sits in its contact window, then find the
-    // limb + modifier that throws it from this fighter's moveset
     _pickStrike(me, op, dist) {
       const r = this.rng, st = me.stats;
-      const rocked = op.rocked > 0;
       const w = [];
-      for (const mod of MODS) for (const limb of LIMBS) {
-        const kind = this.moveset[mod][limb];
-        const strike = STRIKES[limb + '_' + kind];
-        if (!strike) continue;
-        const sweet = strike.range - 0.12;           // contact distance for a full-extension hit
-        const win = strike.part === 'head' && (kind === 'hook' || kind === 'uppercut') ? 0.2 : 0.32;
-        const off = dist - sweet;
-        if (off > -0.03 || off < -win) continue;     // out of reach (needs a little margin) or too close (it'd get smothered)
-        const fit = 1 - Math.abs(off + 0.1) / win;
-        let wt = 8 + fit * 24;
-        const lead = limb === 'lh' || limb === 'll';
-        if (lead) wt *= 1.25;                                  // quicker, safer
-        if (strike.part === 'head') { wt += st.pow * 10 + (rocked ? 25 : 0); }
-        if (kind === 'straight') wt += 10;
-        if (kind === 'hkick') wt += (rocked ? 12 : 0) + (op.stam < 30 ? 5 : 0) - 6 + st.pow * 8;
-        if (kind === 'lkick') wt += 6 + (op.dmg.legs > 40 ? 10 : 0);
-        if (kind === 'bkick' || kind === 'teep') wt += (op.stam < 40 ? 6 : 0);
-        if (kind === 'knee' || kind === 'uppercut') wt += 2;
-        if (strike.stam > me.stam * 0.6) wt *= 0.3;
-        w.push([{ limb: LIMB_BIT[limb], mod: MOD_BIT[mod] }, wt]);
-      }
-      if (!w.length) return null;
+      const push = (bit, wt) => { if (wt > 0) w.push([bit, wt]); };
+      const rocked = op.rocked > 0;
+      if (dist <= 1.35) push(IN.JAB, rocked ? 8 : 30);
+      if (dist <= 1.4) push(IN.CROSS, 18 + st.pow * 15 + (rocked ? 25 : 0));
+      if (dist <= 1.18) push(IN.HOOK, 10 + st.pow * 15 + (rocked ? 25 : 0));
+      if (dist <= 1.5) push(IN.LKICK, 12 + (op.dmg.legs > 40 ? 10 : 0));
+      if (dist <= 1.6) push(IN.BKICK, 9 + (op.stam < 40 ? 6 : 0));
+      if (dist <= 1.7) push(IN.HKICK, 3 + st.pow * 6 + (rocked ? 12 : 0) + (op.stam < 30 ? 5 : 0));
+      if (dist <= 1.1) push(IN.BKICK, 10); // knee
+      if (!w.length) return 0;
       let tot = 0; for (const x of w) tot += x[1];
       let k = r() * tot;
       for (const x of w) { k -= x[1]; if (k <= 0) return x[0]; }
@@ -143,10 +112,7 @@
         else if (r() < 0.75 && me.stam > 10) {
           held &= ~IN.BLOCK;
           const k = r();
-          if (k < 0.5) this.pressed |= (r() < 0.5 ? IN.LHAND : IN.RHAND);                       // punches
-          else if (k < 0.7) { this.pressed |= IN.RHAND; held |= IN.MOD1; }                        // elbow
-          else if (k < 0.85) { this.pressed |= (r() < 0.5 ? IN.LHAND : IN.RHAND); held |= IN.MOD2; } // hammer fist
-          else this.pressed |= (r() < 0.5 ? IN.LLEG : IN.RLEG);                                   // knee to the body
+          this.pressed |= k < 0.45 ? IN.JAB : k < 0.7 ? IN.CROSS : k < 0.85 ? IN.HOOK : IN.BKICK;
         }
       }
       this.held = held;

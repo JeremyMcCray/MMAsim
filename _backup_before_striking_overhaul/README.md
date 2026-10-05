@@ -32,26 +32,20 @@ have the other player host. To use your own PeerJS server, set
 
 ## Controls (keyboard)
 
-Every key can be rebound and every strike remapped from **OPTIONS** (main menu,
-lobby, or **Esc** during a fight — practice pauses). Settings are saved in the
-browser. Defaults:
-
 | Key | Standing | On top (ground) | On bottom (ground) |
 |---|---|---|---|
-| **W / S** | close distance / back off (works mid‑strike at half speed) | — | mash to escape |
+| **W / S** | close distance / back off | — | mash to escape |
 | **A / D** | circle left / right | — | mash to escape |
-| **U** | left hand | left hand punch | — |
-| **I** | right hand | right hand punch | — |
-| **J** | left leg | left knee to the body | — |
-| **K** | right leg | right knee to the body | — |
-| **Q** (hold) | hands → hooks, legs → body kicks | hands → elbows | — |
-| **E** (hold) | hands → straights, legs → head kicks | hands → hammer fists | — |
-| **R** (hold) | hands → overhands, legs → low kicks | hands → body shots | — |
-| *(no modifier)* | hands → uppercuts, lead leg → teep, rear leg → knee | | |
+| **J** | jab | ground punch | — |
+| **K** | cross | hammer fist | — |
+| **U** | hook | elbow | — |
+| **I** | head kick | body shot | — |
+| **O** | body kick (knee when close) | body shot | — |
+| **P** | low kick | body shot | — |
 | **L** (hold) | block / sprawl vs takedowns | posture up (kills escape progress) | cover up vs strikes |
 | **Space** | takedown | submission attempt | sweep / reversal |
 | **Shift** | slip (dodge) | stand up and let them up | — |
-| **Esc** / **H** / **M** | options / hide controls / mute | | |
+| **H** / **M** | hide controls / mute | | |
 
 Movement is relative to your opponent (W always moves toward them), so it
 works from any camera angle.
@@ -65,23 +59,10 @@ works from any camera angle.
   leg and can also end the fight.
 * **Stamina** governs strike speed, power, movement and grappling. Cardio
   stat sets regen. Blocking regenerates slowly, moving less.
-* **Striking is physical.** Each strike is a limb (U/I/J/K) plus a kind
-  chosen by the modifier you hold. The simulation traces the fist, foot or
-  knee along an authored path and only registers a hit when it actually
-  reaches the head, torso or legs — the 3D limb follows the same path, so
-  what you see is what lands. Damage scales with the **closing speed**
-  between the limb and the target: step or circle into a hook or a head
-  kick and it hits harder; back away from a punch and it lands soft or
-  misses. A strike that makes contact before the limb extends (throwing a
-  long shot from the clinch) is **smothered** and does a fraction of its
-  damage. Short weapons (uppercuts, hooks, knees) are for the pocket;
-  straights, teeps and kicks need room. A kick aimed at the head can
-  still catch the body if that is what is in the way.
-* Landing on an opponent mid‑windup is a **counter** (+35 %). Slipping
-  (Shift) moves your head off line: head shots whiff and the attacker
-  over‑commits, but body and leg strikes still land. Blocks absorb 85 %
-  (45 % vs low kicks) and cost the blocker stamina. Teeps shove the
-  opponent back.
+* **Striking** — windup / active / recovery frames. Landing on an opponent
+  mid‑windup is a **counter** (+35 %). Slipping (Shift) avoids a strike and
+  makes the attacker over‑commit. Blocks absorb 85 % (45 % vs low kicks)
+  and cost the blocker stamina.
 * **Wrestling** — takedown success depends on both wrestling stats,
   whether the defender is sprawling (holding block), caught mid‑strike,
   rocked or tired. Failed shots leave you stumbling.
@@ -108,6 +89,4 @@ js/audio.js       WebAudio sound effects
 js/main.js        menus, lobby, input, game loop, HUD
 ```
 
-Tuning lives at the top of `js/sim.js` (`ROSTER` stats, `KIND_STATS` timings and
-damage, `handPath` / `legPath` limb trajectories, `DEFAULT_MOVESET`). Strike
-body poses live in `STRIKE_POSES` in `js/render.js`.
+Tuning lives at the top of `js/sim.js` (`ROSTER` stats, `STRIKES` table).

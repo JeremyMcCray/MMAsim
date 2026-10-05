@@ -5,7 +5,7 @@
    ============================================================ */
 (function (root) {
   'use strict';
-  const { STRIKES, strikeTip, IN } = root.MMASim;
+  const STRIKES = root.MMASim.STRIKES;
   const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
   const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
   const smooth = t => t * t * (3 - 2 * t);
@@ -49,56 +49,31 @@
     topSub: P({ h: 0.38, lean: 1.15, yaw: 0.3, lh: [-0.1, -0.2, 0.55], rh: [0.2, -0.15, 0.5], lf: [-0.3, -0.5], rf: [0.3, -0.45], hp: 0.1, hy: 0.3 }),
     topHit: P({ h: 0.5, lean: -0.1, yaw: 0.2, lh: [-0.3, 0.3, 0.3], rh: [0.3, 0.3, 0.3], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: -0.3 })
   };
-  // strike keyframes per strike kind: [windup, hit], authored for the RIGHT limb (rear side, orthodox).
-  // Left-limb strikes use mirrored copies (upper body only for punches, so the stance stays orthodox).
-  // The striking limb's own target is overridden every frame by the simulation's tip path (see update()).
+  // strike keyframes: [windup, hit]
   const STRIKE_POSES = {
-    straight: [P({ yaw: 0.5, lean: 0.05, lh: [-0.14, 0.44, 0.3], rh: [0.26, 0.36, 0.0] }),
-               P({ yaw: -0.55, lean: 0.25, lh: [-0.22, 0.45, 0.25], rh: [-0.05, 0.48, 0.92], oz: 0.12, hp: 0.1 })],
+    jab: [P({ yaw: 0.35, lh: [-0.2, 0.42, 0.25], rh: [0.16, 0.4, 0.2] }),
+          P({ yaw: 0.55, lean: 0.15, lh: [-0.02, 0.5, 0.9], rh: [0.16, 0.42, 0.2], oz: 0.08, hp: 0.1 })],
+    cross: [P({ yaw: 0.5, lean: 0.05, lh: [-0.14, 0.44, 0.3], rh: [0.26, 0.36, 0.0] }),
+            P({ yaw: -0.55, lean: 0.25, lh: [-0.22, 0.45, 0.25], rh: [-0.05, 0.48, 0.92], oz: 0.12, hp: 0.1 })],
     hook: [P({ yaw: 0.6, lean: 0.1, lh: [-0.14, 0.44, 0.3], rh: [0.42, 0.4, -0.05], elbowOut: 1.2 }),
            P({ yaw: -0.75, lean: 0.15, roll: -0.15, lh: [-0.22, 0.45, 0.25], rh: [-0.3, 0.5, 0.55], elbowOut: 1.4, oz: 0.1 })],
-    uppercut: [P({ yaw: 0.45, lean: 0.22, h: HIP_H - 0.06, lh: [-0.14, 0.44, 0.3], rh: [0.3, 0.12, 0.12], hp: 0.15 }),
-               P({ yaw: -0.4, lean: -0.1, h: HIP_H + 0.01, lh: [-0.2, 0.45, 0.28], rh: [0.0, 0.62, 0.5], oz: 0.08, hp: -0.1 })],
-    overhand: [P({ yaw: 0.55, lean: 0.0, lh: [-0.14, 0.44, 0.3], rh: [0.38, 0.62, -0.12], elbowOut: 1.0 }),
-               P({ yaw: -0.6, lean: 0.4, roll: -0.2, lh: [-0.24, 0.4, 0.25], rh: [-0.1, 0.45, 0.8], oz: 0.14, hp: 0.25, elbowOut: 0.8 })],
     hkick: [P({ yaw: 0.3, lean: 0.0, roll: 0.1, h: HIP_H - 0.06, hipYaw: -0.35, lh: [-0.2, 0.5, 0.3], rh: [0.3, 0.45, 0.0], rf: [0.42, 0.25], rfy: 0.72, rPole: [1, 0.1, 0.3], lf: [-0.08, 0.0] }),
             P({ yaw: 0.35, lean: -0.25, roll: -0.55, h: HIP_H - 0.04, hipYaw: -1.1, lh: [-0.05, 0.55, 0.25], rh: [0.45, 0.25, -0.35], rf: [-0.5, 0.55], rfy: 1.4, rPole: [0.9, 0.5, 0.1], lf: [-0.05, -0.05], oz: 0.08 })],
     bkick: [P({ yaw: 0.3, lean: 0.0, roll: 0.1, h: HIP_H - 0.06, hipYaw: -0.3, lh: [-0.2, 0.5, 0.3], rh: [0.3, 0.45, 0.0], rf: [0.4, 0.25], rfy: 0.6, rPole: [1, 0, 0.3], lf: [-0.08, 0.0] }),
             P({ yaw: 0.3, lean: -0.15, roll: -0.4, h: HIP_H - 0.05, hipYaw: -0.9, lh: [-0.05, 0.55, 0.25], rh: [0.45, 0.3, -0.3], rf: [-0.45, 0.65], rfy: 1.0, rPole: [1, 0.3, 0.2], lf: [-0.05, -0.05], oz: 0.08 })],
-    lkick: [P({ yaw: 0.3, lean: 0.05, h: HIP_H - 0.06, hipYaw: -0.25, lh: [-0.2, 0.5, 0.3], rh: [0.3, 0.45, 0.0], rf: [0.38, 0.2], rfy: 0.45, rPole: [1, 0, 0.4], lf: [-0.08, 0.0] }),
-            P({ yaw: 0.25, lean: 0.1, roll: -0.3, h: HIP_H - 0.07, hipYaw: -0.8, lh: [-0.05, 0.5, 0.3], rh: [0.45, 0.3, -0.3], rf: [-0.4, 0.75], rfy: 0.4, rPole: [1, 0.1, 0.4], lf: [-0.05, -0.05], oz: 0.1 })],
     knee: [P({ yaw: 0.3, lean: 0.1, lh: [-0.14, 0.5, 0.3], rh: [0.2, 0.5, 0.25], rf: [0.26, -0.4] }),
            P({ yaw: -0.2, lean: -0.1, lh: [-0.1, 0.4, 0.4], rh: [0.15, 0.4, 0.4], rf: [0.1, 0.4], rfy: 0.8, lf: [-0.1, 0.0], oz: 0.08 })],
-    teep: [P({ yaw: 0.2, lean: 0.12, h: HIP_H - 0.04, lh: [-0.14, 0.48, 0.3], rh: [0.18, 0.46, 0.22], rf: [0.2, 0.0], rfy: 0.5, rPole: [0.2, 0, 1], lf: [-0.1, 0.0] }),
-           P({ yaw: 0.1, lean: -0.25, h: HIP_H - 0.02, lh: [-0.16, 0.5, 0.26], rh: [0.2, 0.46, 0.18], rf: [0.1, 0.95], rfy: 1.0, rPole: [0.2, 0.3, 1], lf: [-0.1, -0.05], oz: 0.06, hp: -0.1 })],
-    // ground strikes (top position)
-    gpunch: [P({ h: 0.52, lean: 0.35, yaw: -0.3, lh: [-0.2, -0.05, 0.4], rh: [0.25, 0.2, 0.25], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 }),
-             P({ h: 0.48, lean: 0.75, yaw: 0.0, lh: [-0.2, -0.05, 0.4], rh: [0.05, -0.3, 0.55], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 })],
-    ghammer: [P({ h: 0.55, lean: 0.1, yaw: -0.3, lh: [-0.2, -0.05, 0.4], rh: [0.35, 0.55, 0.1], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 }),
-              P({ h: 0.46, lean: 0.85, yaw: 0.0, lh: [-0.2, -0.05, 0.4], rh: [0.05, -0.35, 0.55], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 })],
-    gelbow: [P({ h: 0.55, lean: 0.2, yaw: -0.5, lh: [-0.2, -0.05, 0.4], rh: [0.45, 0.4, 0.2], elbowOut: 1.3, lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 }),
-             P({ h: 0.46, lean: 0.8, yaw: 0.3, lh: [-0.2, -0.05, 0.4], rh: [-0.15, -0.3, 0.5], elbowOut: 1.3, lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 })],
-    gbody: [P({ h: 0.52, lean: 0.3, yaw: -0.3, lh: [-0.2, -0.05, 0.4], rh: [0.3, 0.1, 0.3], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 }),
-            P({ h: 0.5, lean: 0.6, yaw: 0.1, lh: [-0.2, -0.05, 0.4], rh: [0.05, -0.3, 0.3], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 })],
-    gknee: [P({ h: 0.55, lean: 0.4, yaw: 0, lh: [-0.2, -0.05, 0.4], rh: [0.2, -0.05, 0.4], lf: [-0.26, -0.55], rf: [0.3, -0.45], rfy: 0.25, hp: 0.3 }),
-            P({ h: 0.5, lean: 0.7, yaw: 0, lh: [-0.2, -0.05, 0.4], rh: [0.2, -0.05, 0.4], lf: [-0.26, -0.55], rf: [0.15, 0.15], rfy: 0.3, hp: 0.3 })]
+    lkick: [P({ yaw: 0.3, lean: 0.05, h: HIP_H - 0.06, hipYaw: -0.25, lh: [-0.2, 0.5, 0.3], rh: [0.3, 0.45, 0.0], rf: [0.38, 0.2], rfy: 0.45, rPole: [1, 0, 0.4], lf: [-0.08, 0.0] }),
+            P({ yaw: 0.25, lean: 0.1, roll: -0.3, h: HIP_H - 0.07, hipYaw: -0.8, lh: [-0.05, 0.5, 0.3], rh: [0.45, 0.3, -0.3], rf: [-0.4, 0.75], rfy: 0.4, rPole: [1, 0.1, 0.4], lf: [-0.05, -0.05], oz: 0.1 })],
+    gnp1: [P({ h: 0.52, lean: 0.35, yaw: 0.3, lh: [-0.25, 0.2, 0.25], rh: [0.2, -0.05, 0.4], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 }),
+           P({ h: 0.48, lean: 0.75, yaw: 0.0, lh: [-0.05, -0.3, 0.55], rh: [0.2, -0.05, 0.4], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 })],
+    gnp2: [P({ h: 0.55, lean: 0.1, yaw: -0.3, lh: [-0.2, -0.05, 0.4], rh: [0.35, 0.55, 0.1], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 }),
+           P({ h: 0.46, lean: 0.85, yaw: 0.0, lh: [-0.2, -0.05, 0.4], rh: [0.05, -0.35, 0.55], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 })],
+    gnp3: [P({ h: 0.55, lean: 0.2, yaw: -0.5, lh: [-0.2, -0.05, 0.4], rh: [0.45, 0.4, 0.2], elbowOut: 1.3, lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 }),
+           P({ h: 0.46, lean: 0.8, yaw: 0.3, lh: [-0.2, -0.05, 0.4], rh: [-0.15, -0.3, 0.5], elbowOut: 1.3, lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 })],
+    gbody: [P({ h: 0.52, lean: 0.3, yaw: 0.3, lh: [-0.3, 0.1, 0.3], rh: [0.2, -0.05, 0.4], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 }),
+            P({ h: 0.5, lean: 0.6, yaw: -0.1, lh: [-0.05, -0.3, 0.3], rh: [0.2, -0.05, 0.4], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 })]
   };
-  const HAND_KINDS = { straight: 1, hook: 1, uppercut: 1, overhand: 1, gpunch: 1, ghammer: 1, gelbow: 1, gbody: 1 };
-  function mirrorPose(p, upperOnly) {
-    const m = {};
-    for (const k in p) m[k] = Array.isArray(p[k]) ? p[k].slice() : p[k];
-    m.lh = [-p.rh[0], p.rh[1], p.rh[2]]; m.rh = [-p.lh[0], p.lh[1], p.lh[2]];
-    m.yaw = -p.yaw; m.roll = -p.roll; m.hy = -p.hy; m.ox = -p.ox;
-    if (!upperOnly) {
-      m.lf = [-p.rf[0], p.rf[1]]; m.rf = [-p.lf[0], p.lf[1]];
-      m.lfy = p.rfy; m.rfy = p.lfy;
-      m.lPole = [-p.rPole[0], p.rPole[1], p.rPole[2]]; m.rPole = [-p.lPole[0], p.lPole[1], p.lPole[2]];
-      m.hipYaw = -p.hipYaw;
-    }
-    return m;
-  }
-  const STRIKE_POSES_L = {};
-  for (const k in STRIKE_POSES) STRIKE_POSES_L[k] = STRIKE_POSES[k].map(p => mirrorPose(p, !!HAND_KINDS[k]));
 
   function lerpPose(a, b, t, out) {
     out = out || {};
@@ -211,8 +186,6 @@
       this.flash = 0; this.stepPhase = 0;
       this._v = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
       this._pole = new THREE.Vector3();
-      this._tipV = new THREE.Vector3();
-      this._tipArr = [0, 0, 0];
     }
 
     setColors(color, skin) { this.mats.shortsMat.color.setHex(color); this.mats.skinMat.color.setHex(skin); }
@@ -226,7 +199,7 @@
       else if (f.ground === 'bottom') {
         if (a.type === 'hit') pose = POSES.bottomHit;
         else if (S.ground && S.ground.sub) pose = POSES.bottomHit;
-        else pose = (this.inputHint & IN.BLOCK) ? POSES.bottomBlock : POSES.bottom;
+        else pose = (this.inputHint & 1024) ? POSES.bottomBlock : POSES.bottom;
       } else if (f.ground === 'top') {
         if (a.type === 'strike') return this._strikePose(f, out);
         if (a.type === 'sub') pose = POSES.topSub;
@@ -252,40 +225,13 @@
     }
 
     _strikePose(f, out) {
-      const a = f.act, st = STRIKES[a.name];
-      const left = st.limb === 'lh' || st.limb === 'll';
-      const kf = (left ? STRIKE_POSES_L : STRIKE_POSES)[st.kind] || STRIKE_POSES.straight;
+      const a = f.act, st = STRIKES[a.name], kf = STRIKE_POSES[a.name] || STRIKE_POSES.jab;
       const tf = a.tf || 1;
       const w = st.w * tf, ac = st.a * tf, r = st.r * tf;
       const base = f.ground === 'top' ? POSES.top : POSES.idle;
       if (a.t < w) return lerpPose(base, kf[0], smooth(clamp(a.t / w, 0, 1)), out);
       if (a.t < w + ac) return lerpPose(kf[0], kf[1], smooth(clamp((a.t - w) / (ac * 0.6), 0, 1)), out);
       return lerpPose(kf[1], base, smooth(clamp((a.t - w - ac) / r, 0, 1)), out);
-    }
-
-    // While a standing strike is live, drive the striking limb from the simulation's tip path so the
-    // hand / foot on screen is exactly where the hit detection says it is. Returns the root-local tip.
-    _limbOverride(f, p) {
-      const a = f.act;
-      if (a.type !== 'strike' || f.ground) return null;
-      const st = STRIKES[a.name];
-      if (!st || st.ground || !st.path) return null;
-      const tip = strikeTip(st, a.t, a.tf || 1, this._tipArr);
-      // sim frame [fwd, side(left), height] -> root-local (x = -side, y = height, z = fwd)
-      const lx = -tip[1], ly = tip[2], lz = tip[0];
-      const hand = st.tip === 'hand';
-      if (hand) {
-        // lunge: if the fist is beyond the arm's reach, carry the body forward with it
-        const sx = (st.limb === 'lh' ? -SHOULDER_X : SHOULDER_X) + p.ox, sy = p.h + SHOULDER_Y, sz = p.oz + 0.05;
-        const over = Math.hypot(lx - sx, ly - sy, lz - sz) - (UPPER + FORE + 0.07);
-        if (over > 0) { p.oz += Math.min(0.32, over); p.lean += Math.min(0.25, over * 0.6); }
-      } else {
-        const hx = (st.limb === 'll' ? -HIP_X : HIP_X) + p.ox, hy = p.h - 0.08, hz = p.oz;
-        const reach = st.tip === 'knee' ? THIGH : THIGH + SHIN;
-        const over = Math.hypot(lx - hx, ly - hy, lz - hz) - (reach + 0.02);
-        if (over > 0) { p.oz += Math.min(0.3, over * 0.9); p.h -= Math.min(0.08, over * 0.25); }
-      }
-      return { st, lx, ly, lz, hand };
     }
 
     update(f, S, opp, dt, time, groundAxis, posLerp) {
@@ -323,30 +269,12 @@
       let wob = 0;
       if (f.rocked > 0 && !f.ground && f.act.type !== 'down') wob = Math.sin(time * 7) * 0.12 * Math.min(1, f.rocked) + Math.sin(time * 3.3) * 0.08;
 
-      const ov = this._limbOverride(f, p);
       this.root.position.set(this.px, 0, this.pz);
       this.root.rotation.set(0, this.yaw, 0);
       this.body.position.set(p.ox, p.h + bob, p.oz);
       this.body.rotation.set(p.lie, p.hipYaw, 0);
       this.torso.rotation.set(p.lean + wob * 0.5, p.yaw, p.roll + wob);
       this.neck.rotation.set(p.hp, p.hy, 0);
-
-      if (ov) {
-        if (ov.hand) {
-          // root-local -> torso-local for the arm IK
-          this.root.updateMatrixWorld(true);
-          const t = this._tipV.set(ov.lx, ov.ly, ov.lz);
-          this.root.localToWorld(t); this.torso.worldToLocal(t);
-          const tgt = ov.st.limb === 'lh' ? p.lh : p.rh;
-          tgt[0] = t.x; tgt[1] = t.y; tgt[2] = t.z;
-        } else {
-          // feet are already in the root frame; a knee strike carries the foot tucked under the knee
-          const left = ov.st.limb === 'll';
-          const fxz = left ? p.lf : p.rf;
-          if (ov.st.tip === 'knee') { fxz[0] = ov.lx; fxz[1] = ov.lz - 0.2; if (left) p.lfy = ov.ly - SHIN * 0.8; else p.rfy = ov.ly - SHIN * 0.8; }
-          else { fxz[0] = ov.lx; fxz[1] = ov.lz; if (left) p.lfy = ov.ly; else p.rfy = ov.ly; }
-        }
-      }
 
       // ---- IK arms (torso frame) ----
       const v = this._v;
@@ -429,9 +357,9 @@
     const g = new THREE.Group();
     // platform
     const plat = new THREE.Mesh(new THREE.CylinderGeometry(R + 0.5, R + 0.9, 0.7, N), new THREE.MeshStandardMaterial({ color: 0x15151a, roughness: 0.9 }));
-    plat.position.y = -0.37; plat.receiveShadow = true; plat.rotation.y = Math.PI / N; g.add(plat); // top face at -0.02: just under the mat so the two never share a plane
+    plat.position.y = -0.35; plat.receiveShadow = true; plat.rotation.y = Math.PI / N; g.add(plat);
     // mat
-    const mat = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 0.06, N), new THREE.MeshStandardMaterial({ map: matTexture(), roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+    const mat = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 0.06, N), new THREE.MeshStandardMaterial({ map: matTexture(), roughness: 0.95 }));
     mat.position.y = -0.03; mat.receiveShadow = true; mat.rotation.y = Math.PI / N; g.add(mat);
     // fence + posts
     const fenceMat = new THREE.MeshStandardMaterial({ map: chainLinkTexture(), transparent: true, side: THREE.DoubleSide, roughness: 0.6, metalness: 0.5, alphaTest: 0.2, depthWrite: false });
@@ -564,13 +492,12 @@
       if (!this.models.length) return;
       if (ev.k === 'hit') {
         const victim = this.models[ev.j];
-        const p = ev.at ? new THREE.Vector3(ev.at[0], ev.at[1], ev.at[2])
-          : ev.part === 'head' ? victim.headWorld(this._tmp.clone()) : ev.part === 'legs' ? new THREE.Vector3(victim.px, 0.5, victim.pz) : victim.torsoWorld(this._tmp.clone());
-        this.impact(p, ev.big || ev.rocked, ev.rocked ? 0xff5533 : ev.jammed ? 0xaaaaaa : ev.momentum ? 0xffb347 : 0xffe9b0);
+        const p = ev.part === 'head' ? victim.headWorld(this._tmp.clone()) : ev.part === 'legs' ? new THREE.Vector3(victim.px, 0.5, victim.pz) : victim.torsoWorld(this._tmp.clone());
+        this.impact(p, ev.big || ev.rocked, ev.rocked ? 0xff5533 : 0xffe9b0);
         victim.flash = ev.rocked ? 1 : 0.5;
       } else if (ev.k === 'block') {
         const victim = this.models[ev.j];
-        this.impact(ev.at ? new THREE.Vector3(ev.at[0], ev.at[1], ev.at[2]) : victim.headWorld(this._tmp.clone()).add(new THREE.Vector3(0, -0.1, 0)), false, 0x88aaff);
+        this.impact(victim.headWorld(this._tmp.clone()).add(new THREE.Vector3(0, -0.1, 0)), false, 0x88aaff);
       } else if (ev.k === 'kd' || ev.k === 'td' || ev.k === 'sweep') this.shake = 1;
       else if (ev.k === 'ko' || ev.k === 'tap') this.shake = 1.2;
     }

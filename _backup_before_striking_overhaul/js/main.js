@@ -3,7 +3,7 @@
    ============================================================ */
 (function () {
   'use strict';
-  const { IN, Sim, ROSTER, describe, LIMBS, LIMB_NAME, MODS, HAND_KINDS, LEG_KINDS, KIND_LABEL, DEFAULT_MOVESET, normalizeMoveset } = window.MMASim;
+  const { IN, Sim, ROSTER, describe } = window.MMASim;
   const { CpuBrain } = window.MMAAI;
   const { Renderer } = window.MMARender;
   const { Net } = window.MMANet;
@@ -13,60 +13,17 @@
   const show = (el) => el.classList.remove('hidden');
   const hide = (el) => el.classList.add('hidden');
 
-  // ---------- controls (rebindable, saved in localStorage) ----------
-  const ACTIONS = [
-    { id: 'fwd', label: 'Move in', bit: IN.FWD, def: ['KeyW', 'ArrowUp'] },
-    { id: 'back', label: 'Back off', bit: IN.BACK, def: ['KeyS', 'ArrowDown'] },
-    { id: 'left', label: 'Circle left', bit: IN.LEFT, def: ['KeyA', 'ArrowLeft'] },
-    { id: 'right', label: 'Circle right', bit: IN.RIGHT, def: ['KeyD', 'ArrowRight'] },
-    { id: 'lh', label: 'Left hand', bit: IN.LHAND, def: ['KeyU', ''] },
-    { id: 'rh', label: 'Right hand', bit: IN.RHAND, def: ['KeyI', ''] },
-    { id: 'll', label: 'Left leg', bit: IN.LLEG, def: ['KeyJ', ''] },
-    { id: 'rl', label: 'Right leg', bit: IN.RLEG, def: ['KeyK', ''] },
-    { id: 'mod1', label: 'Modifier 1 (hold)', bit: IN.MOD1, def: ['KeyQ', ''] },
-    { id: 'mod2', label: 'Modifier 2 (hold)', bit: IN.MOD2, def: ['KeyE', ''] },
-    { id: 'mod3', label: 'Modifier 3 (hold)', bit: IN.MOD3, def: ['KeyR', ''] },
-    { id: 'block', label: 'Block / sprawl / cover (hold)', bit: IN.BLOCK, def: ['KeyL', 'Semicolon'] },
-    { id: 'grapple', label: 'Takedown / submission / sweep', bit: IN.GRAPPLE, def: ['Space', ''] },
-    { id: 'dodge', label: 'Slip / stand up', bit: IN.DODGE, def: ['ShiftLeft', 'ShiftRight'] }
-  ];
-  const Controls = { binds: {}, moveset: null, keyMap: {} };
-  const KEY_NAMES = { ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Space: 'SPACE', ShiftLeft: 'L-SHIFT', ShiftRight: 'R-SHIFT', ControlLeft: 'L-CTRL', ControlRight: 'R-CTRL', AltLeft: 'L-ALT', AltRight: 'R-ALT', Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/', BracketLeft: '[', BracketRight: ']', Backslash: '\\', Minus: '-', Equal: '=', Enter: 'ENTER', Tab: 'TAB', Backspace: 'BKSP', CapsLock: 'CAPS', Backquote: '`', NumpadEnter: 'NUM ENTER', NumpadAdd: 'NUM +', NumpadSubtract: 'NUM -', NumpadMultiply: 'NUM *', NumpadDivide: 'NUM /', NumpadDecimal: 'NUM .' };
-  function keyName(code) {
-    if (!code) return '—';
-    if (KEY_NAMES[code]) return KEY_NAMES[code];
-    if (code.startsWith('Key')) return code.slice(3);
-    if (code.startsWith('Digit')) return code.slice(5);
-    if (code.startsWith('Numpad')) return 'NUM ' + code.slice(6);
-    return code.toUpperCase();
-  }
-  function defaultBinds() { const b = {}; for (const a of ACTIONS) b[a.id] = a.def.slice(); return b; }
-  function loadControls() {
-    Controls.binds = defaultBinds();
-    Controls.moveset = normalizeMoveset(DEFAULT_MOVESET);
-    try {
-      const b = JSON.parse(localStorage.getItem('cr_binds') || 'null');
-      if (b) for (const a of ACTIONS) if (Array.isArray(b[a.id])) Controls.binds[a.id] = [String(b[a.id][0] || ''), String(b[a.id][1] || '')];
-      const m = JSON.parse(localStorage.getItem('cr_moveset') || 'null');
-      if (m) Controls.moveset = normalizeMoveset(m);
-    } catch (_) {}
-    rebuildKeyMap();
-  }
-  function saveControls() {
-    try { localStorage.setItem('cr_binds', JSON.stringify(Controls.binds)); localStorage.setItem('cr_moveset', JSON.stringify(Controls.moveset)); } catch (_) {}
-    rebuildKeyMap();
-  }
-  function rebuildKeyMap() {
-    Controls.keyMap = {};
-    for (const a of ACTIONS) for (const c of Controls.binds[a.id]) if (c) Controls.keyMap[c] = (Controls.keyMap[c] | 0) | a.bit;
-  }
-  loadControls();
+  // ---------- key map ----------
+  const KEYS = {
+    KeyW: IN.FWD, ArrowUp: IN.FWD, KeyS: IN.BACK, ArrowDown: IN.BACK, KeyA: IN.LEFT, ArrowLeft: IN.LEFT, KeyD: IN.RIGHT, ArrowRight: IN.RIGHT,
+    KeyJ: IN.JAB, KeyK: IN.CROSS, KeyU: IN.HOOK, KeyI: IN.HKICK, KeyO: IN.BKICK, KeyP: IN.LKICK,
+    KeyL: IN.BLOCK, Semicolon: IN.BLOCK, Space: IN.GRAPPLE, ShiftLeft: IN.DODGE, ShiftRight: IN.DODGE
+  };
 
   const App = {
     mode: null, net: null, sim: null, renderer: null, audio: new Audio(), brain: null,
     myIdx: 0, held: 0, pressed: 0, remote: { h: 0, p: 0 },
-    lobby: { picks: ['striker', 'wrestler'], names: ['', ''], ready: [false, false], settings: { rounds: 3, len: 180, diff: 0.6 }, cpuPick: 'random', movesets: [null, null] },
-    optionsOpen: false, paused: false,
+    lobby: { picks: ['striker', 'wrestler'], names: ['', ''], ready: [false, false], settings: { rounds: 3, len: 180, diff: 0.6 }, cpuPick: 'random' },
     state: null, playing: false, lastSnap: 0, lastInputSend: 0, evQueue: [], rematch: [false, false],
     feedLines: [], hintsHidden: false
   };
@@ -81,7 +38,6 @@
   }
   function screen(name) {
     for (const id of ['menu', 'lobby', 'end']) { const el = $('#' + id); if (id === name) show(el); else hide(el); }
-    if (App.optionsOpen) closeOptions();
     if (name) hide($('#hud')); else show($('#hud'));
   }
   function centerMsg(html, ms) {
@@ -149,7 +105,7 @@
 
   function sendPick() {
     if (App.mode === 'host') App.net.send({ t: 'lobby', picks: App.lobby.picks, names: App.lobby.names, ready: App.lobby.ready, settings: App.lobby.settings });
-    else if (App.mode === 'guest') App.net.send({ t: 'pick', fighter: App.lobby.picks[1], name: myName(), ready: App.lobby.ready[1], moveset: Controls.moveset });
+    else if (App.mode === 'guest') App.net.send({ t: 'pick', fighter: App.lobby.picks[1], name: myName(), ready: App.lobby.ready[1] });
   }
 
   function enterLobby(mode) {
@@ -192,7 +148,6 @@
         App.lobby.picks[1] = ROSTER[d.fighter] ? d.fighter : 'balanced';
         App.lobby.names[1] = (d.name || '').slice(0, 14);
         App.lobby.ready[1] = !!d.ready;
-        App.lobby.movesets[1] = normalizeMoveset(d.moveset);
         refreshLobby(); sendPick(); maybeStart(); break;
       case 'in':
         App.remote.h = d.h | 0; App.remote.p |= (d.p | 0); break;
@@ -229,8 +184,8 @@
     let p1 = L.picks[1];
     if (App.mode === 'practice') { p1 = L.cpuPick === 'random' ? Object.keys(ROSTER)[Math.floor(Math.random() * 4)] : L.cpuPick; }
     const players = [
-      { fighter: L.picks[0], name: L.names[0] || myName() || ROSTER[L.picks[0]].name, moveset: Controls.moveset },
-      { fighter: p1, name: App.mode === 'practice' ? ROSTER[p1].name + ' (CPU)' : (L.names[1] || ROSTER[p1].name), moveset: App.mode === 'practice' ? DEFAULT_MOVESET : (L.movesets[1] || DEFAULT_MOVESET) }
+      { fighter: L.picks[0], name: L.names[0] || myName() || ROSTER[L.picks[0]].name },
+      { fighter: p1, name: App.mode === 'practice' ? ROSTER[p1].name + ' (CPU)' : (L.names[1] || ROSTER[p1].name) }
     ];
     // same archetype -> alternate shorts colour so they're distinguishable
     if (players[0].fighter === players[1].fighter) players[1].color = 0x8e44ad;
@@ -274,7 +229,7 @@
     centerMsg('ROUND 1<small>' + App.state.f[0].name + ' vs ' + App.state.f[1].name + '</small>', 2600);
   }
 
-  function stopFight() { App.playing = false; App.paused = false; App.sim = null; hideCenter(); $('#grapple').classList.remove('show'); }
+  function stopFight() { App.playing = false; App.sim = null; hideCenter(); $('#grapple').classList.remove('show'); }
 
   function showEnd(S) {
     const R = S.result; if (!R) return;
@@ -354,7 +309,6 @@
   //  HUD
   // ============================================================
   function pct(v) { return Math.max(0, Math.min(100, v)) + '%'; }
-  const kn = id => keyName(Controls.binds[id][0]);
   function dmgColor(d) { const h = 120 - d * 1.2; return 'hsla(' + h + ',70%,' + (25 + d * 0.3) + '%,' + (0.35 + d / 150) + ')'; }
   function updateHUD(S) {
     for (let i = 0; i < 2; i++) {
@@ -375,7 +329,7 @@
       else if (f.stam < 22) txt = 'GASSED';
       st.textContent = txt; st.className = cls;
     }
-    $('#roundLbl').textContent = App.paused ? 'PAUSED' : S.phase === 'break' ? 'BREAK ' + Math.ceil(10 - S.phaseT) : 'ROUND ' + S.round + '/' + S.rounds;
+    $('#roundLbl').textContent = S.phase === 'break' ? 'BREAK ' + Math.ceil(10 - S.phaseT) : 'ROUND ' + S.round + '/' + S.rounds;
     const c = Math.max(0, S.clock); $('#clock').textContent = Math.floor(c / 60) + ':' + String(Math.floor(c % 60)).padStart(2, '0');
     $('#pingLbl').textContent = App.net && App.net.connected ? App.net.ping + ' ms' : (App.mode === 'practice' ? 'CPU' : '');
     // grapple panel
@@ -392,8 +346,7 @@
       }
       $('#gTitle').textContent = (S.f[S.ground.top].name + ' ON TOP').toUpperCase();
       $('#gHint').textContent = S.ground.sub ? (meTop ? 'Enter the W/A/S/D sequence to tighten the hold — 3 misses and you lose it.' : 'Enter the W/A/S/D sequence to escape — 3 misses and you tap!')
-        : meTop ? kn('lh') + '/' + kn('rh') + ' punch (hold ' + kn('mod1') + ' elbows, ' + kn('mod2') + ' hammer fists, ' + kn('mod3') + ' body) · ' + kn('ll') + '/' + kn('rl') + ' knees · ' + kn('grapple') + ' submission · hold ' + kn('block') + ' to posture · ' + kn('dodge') + ' stand up'
-          : 'MASH ' + [kn('fwd'), kn('left'), kn('back'), kn('right')].join('/') + ' to escape · hold ' + kn('block') + ' to cover · ' + kn('grapple') + ' to sweep when they swing';
+        : meTop ? 'J/K/U strike · O body · SPACE submission · hold L to posture · SHIFT stand up' : 'MASH W/A/S/D to escape · hold L to cover · SPACE to sweep when they swing';
     } else g.classList.remove('show');
   }
 
@@ -410,96 +363,18 @@
   }
 
   // ============================================================
-  //  Options panel (key bindings + strike mapping)
-  // ============================================================
-  let capture = null; // { act, slot, btn } while waiting for a key
-  function buildOptions() {
-    const kt = $('#keyTable');
-    let h = '<tr><th>Action</th><th>Key</th><th>Alt</th></tr>';
-    for (const a of ACTIONS) h += '<tr><td>' + a.label + '</td>' + [0, 1].map(i => '<td><button class="keybtn" data-act="' + a.id + '" data-slot="' + i + '">' + keyName(Controls.binds[a.id][i]) + '</button></td>').join('') + '</tr>';
-    kt.innerHTML = h;
-    kt.querySelectorAll('.keybtn').forEach(b => b.onclick = () => startCapture(b.dataset.act, +b.dataset.slot, b));
-    const mt = $('#moveTable');
-    h = '<tr><th>Hold</th>' + LIMBS.map(l => '<th>' + LIMB_NAME[l] + '<small>' + keyName(Controls.binds[l][0]) + '</small></th>').join('') + '</tr>';
-    for (const m of MODS) {
-      h += '<tr><td>' + (m === 'none' ? '<span class="muted">nothing</span>' : '<b>' + keyName(Controls.binds[m][0]) + '</b>') + '</td>';
-      for (const l of LIMBS) {
-        const kinds = (l === 'lh' || l === 'rh') ? HAND_KINDS : LEG_KINDS;
-        h += '<td><select data-mod="' + m + '" data-limb="' + l + '">' + kinds.map(k => '<option value="' + k + '"' + (Controls.moveset[m][l] === k ? ' selected' : '') + '>' + KIND_LABEL[k] + '</option>').join('') + '</select></td>';
-      }
-      h += '</tr>';
-    }
-    mt.innerHTML = h;
-    mt.querySelectorAll('select').forEach(sel => sel.onchange = () => { Controls.moveset[sel.dataset.mod][sel.dataset.limb] = sel.value; saveControls(); updateHint(); });
-    document.querySelectorAll('#options b[data-mod]').forEach(b => { b.textContent = keyName(Controls.binds[b.dataset.mod][0]); });
-    $('#optStatus').textContent = App.playing ? (App.mode === 'practice' ? 'Fight paused. Changes apply instantly.' : 'Online: the fight keeps running while this is open. Strike changes apply next fight.') : 'Changes are saved automatically.';
-  }
-  function startCapture(act, slot, btn) {
-    cancelCapture();
-    capture = { act, slot, btn };
-    btn.textContent = 'PRESS A KEY'; btn.classList.add('cap');
-  }
-  function cancelCapture() {
-    if (!capture) return;
-    capture.btn.textContent = keyName(Controls.binds[capture.act][capture.slot]); capture.btn.classList.remove('cap');
-    capture = null;
-  }
-  function captureKey(code) {
-    const { act, slot } = capture;
-    if (code === 'Backspace' || code === 'Delete') { Controls.binds[act][slot] = ''; }
-    else {
-      for (const a of ACTIONS) for (let i = 0; i < 2; i++) if (Controls.binds[a.id][i] === code) Controls.binds[a.id][i] = ''; // a key can only do one thing
-      Controls.binds[act][slot] = code;
-    }
-    capture = null;
-    saveControls(); buildOptions(); updateHint();
-  }
-  function openOptions() {
-    App.optionsOpen = true; App.held = 0; App.pressed = 0;
-    if (App.playing && App.mode === 'practice') App.paused = true;
-    buildOptions(); show($('#options'));
-  }
-  function closeOptions() {
-    cancelCapture();
-    App.optionsOpen = false; App.paused = false;
-    hide($('#options')); updateHint();
-  }
-  function resetControls() {
-    Controls.binds = defaultBinds(); Controls.moveset = normalizeMoveset(DEFAULT_MOVESET);
-    saveControls(); buildOptions(); updateHint(); toast('Controls reset to defaults', 1500);
-  }
-  function updateHint() {
-    const B = id => '<b>' + keyName(Controls.binds[id][0]) + '</b>';
-    const ms = Controls.moveset;
-    const kind = k => KIND_LABEL[k].toLowerCase();
-    const row = m => (m === 'none' ? 'no modifier' : 'hold ' + B(m)) + ': ' + LIMBS.map(l => kind(ms[m][l])).join(' / ');
-    $('#controlsHint').innerHTML =
-      '<div class="ctl-row">' + [B('fwd'), B('left'), B('back'), B('right')].join(' ') + ' move / circle (stepping into a shot adds power, backing off takes it away) · ' + B('lh') + ' left hand · ' + B('rh') + ' right hand · ' + B('ll') + ' left leg · ' + B('rl') + ' right leg</div>' +
-      '<div class="ctl-row">' + MODS.map(row).join(' · ') + '</div>' +
-      '<div class="ctl-row">' + B('block') + ' hold: block / sprawl · ' + B('grapple') + ' takedown · ' + B('dodge') + ' slip · ground: hands & legs strike, ' + B('grapple') + ' submission / sweep, ' + B('block') + ' posture / cover, ' + B('dodge') + ' let up · <b>ESC</b> options · <b>H</b> hide this · <b>M</b> mute</div>';
-  }
-
-  // ============================================================
   //  Input
   // ============================================================
   window.addEventListener('keydown', (e) => {
-    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) { if (e.code === 'Escape') e.target.blur(); return; }
-    if (capture) {
-      e.preventDefault();
-      if (e.repeat) return;
-      if (e.code === 'Escape') cancelCapture(); else captureKey(e.code);
-      return;
-    }
-    if (e.code === 'Escape') { e.preventDefault(); if (!e.repeat) { if (App.optionsOpen) closeOptions(); else openOptions(); } return; }
-    if (App.optionsOpen) return;
-    if (e.code === 'KeyH' && !Controls.keyMap.KeyH) { if (!e.repeat) { App.hintsHidden = !App.hintsHidden; $('#controlsHint').style.display = App.hintsHidden ? 'none' : ''; } return; }
-    if (e.code === 'KeyM' && !Controls.keyMap.KeyM) { if (!e.repeat) { App.audio.setMuted(!App.audio.muted); toast(App.audio.muted ? 'Muted' : 'Sound on', 1200); } return; }
-    const b = Controls.keyMap[e.code]; if (!b) return;
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return;
+    if (e.code === 'KeyH') { if (!e.repeat) { App.hintsHidden = !App.hintsHidden; $('#controlsHint').style.display = App.hintsHidden ? 'none' : ''; } return; }
+    if (e.code === 'KeyM') { if (!e.repeat) { App.audio.setMuted(!App.audio.muted); toast(App.audio.muted ? 'Muted' : 'Sound on', 1200); } return; }
+    const b = KEYS[e.code]; if (!b) return;
     e.preventDefault();
     if (!e.repeat) { App.pressed |= b; }
     App.held |= b;
   });
-  window.addEventListener('keyup', (e) => { const b = Controls.keyMap[e.code]; if (b) { App.held &= ~b; e.preventDefault(); } });
+  window.addEventListener('keyup', (e) => { const b = KEYS[e.code]; if (b) { App.held &= ~b; e.preventDefault(); } });
   window.addEventListener('blur', () => { App.held = 0; });
 
   // ============================================================
@@ -514,7 +389,6 @@
 
     const isHost = App.mode !== 'guest';
     let inputs = [0, 0];
-    if (App.paused && App.mode === 'practice') { App.pressed = 0; App.renderer.update(App.state, 0, inputs); updateHUD(App.state); return; }
     if (isHost) {
       const sim = App.sim;
       sim.setInput(0, App.held, App.pressed); App.pressed = 0;
@@ -558,11 +432,6 @@
   $('#btnJoinGo').onclick = () => { const c = $('#joinCode').value.trim(); if (c.length < 4) { toast('Enter the 5-letter room code.'); return; } startJoin(c); };
   $('#joinCode').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#btnJoinGo').click(); });
   $('#btnPractice').onclick = () => { App.audio.init(); enterLobby('practice'); };
-  $('#btnOptions').onclick = () => openOptions();
-  $('#btnLobbyOptions').onclick = () => openOptions();
-  $('#btnOptClose').onclick = () => closeOptions();
-  $('#btnOptReset').onclick = () => resetControls();
-  updateHint();
   $('#btnBack').onclick = () => { if (App.net) { App.net.destroy(); App.net = null; } App.mode = null; screen('menu'); };
   $('#btnCopy').onclick = () => { navigator.clipboard && navigator.clipboard.writeText($('#codeLbl').textContent).then(() => toast('Room code copied', 1500)); };
   $('#btnReady').onclick = () => {

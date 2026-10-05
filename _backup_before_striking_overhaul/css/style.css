@@ -55,25 +55,6 @@ h1 span { color: var(--red); display: block; font-size: 64px; letter-spacing: .2
 .lobby-btns { display: flex; justify-content: space-between; margin-top: 18px; gap: 12px; }
 .lobby-btns .big { flex: 1; }
 
-/* ---------- options ---------- */
-#options { z-index: 30; }
-.panel.opts { width: min(1080px, 96vw); }
-.opt-note { color: var(--muted); font-size: 13px; max-width: 320px; text-align: right; }
-.opt-note b, .opt-help b { color: #fff; font-family: var(--font-head); letter-spacing: .05em; }
-.opt-cols { display: grid; grid-template-columns: 1fr 1.25fr; gap: 28px; margin-top: 10px; }
-.opt-col h3 { font-family: var(--font-head); font-weight: 700; font-size: 18px; letter-spacing: .15em; color: var(--gold); margin: 10px 0 6px; }
-.opt-help { color: var(--muted); font-size: 13px; margin: 0 0 10px; line-height: 1.4; }
-table.keys, table.moves { width: 100%; border-collapse: collapse; font-size: 14px; }
-table.keys td, table.keys th, table.moves td, table.moves th { padding: 4px 6px; border-bottom: 1px solid rgba(255,255,255,.08); text-align: left; }
-table.keys th, table.moves th { font-family: var(--font-head); letter-spacing: .1em; color: var(--muted); font-weight: 700; font-size: 13px; }
-table.moves th small { display: block; color: var(--gold); font-size: 12px; letter-spacing: .15em; }
-table.moves td:first-child { font-family: var(--font-head); letter-spacing: .1em; font-size: 15px; }
-table.moves .muted { color: var(--muted); font-size: 13px; letter-spacing: 0; font-family: var(--font); }
-table.moves select { width: 100%; font-size: 13px; padding: 5px 6px; }
-.keybtn { font-size: 14px; padding: 5px 10px; min-width: 76px; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2); color: #fff; letter-spacing: .1em; }
-.keybtn.cap { background: var(--gold); color: #000; animation: blink .6s steps(2) infinite; }
-@media (max-width: 900px) { .opt-cols { grid-template-columns: 1fr; } }
-
 /* ---------- HUD ---------- */
 #hud { pointer-events: none; z-index: 10; }
 .top { position: absolute; top: 14px; left: 14px; right: 14px; display: grid; grid-template-columns: 1fr 160px 1fr; gap: 14px; align-items: start; }

@@ -46,7 +46,10 @@
   </div>
   <div class="bottom">
     <div class="feed" id="feed"></div>
-    <div class="controls" id="controlsHint"></div>
+    <div class="controls" id="controlsHint">
+      <div class="ctl-row"><b>W A S D</b> move/circle · <b>J</b> jab · <b>K</b> cross · <b>U</b> hook · <b>I</b> head kick · <b>O</b> body kick / knee · <b>P</b> low kick</div>
+      <div class="ctl-row"><b>L</b> hold: block / sprawl · <b>SPACE</b> takedown · on top: strikes, <b>SPACE</b> submission, <b>L</b> posture, <b>SHIFT</b> let up · on bottom: mash <b>WASD</b> to escape, <b>SPACE</b> sweep · submissions: enter the <b>W A S D</b> arrow sequence, 3 fails and it's over · <b>H</b> hide this · <b>M</b> mute</div>
+    </div>
   </div>
 </div>
 
@@ -59,7 +62,6 @@
       <button class="big" id="btnHost">CREATE ROOM</button>
       <button class="big" id="btnJoin">JOIN ROOM</button>
       <button class="big ghost" id="btnPractice">PRACTICE vs CPU</button>
-      <button class="ghost" id="btnOptions">OPTIONS · CONTROLS</button>
     </div>
     <div class="join-row hidden" id="joinRow">
       <input id="joinCode" maxlength="5" placeholder="ROOM CODE" autocomplete="off" spellcheck="false">
@@ -91,7 +93,6 @@
     <div class="opp-pick" id="oppPick"></div>
     <div class="lobby-btns">
       <button class="ghost" id="btnBack">BACK</button>
-      <button class="ghost" id="btnLobbyOptions">OPTIONS</button>
       <button class="big" id="btnReady">READY</button>
     </div>
   </div>
@@ -108,37 +109,6 @@
     <div class="lobby-btns">
       <button class="ghost" id="btnMenu">MAIN MENU</button>
       <button class="big" id="btnRematch">REMATCH</button>
-    </div>
-  </div>
-</div>
-
-<!-- ===== OPTIONS ===== -->
-<div id="options" class="layer screen hidden">
-  <div class="panel wide opts">
-    <div class="lobby-head">
-      <div>
-        <div class="lobby-title">OPTIONS</div>
-        <div class="lobby-status" id="optStatus"></div>
-      </div>
-      <div class="opt-note">Press <b>ESC</b> at any time to open or close this panel. In practice the fight pauses.</div>
-    </div>
-    <div class="opt-cols">
-      <div class="opt-col">
-        <h3>KEY BINDINGS</h3>
-        <p class="opt-help">Click a key to rebind it. <b>Backspace</b> clears a slot, <b>Esc</b> cancels.</p>
-        <table class="keys" id="keyTable"></table>
-      </div>
-      <div class="opt-col">
-        <h3>STRIKES</h3>
-        <p class="opt-help">Each limb key throws a different strike depending on which modifier you are holding. Strikes only do damage when the hand or foot actually reaches the target: step in to add power, and don't throw long shots from the clinch.</p>
-        <table class="moves" id="moveTable"></table>
-        <h3>ON THE GROUND</h3>
-        <p class="opt-help">On top the hands punch; hold <b data-mod="mod1">Q</b> for elbows, <b data-mod="mod2">E</b> for hammer fists, <b data-mod="mod3">R</b> for body shots. The leg keys throw knees to the body.</p>
-      </div>
-    </div>
-    <div class="lobby-btns">
-      <button class="ghost" id="btnOptReset">RESET DEFAULTS</button>
-      <button class="big" id="btnOptClose">DONE</button>
     </div>
   </div>
 </div>
