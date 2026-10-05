@@ -129,10 +129,11 @@
 
     step(dt) {
       // fixed sub-steps
-      let n = Math.max(1, Math.round(dt / DT));
-      if (n > 8) n = 8;
-      for (let k = 0; k < n; k++) this._tick(DT);
-      this.inputs[0].pressed = 0; this.inputs[1].pressed = 0;
+      // real-time accumulator: exactly 60 ticks per simulated second regardless of monitor refresh rate
+      this.acc = (this.acc || 0) + Math.min(dt, 0.25);
+      let n = 0;
+      while (this.acc >= DT && n < 8) { this._tick(DT); this.acc -= DT; n++; }
+      if (n > 0) { this.inputs[0].pressed = 0; this.inputs[1].pressed = 0; }
     }
 
     drainEvents() { const e = this.events; this.events = []; return e; }
@@ -336,11 +337,11 @@
           // movement
           let mx = 0, mz = 0;
           const slow = (1 - f.dmg.legs / 140) * (f.rocked > 0 ? 0.45 : 1) * (0.7 + f.stam / 330) * (f.blocking ? 0.6 : 1);
-          const spd = (0.95 + f.stats.spd * 0.55) * slow; // ~1.3-1.4 m/s
+          const spd = (0.85 + f.stats.spd * 0.5) * slow; // ~1.2 m/s forward
           if (held & IN.FWD) { mx += fx; mz += fz; }
           if (held & IN.BACK) { mx -= fx * 0.8; mz -= fz * 0.8; }
-          if (held & IN.LEFT) { mx += lx * 0.85; mz += lz * 0.85; }
-          if (held & IN.RIGHT) { mx -= lx * 0.85; mz -= lz * 0.85; }
+          if (held & IN.LEFT) { mx += lx * 0.6; mz += lz * 0.6; }
+          if (held & IN.RIGHT) { mx -= lx * 0.6; mz -= lz * 0.6; }
           if (mx || mz) {
             f.x += mx * spd * dt; f.z += mz * spd * dt;
             f.act = { type: 'move', name: '', t: 0, dur: 0, hit: false };
