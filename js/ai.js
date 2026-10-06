@@ -104,6 +104,7 @@
     // limb + modifier that throws it from this fighter's moveset
     _pickStrike(me, op, dist) {
       const r = this.rng, st = me.stats;
+      if (me.stam < 3) return null; // swinging on empty only shrinks the tank
       const rocked = op.rocked > 0;
       const w = [];
       for (const mod of MODS) for (const limb of LIMBS) {
@@ -184,7 +185,8 @@
         }
       }
       if (cdOk && subs.length && me.stam > 35) {
-        let wt = me.stats.bjj * 2.2 + (op.stam < 35 ? 1.0 : 0) + (op.rocked > 0 ? 1.2 : 0) + (G.pos === 'back' || G.pos === 'mount' ? 1.0 : 0) - (me.stats.bjj < 0.5 ? 1.0 : 0);
+        // hunt for holds when they're worth it: strong BJJ, a dominant position, or an opponent who is exposed, rocked or gassed
+        let wt = (me.stats.bjj - 0.35) * 3.0 + (op.stam < 30 ? 0.8 : 0) + (op.rocked > 0 ? 1.2 : 0) + (G.pos === 'back' || G.pos === 'mount' ? 1.2 : 0) + (op.act.type === 'hit' ? 1.5 : 0);
         if (wt > 0) w.push([{ held: 0, pressed: IN.GRAPPLE }, wt * (0.4 + d * 0.6)]);
       }
       if (me.stam > 10 && (role === 'top' || BOTTOM_CAN_STRIKE[G.pos])) {

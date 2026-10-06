@@ -91,6 +91,8 @@ table.moves select { width: 100%; font-size: 13px; padding: 5px 6px; }
 .bar .ghost { position: absolute; top: 0; bottom: 0; left: 0; width: 100%; background: rgba(255,80,80,.5); transition: width .8s ease-out .3s; z-index: -1; }
 .fighter-panel.right .bar .fill, .fighter-panel.right .bar .ghost { left: auto; right: 0; }
 .bar.st { height: 7px; margin-top: 4px; } .bar.st .fill { background: var(--st); }
+.bar.st .max { position: absolute; top: 0; bottom: 0; left: 0; width: 100%; background: var(--st); opacity: .28; transition: width .4s ease-out; }
+.fighter-panel.right .bar.st .max { left: auto; right: 0; }
 .bar.hp .fill.low { background: #e2a23b; } .bar.hp .fill.crit { background: #e23b3b; }
 .dmg { display: flex; gap: 6px; margin-top: 6px; }
 .fighter-panel.right .dmg { justify-content: flex-end; }

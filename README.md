@@ -64,7 +64,14 @@ works from any camera angle.
   and can finish you (TKO body); leg damage slows you, can buckle your
   leg and can also end the fight.
 * **Stamina** governs strike speed, power, movement and grappling. Cardio
-  stat sets regen. Blocking regenerates slowly, moving less.
+  stat sets regen. Blocking regenerates slowly, moving less. Every strike
+  is paid for up front: a clean landing (not blocked) gives a third of it
+  back, a whiff costs 30 % extra, a blocked one is simply spent.
+* **Max stamina** — the translucent part of the stamina bar is the ceiling
+  you can regenerate to. Head damage shrinks it a little, body damage a
+  lot, and swinging on an empty tank (pressing a strike with nothing
+  left, or overdrawing one) wears it down too. In the corner you get 20 %
+  of it back and start the next round with a full tank.
 * **Striking is physical.** Each strike is a limb (U/I/J/K) plus a kind
   chosen by the modifier you hold. The simulation traces the fist, foot or
   knee along an authored path and only registers a hit when it actually
@@ -84,7 +91,9 @@ works from any camera angle.
   on the same limb doesn't get the bonus. A strike that gets slipped has to
   be ridden out. Hits landed on an already‑stunned opponent stun for less,
   so a combination can't lock someone up forever.
-* Landing on an opponent mid‑windup is a **counter** (+35 %). Slipping
+* Landing on an opponent mid‑windup is a **counter** (+35 %). A hard punch
+  that catches someone mid‑kick cancels the kick, hits harder still
+  (+30 %), stuns them longer and charges them for the wasted kick. Slipping
   (Shift) moves your head off line: head shots whiff and the attacker
   over‑commits, but body and leg strikes still land. Blocks absorb 85 %
   (45 % vs low kicks) and cost the blocker stamina. Teeps shove the
@@ -108,8 +117,11 @@ works from any camera angle.
 * **Submissions** — available from the right positions for both fighters
   (bottom: triangle, armbar, guillotine from guard, kimura from half guard;
   top: guillotine, kimura, americana, armbar, arm triangle, rear‑naked
-  choke). Press the takedown key with no direction to attack, then **hold it
-  to squeeze**: the hold tightens while you burn stamina. The defender holds
+  choke). Press the takedown key with no direction to attack — it costs
+  stamina and is a roll (BJJ vs BJJ, much better odds against someone who
+  is exposed after a failed move, rocked or gassed); a stuffed attempt
+  leaves you open and on a cooldown. Once it's locked, **hold it to
+  squeeze**: the hold tightens while you burn stamina. The defender holds
   block to fight the hands (slows it, costs stamina) and taps the takedown
   key to attempt an escape — timing it when the attacker lets go to breathe
   gives the best odds. Escapes improve the defender's position; running out

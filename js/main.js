@@ -360,6 +360,7 @@
       const fill = p.querySelector('.hp .fill'); fill.style.width = pct(hp); fill.className = 'fill' + (hp < 25 ? ' crit' : hp < 50 ? ' low' : '');
       p.querySelector('.hp .ghost').style.width = pct(hp);
       p.querySelector('.st .fill').style.width = pct(f.stam);
+      p.querySelector('.st .max').style.width = pct(f.stamMax != null ? f.stamMax : 100);
       const dm = p.querySelectorAll('.d');
       for (const el of dm) { const k = el.classList.contains('head') ? 'head' : el.classList.contains('body') ? 'body' : 'legs'; el.style.background = dmgColor(f.dmg[k]); el.style.color = f.dmg[k] > 40 ? '#fff' : ''; }
       const st = p.querySelector('.status');
