@@ -7,7 +7,7 @@
 <meta name="description" content="Cage Rules: a 3D one-on-one mixed martial arts simulation you can play online against a friend, right in the browser.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700;900&family=Barlow:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=6">
+<link rel="stylesheet" href="css/style.css?v=9">
 </head>
 <body>
 <canvas id="gl"></canvas>
@@ -82,6 +82,7 @@
       <div class="settings" id="settingsBox">
         <label>Rounds <select id="selRounds"><option>1</option><option selected>3</option><option>5</option></select></label>
         <label>Round length <select id="selLen"><option value="60">1:00</option><option value="120">2:00</option><option value="180" selected>3:00</option><option value="300">5:00</option></select></label>
+        <label>Grappling <select id="selGrapple"><option value="1" selected>On</option><option value="0">Off (striking only)</option></select></label>
         <label id="diffWrap">CPU level <select id="selDiff"><option value="0.3">Rookie</option><option value="0.6" selected>Contender</option><option value="0.9">Champion</option></select></label>
       </div>
     </div>
@@ -149,11 +150,27 @@
   if (typeof THREE === 'undefined') document.write('<script src="lib/three.min.js"><\/script>');
   if (typeof Peer === 'undefined') document.write('<script src="lib/peerjs.min.js"><\/script>');
 </script>
-<script src="js/sim.js?v=6"></script>
-<script src="js/ai.js?v=6"></script>
-<script src="js/render.js?v=6"></script>
-<script src="js/net.js?v=6"></script>
-<script src="js/audio.js?v=6"></script>
-<script src="js/main.js?v=6"></script>
+<script src="js/physics.js?v=9"></script>
+<script src="js/sim.js?v=9"></script>
+<script src="js/ai.js?v=9"></script>
+<script src="js/render.js?v=9"></script>
+<script src="js/net.js?v=9"></script>
+<script src="js/audio.js?v=9"></script>
+<script src="js/main.js?v=9"></script>
+<script src="lib/rapier3d-compat.js?v=9"></script>
+<script>
+  // Rapier physics engine (vendored, WASM inlined, plain script so the game also runs from file://).
+  (function () {
+    try {
+      if (typeof RAPIER === 'undefined') throw new Error('lib/rapier3d-compat.js did not load');
+      window.MMAPhys.init(RAPIER).then(
+        () => window.dispatchEvent(new CustomEvent('mmaphys', { detail: { ok: true } })),
+        (error) => { console.error('physics failed to start', error); window.dispatchEvent(new CustomEvent('mmaphys', { detail: { ok: false, error } })); });
+    } catch (error) {
+      console.error('physics failed to load', error);
+      setTimeout(() => window.dispatchEvent(new CustomEvent('mmaphys', { detail: { ok: false, error } })), 0);
+    }
+  })();
+</script>
 </body>
 </html>

@@ -115,11 +115,12 @@
     $('#diffWrap').style.display = App.mode === 'practice' ? '' : 'none';
     $('#codeBox').classList.toggle('hidden', App.mode !== 'host');
     const st = $('#lobbyStatus');
-    if (App.mode === 'practice') { st.textContent = 'Pick your fighter, then hit READY.'; }
+    const rules = L.settings.grappling === false ? ' · STRIKING ONLY' : '';
+    if (App.mode === 'practice') { st.textContent = 'Pick your fighter, then hit READY.' + rules; }
     else if (App.mode === 'host') {
-      st.textContent = App.net && App.net.connected ? (L.ready[opp] ? 'Opponent is READY.' : 'Opponent connected — picking a fighter...') : 'Share the room code. Waiting for an opponent to join...';
+      st.textContent = (App.net && App.net.connected ? (L.ready[opp] ? 'Opponent is READY.' : 'Opponent connected — picking a fighter...') : 'Share the room code. Waiting for an opponent to join...') + rules;
     } else {
-      st.textContent = L.ready[opp] ? 'Host is READY.' : 'Connected. Host is picking a fighter...';
+      st.textContent = (L.ready[opp] ? 'Host is READY.' : 'Connected. Host is picking a fighter...') + rules;
     }
     const op = $('#oppPick');
     if (App.mode === 'practice') {
@@ -144,6 +145,7 @@
     App.lobby.settings.rounds = parseInt($('#selRounds').value, 10);
     App.lobby.settings.len = parseInt($('#selLen').value, 10);
     App.lobby.settings.diff = parseFloat($('#selDiff').value);
+    App.lobby.settings.grappling = $('#selGrapple').value !== '0';
   }
   function myName() { return ($('#nameInput').value || '').trim().slice(0, 14); }
 
@@ -204,7 +206,9 @@
     switch (d.t) {
       case 'lobby':
         App.lobby.picks[0] = d.picks[0]; App.lobby.names[0] = d.names[0]; App.lobby.ready[0] = d.ready[0];
-        App.lobby.settings = d.settings; refreshLobby(); break;
+        App.lobby.settings = d.settings;
+        if (d.settings) { $('#selRounds').value = d.settings.rounds; $('#selLen').value = d.settings.len; $('#selGrapple').value = d.settings.grappling === false ? '0' : '1'; }
+        refreshLobby(); break;
       case 'start':
         beginFight(d); break;
       case 's':
@@ -234,7 +238,7 @@
     ];
     // same archetype -> alternate shorts colour so they're distinguishable
     if (players[0].fighter === players[1].fighter) players[1].color = 0x8e44ad;
-    const msg = { t: 'start', seed: (Math.random() * 1e9) | 0, players, settings: { rounds: L.settings.rounds, len: L.settings.len } };
+    const msg = { t: 'start', seed: (Math.random() * 1e9) | 0, players, settings: { rounds: L.settings.rounds, len: L.settings.len, grappling: L.settings.grappling !== false } };
     if (App.mode === 'host') App.net.send(msg);
     beginFight(msg);
   }
@@ -250,15 +254,25 @@
   function beginFight(msg) {
     App.audio.init();
     const isHost = App.mode !== 'guest';
+    // the physics engine (lib/rapier3d-compat.js, ~4 MB) loads in the background; the host needs it
+    if (isHost && window.MMAPhys && !MMAPhys.ready() && !App.physFailed) {
+      toast('Loading physics…', 4000);
+      window.addEventListener('mmaphys', () => beginFight(msg), { once: true });
+      return;
+    }
+    if (App.sim) App.sim.destroy();
     App.sim = null; App.state = null; App.evQueue = []; App.remote = { h: 0, p: 0 }; App.rematch = [false, false];
     App.lobby.ready = [false, false];
     if (isHost) {
-      App.sim = new Sim({ seed: msg.seed, rounds: msg.settings.rounds, roundLen: msg.settings.len, players: msg.players });
+      App.sim = new Sim({ seed: msg.seed, rounds: msg.settings.rounds, roundLen: msg.settings.len, players: msg.players, grappling: msg.settings.grappling !== false });
       App.state = App.sim.state;
       App.brain = App.mode === 'practice' ? new CpuBrain(1, App.lobby.settings.diff) : null;
+      // ?auto=1 : let the CPU drive your fighter too (handy for watching / tuning the physics)
+      App.autoPilot = App.mode === 'practice' && /[?&]auto=1/.test(location.search) ? new CpuBrain(0, App.lobby.settings.diff) : null;
+      if (!App.sim.phys) toast('Physics engine unavailable — running the classic striking model.', 5000);
     } else {
       // placeholder state until the first snapshot arrives
-      const tmp = new Sim({ seed: msg.seed, rounds: msg.settings.rounds, roundLen: msg.settings.len, players: msg.players });
+      const tmp = new Sim({ seed: msg.seed, rounds: msg.settings.rounds, roundLen: msg.settings.len, players: msg.players, physics: false, grappling: msg.settings.grappling !== false });
       App.state = tmp.state;
     }
     const R = ensureRenderer();
@@ -271,10 +285,10 @@
     screen(null);
     App.playing = true;
     App.audio.setCrowd(0.06);
-    centerMsg('ROUND 1<small>' + App.state.f[0].name + ' vs ' + App.state.f[1].name + '</small>', 2600);
+    centerMsg('ROUND 1<small>' + App.state.f[0].name + ' vs ' + App.state.f[1].name + (App.state.grappling === false ? ' · striking only' : '') + '</small>', 2600);
   }
 
-  function stopFight() { App.playing = false; App.paused = false; App.sim = null; hideCenter(); $('#grapple').classList.remove('show'); }
+  function stopFight() { App.playing = false; App.paused = false; if (App.sim) App.sim.destroy(); App.sim = null; hideCenter(); $('#grapple').classList.remove('show'); }
 
   function showEnd(S) {
     const R = S.result; if (!R) return;
@@ -320,6 +334,7 @@
         case 'block': A.block(); if (Math.random() < 0.35) feed(text); break;
         case 'miss': A.whiff(); if (ev.slipped) feed(text); break;
         case 'kd': A.slam(); centerMsg('KNOCKDOWN!', 1400); feed(text, true); break;
+        case 'follow': A.slam(); feed(text, true); break;
         case 'td': A.slam(); feed(text, true); break;
         case 'sweep': A.slam(); feed(text, true); break;
         case 'tdfail': case 'shoot': case 'standup': case 'subfail': feed(text); break;
@@ -366,6 +381,7 @@
       const st = p.querySelector('.status');
       let txt = '', cls = 'status';
       if (f.act.type === 'down') txt = 'OUT';
+      else if (f.act.type === 'kd') { txt = 'DOWN'; cls += ' rocked'; }
       else if (f.rocked > 0) { txt = 'ROCKED'; cls += ' rocked'; }
       else if (f.ground === 'top') txt = 'TOP';
       else if (f.ground === 'bottom') txt = 'BOTTOM';
@@ -520,7 +536,8 @@
     if (App.paused && App.mode === 'practice') { App.pressed = 0; App.renderer.update(App.state, 0, inputs); updateHUD(App.state); return; }
     if (isHost) {
       const sim = App.sim;
-      sim.setInput(0, App.held, App.pressed); App.pressed = 0;
+      if (App.autoPilot) { const o = App.autoPilot.update(sim.state, dt); sim.setInput(0, o.held | App.held, o.pressed | App.pressed); App.pressed = 0; }
+      else { sim.setInput(0, App.held, App.pressed); App.pressed = 0; }
       if (App.brain) { const o = App.brain.update(sim.state, dt); sim.setInput(1, o.held, o.pressed); inputs[1] = o.held; }
       else { sim.setInput(1, App.remote.h, App.remote.p); App.remote.p = 0; inputs[1] = App.remote.h; }
       inputs[0] = App.held;
@@ -573,7 +590,7 @@
     readSettings(); refreshLobby(); sendPick(); maybeStart();
   };
   $('#nameInput').addEventListener('change', () => { App.lobby.names[App.myIdx] = myName(); sendPick(); refreshLobby(); });
-  for (const id of ['selRounds', 'selLen']) $('#' + id).addEventListener('change', () => { readSettings(); sendPick(); });
+  for (const id of ['selRounds', 'selLen', 'selGrapple']) $('#' + id).addEventListener('change', () => { readSettings(); sendPick(); refreshLobby(); });
   $('#btnMenu').onclick = () => { stopFight(); if (App.net) { App.net.destroy(); App.net = null; } App.mode = null; screen('menu'); };
   $('#btnRematch').onclick = () => {
     if (App.mode === 'guest') { App.net.send({ t: 'rematch' }); $('#btnRematch').textContent = 'WAITING FOR HOST…'; $('#btnRematch').disabled = true; return; }
@@ -584,11 +601,25 @@
   try { $('#nameInput').value = localStorage.getItem('cr_name') || ''; } catch (_) {}
   $('#nameInput').addEventListener('input', () => { try { localStorage.setItem('cr_name', $('#nameInput').value); } catch (_) {} });
 
+  window.addEventListener('mmaphys', (e) => { if (!e.detail.ok) { App.physFailed = true; toast('Physics engine failed to load: ' + (e.detail.error && e.detail.error.message), 8000); } });
+
+  window.CageRules = App; // dev hook: window.CageRules.sim / .state / .renderer
+  // dev hook: advance a practice fight by n sim ticks regardless of frame rate (used by tools/browser-test.js)
+  App.tick = (n) => {
+    const sim = App.sim; if (!sim) return;
+    for (let k = 0; k < n; k++) {
+      if (App.autoPilot) { const o = App.autoPilot.update(sim.state, 1 / 60); sim.setInput(0, o.held, o.pressed); } else sim.setInput(0, App.held, App.pressed);
+      if (App.brain) { const o = App.brain.update(sim.state, 1 / 60); sim.setInput(1, o.held, o.pressed); }
+      sim.acc = 0; sim.step(1 / 60);
+      const evs = sim.drainEvents(); if (evs.length) processEvents(evs, sim.state);
+    }
+  };
+
   // Build the arena right away so the menu has a live 3D background
   window.addEventListener('load', () => {
     try {
       const R = ensureRenderer();
-      const demo = new Sim({ seed: 1, players: [{ fighter: 'striker' }, { fighter: 'wrestler' }] });
+      const demo = new Sim({ seed: 1, players: [{ fighter: 'striker' }, { fighter: 'wrestler' }], physics: false });
       App.state = demo.state; R.setFighters(demo.state);
     } catch (e) { console.error(e); toast('WebGL failed to start: ' + e.message, 8000); }
   });

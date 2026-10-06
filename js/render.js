@@ -12,8 +12,7 @@
   const expo = (dt, k) => 1 - Math.exp(-dt * k);
 
   // ---------- dimensions ----------
-  const THIGH = 0.51, SHIN = 0.49, UPPER = 0.33, FORE = 0.31;
-  const HIP_H = 0.92, SHOULDER_Y = 0.5, SHOULDER_X = 0.23, HIP_X = 0.12;
+  const HIP_H = 0.92; // hip height the ground / fallback poses are authored against
 
   // ---------- poses (torso-space hand targets, body-space foot targets) ----------
   // h: hip height, lean: torso pitch (rad, + forward), yaw: torso twist, roll,
@@ -163,86 +162,104 @@
   }
 
   // ---------- fighter model ----------
-  function limb(len, r, mat, r2) {
-    const g = new THREE.Group();
-    const geo = new THREE.CylinderGeometry(r2 || r * 0.8, r, len, 10, 1);
-    const m = new THREE.Mesh(geo, mat);
-    m.position.y = -len / 2; m.castShadow = true; m.receiveShadow = true;
-    g.add(m);
-    const cap = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), mat); cap.castShadow = true; g.add(cap);
-    return g;
+  // The visible fighter is eleven rigid segments (the same rig the physics uses: box pelvis and
+  // chest, ball head, capsule limbs, ball gloves, box feet). While the ragdoll is live the segments
+  // copy its bodies one-to-one from the pose snapshot in the sim state. On the ground (and in the
+  // menu / without physics) a hidden two-bone IK skeleton is posed from POSES and the segments are
+  // snapped onto its bones, so the look never changes.
+  const SEGS = (root.MMAPhys && root.MMAPhys.SEGS) || null;
+  const SEG_ORDER = ['pelvis', 'chest', 'head', 'lUpperArm', 'lForearm', 'rUpperArm', 'rForearm', 'lThigh', 'lShin', 'rThigh', 'rShin'];
+  const RIG = { // segment dims (metres) — mirrors js/physics.js SEGS
+    pelvis: [0.16, 0.09, 0.11], chest: [0.19, 0.20, 0.12], headR: 0.12,
+    upperArm: [0.12, 0.05], forearm: [0.12, 0.045], fistR: 0.062, fistY: -0.18,
+    thigh: [0.18, 0.075], shin: [0.18, 0.055], foot: [0.05, 0.035, 0.11], footPos: [0, -0.22, 0.05],
+    chestUp: 0.34, headUp: 0.34, shoulder: [0.23, 0.17], hip: [0.10, -0.08]
+  };
+  if (SEGS) {
+    const s = SEGS;
+    RIG.pelvis = s.pelvis.shape.slice(1); RIG.chest = s.chest.shape.slice(1); RIG.headR = s.head.shape[1];
+    RIG.upperArm = s.lUpperArm.shape.slice(1); RIG.forearm = s.lForearm.shape.slice(1); RIG.fistR = s.lForearm.extra.shape[1]; RIG.fistY = s.lForearm.extra.pos[1];
+    RIG.thigh = s.lThigh.shape.slice(1); RIG.shin = s.lShin.shape.slice(1); RIG.foot = s.lShin.extra.shape.slice(1); RIG.footPos = s.lShin.extra.pos.slice();
+    RIG.chestUp = s.chest.anchorParent[1] - s.chest.anchorSelf[1];
+    RIG.headUp = s.head.anchorParent[1] - s.head.anchorSelf[1];
+    RIG.shoulder = [-s.lUpperArm.anchorParent[0], s.lUpperArm.anchorParent[1]];
+    RIG.hip = [-s.lThigh.anchorParent[0], s.lThigh.anchorParent[1]];
   }
+  // IK bone lengths derived from the rig: joint-to-joint for the upper bones, joint-to-weapon for the lower
+  const UPPER_L = RIG.upperArm[0] * 2 + 0.04, FORE_L = RIG.forearm[0] + 0.02 - RIG.fistY;   // elbow -> glove centre
+  const THIGH_L = RIG.thigh[0] * 2 + 0.06, SHIN_L = RIG.shin[0] + 0.03 - RIG.footPos[1];     // knee -> foot centre
+  const SH_X = RIG.shoulder[0], SH_Y = RIG.chestUp + RIG.shoulder[1], HIP_XX = RIG.hip[0], HIP_Y = RIG.hip[1];
+  const _q = new THREE.Quaternion(), _pw = new THREE.Vector3(), _off = new THREE.Vector3();
 
   class FighterModel {
     constructor(scene, color, skin, idx) {
       this.idx = idx;
       const skinMat = new THREE.MeshStandardMaterial({ color: skin, roughness: 0.75, metalness: 0.0 });
       const shortsMat = new THREE.MeshStandardMaterial({ color, roughness: 0.6 });
-      const gloveMat = new THREE.MeshStandardMaterial({ color: idx === 0 ? 0xc62828 : 0x1e5bd6, roughness: 0.5 });
-      const hairMat = new THREE.MeshStandardMaterial({ color: 0x1a120c, roughness: 0.9 });
-      // separate skin materials per damage region so bruising can be shown where the damage is
+      const gloveMat = new THREE.MeshStandardMaterial({ color: idx === 0 ? 0xc62828 : 0x1e5bd6, roughness: 0.4, metalness: 0.05 });
+      const darkMat = new THREE.MeshStandardMaterial({ color: 0x1c1c22, roughness: 0.9 });
       const headMat = skinMat.clone(), bodyMat = skinMat.clone(), legMat = skinMat.clone();
       this.mats = { skinMat, shortsMat, gloveMat, headMat, bodyMat, legMat };
       this.skinBase = new THREE.Color(skin);
 
-      this.root = new THREE.Group();
-      this.body = new THREE.Group(); this.root.add(this.body);           // hips; y = hip height
-      this.torso = new THREE.Group(); this.body.add(this.torso);         // pitch / yaw
-      // pelvis + shorts
-      const pelvis = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.26, 0.24), shortsMat); pelvis.position.y = 0.0; pelvis.castShadow = true; this.torso.add(pelvis);
-      const abs = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.19, 0.22, 12), bodyMat); abs.position.y = 0.22; abs.castShadow = true; this.torso.add(abs);
-      const chest = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.3, 0.27), bodyMat); chest.position.y = 0.42; chest.castShadow = true; this.torso.add(chest);
-      const trap = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.22, 0.1, 10), skinMat); trap.position.y = 0.6; this.torso.add(trap);
-      // head
-      this.neck = new THREE.Group(); this.neck.position.y = 0.62; this.torso.add(this.neck);
-      const head = new THREE.Mesh(new THREE.SphereGeometry(0.125, 16, 14), headMat); head.position.y = 0.13; head.castShadow = true; this.neck.add(head);
+      // ---- visible segments (world-space groups)
+      this.segs = {};
+      const seg = (name) => { const g = new THREE.Group(); scene.add(g); this.segs[name] = g; return g; };
+      const addMesh = (g, geo, mat, offset) => { const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; if (offset) m.position.set(...offset); g.add(m); return m; };
+      // r128 has no CapsuleGeometry: cylinder + two hemispheres along Y
+      const addCapsule = (g, r, half, mat) => { addMesh(g, new THREE.CylinderGeometry(r, r, half * 2, 12, 1, true), mat); addMesh(g, new THREE.SphereGeometry(r, 12, 8), mat, [0, half, 0]); addMesh(g, new THREE.SphereGeometry(r, 12, 8), mat, [0, -half, 0]); };
+      const R = RIG;
+      addMesh(seg('pelvis'), new THREE.BoxGeometry(R.pelvis[0] * 2, R.pelvis[1] * 2, R.pelvis[2] * 2), shortsMat);
+      const chest = seg('chest');
+      addMesh(chest, new THREE.BoxGeometry(R.chest[0] * 2, R.chest[1] * 2, R.chest[2] * 2), bodyMat);
+      addMesh(chest, new THREE.BoxGeometry(R.chest[0] * 2 + 0.02, 0.1, R.chest[2] * 2 + 0.02), shortsMat, [0, -R.chest[1] + 0.03, 0]); // waistband
+      const head = seg('head');
+      this.head = addMesh(head, new THREE.SphereGeometry(R.headR, 20, 16), headMat);
+      addMesh(head, new THREE.SphereGeometry(R.headR * 0.98, 20, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), darkMat); // hair cap
+      addMesh(head, new THREE.SphereGeometry(0.018, 8, 8), darkMat, [-0.045, 0.02, R.headR - 0.015]);
+      addMesh(head, new THREE.SphereGeometry(0.018, 8, 8), darkMat, [0.045, 0.02, R.headR - 0.015]);
+      for (const side of ['l', 'r']) {
+        addCapsule(seg(side + 'UpperArm'), R.upperArm[1], R.upperArm[0], skinMat);
+        const fa = seg(side + 'Forearm');
+        addCapsule(fa, R.forearm[1], R.forearm[0], skinMat);
+        addMesh(fa, new THREE.SphereGeometry(R.fistR, 14, 12), gloveMat, [0, R.fistY, 0]);
+        addCapsule(seg(side + 'Thigh'), R.thigh[1], R.thigh[0], shortsMat);
+        const sh = seg(side + 'Shin');
+        addCapsule(sh, R.shin[1], R.shin[0], legMat);
+        addMesh(sh, new THREE.BoxGeometry(R.foot[0] * 2, R.foot[1] * 2, R.foot[2] * 2), darkMat, R.footPos);
+      }
       // blood: a cut over the eye, a bloody nose/mouth, and a smear on the chest (shown as damage climbs)
       const bloodMat = new THREE.MeshStandardMaterial({ color: 0x8a0f12, roughness: 0.35, transparent: true, opacity: 0 });
       this.bloodMat = bloodMat;
-      const cut = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.018, 0.02), bloodMat); cut.position.set(0.05, 0.18, 0.105); cut.rotation.z = 0.3; this.neck.add(cut);
-      const nose = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.06, 0.02), bloodMat); nose.position.set(0, 0.09, 0.118); this.neck.add(nose);
-      const cheek = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), bloodMat); cheek.position.set(-0.07, 0.12, 0.085); cheek.scale.set(1, 1.3, 0.5); this.neck.add(cheek);
-      const smear = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.22, 0.01), bloodMat); smear.position.set(0.02, 0.4, 0.14); this.torso.add(smear);
+      const cut = addMesh(head, new THREE.BoxGeometry(0.05, 0.018, 0.02), bloodMat, [0.05, 0.05, R.headR - 0.01]); cut.rotation.z = 0.3; cut.castShadow = false;
+      const nose = addMesh(head, new THREE.BoxGeometry(0.035, 0.06, 0.02), bloodMat, [0, -0.04, R.headR - 0.005]); nose.castShadow = false;
+      const cheek = addMesh(head, new THREE.SphereGeometry(0.03, 8, 6), bloodMat, [-0.07, -0.01, R.headR - 0.04]); cheek.scale.set(1, 1.3, 0.5); cheek.castShadow = false;
+      const smear = addMesh(chest, new THREE.BoxGeometry(0.14, 0.22, 0.01), bloodMat, [0.02, 0.02, R.chest[2] + 0.005]); smear.castShadow = false;
       this.blood = { cut, nose, cheek, smear };
-      const hair = new THREE.Mesh(new THREE.SphereGeometry(0.128, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.5), hairMat); hair.position.y = 0.15; hair.scale.set(1, 0.8, 1); this.neck.add(hair);
-      const brow = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.025, 0.04), hairMat); brow.position.set(0, 0.17, 0.115); this.neck.add(brow);
-      this.head = head;
-      // arms
-      const shoulderPad = (sx) => { const s = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 8), skinMat); s.position.set(sx, SHOULDER_Y, 0); s.castShadow = true; this.torso.add(s); };
-      shoulderPad(-SHOULDER_X); shoulderPad(SHOULDER_X);
-      this.lSh = new THREE.Group(); this.lSh.position.set(-SHOULDER_X, SHOULDER_Y, 0); this.torso.add(this.lSh);
-      this.rSh = new THREE.Group(); this.rSh.position.set(SHOULDER_X, SHOULDER_Y, 0); this.torso.add(this.rSh);
-      const lUp = limb(UPPER, 0.062, skinMat, 0.055); this.lSh.add(lUp);
-      const rUp = limb(UPPER, 0.062, skinMat, 0.055); this.rSh.add(rUp);
-      this.lEl = new THREE.Group(); this.lEl.position.y = -UPPER; lUp.add(this.lEl);
-      this.rEl = new THREE.Group(); this.rEl.position.y = -UPPER; rUp.add(this.rEl);
-      const lFo = limb(FORE, 0.052, skinMat, 0.048); this.lEl.add(lFo);
-      const rFo = limb(FORE, 0.052, skinMat, 0.048); this.rEl.add(rFo);
-      const glove = () => { const g = new THREE.Mesh(new THREE.SphereGeometry(0.085, 12, 10), gloveMat); g.position.y = -FORE - 0.02; g.scale.set(1, 0.9, 1.15); g.castShadow = true; return g; };
-      this.lGlove = glove(); lFo.add(this.lGlove); this.rGlove = glove(); rFo.add(this.rGlove);
-      // legs
-      this.lHip = new THREE.Group(); this.lHip.position.set(-HIP_X, -0.08, 0); this.body.add(this.lHip);
-      this.rHip = new THREE.Group(); this.rHip.position.set(HIP_X, -0.08, 0); this.body.add(this.rHip);
-      const lTh = limb(THIGH, 0.095, shortsMat, 0.075); this.lHip.add(lTh);
-      const rTh = limb(THIGH, 0.095, shortsMat, 0.075); this.rHip.add(rTh);
-      // skin lower thigh
-      const lThSkin = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.078, THIGH * 0.45, 10), legMat); lThSkin.position.y = -THIGH * 0.75; lTh.add(lThSkin);
-      const rThSkin = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.078, THIGH * 0.45, 10), legMat); rThSkin.position.y = -THIGH * 0.75; rTh.add(rThSkin);
-      this.lKn = new THREE.Group(); this.lKn.position.y = -THIGH; lTh.add(this.lKn);
-      this.rKn = new THREE.Group(); this.rKn.position.y = -THIGH; rTh.add(this.rKn);
-      const lSh = limb(SHIN, 0.065, legMat, 0.05); this.lKn.add(lSh);
-      const rSh = limb(SHIN, 0.065, legMat, 0.05); this.rKn.add(rSh);
-      const foot = () => { const f = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.06, 0.24), skinMat); f.position.set(0, -SHIN - 0.02, 0.06); f.castShadow = true; return f; };
-      lSh.add(foot()); rSh.add(foot());
+
+      // ---- hidden IK skeleton (drives the segments when the ragdoll is parked)
+      this.root = new THREE.Group();
+      this.body = new THREE.Group(); this.root.add(this.body);           // hips; y = hip height
+      this.torso = new THREE.Group(); this.body.add(this.torso);         // pitch / yaw
+      this.neck = new THREE.Group(); this.neck.position.y = RIG.chestUp + RIG.headUp; this.torso.add(this.neck);
+      this.lSh = new THREE.Group(); this.lSh.position.set(-SH_X, SH_Y, 0); this.torso.add(this.lSh);
+      this.rSh = new THREE.Group(); this.rSh.position.set(SH_X, SH_Y, 0); this.torso.add(this.rSh);
+      this.lEl = new THREE.Group(); this.lEl.position.y = -UPPER_L; this.lSh.add(this.lEl);
+      this.rEl = new THREE.Group(); this.rEl.position.y = -UPPER_L; this.rSh.add(this.rEl);
+      this.lHip = new THREE.Group(); this.lHip.position.set(-HIP_XX, HIP_Y, 0); this.body.add(this.lHip);
+      this.rHip = new THREE.Group(); this.rHip.position.set(HIP_XX, HIP_Y, 0); this.body.add(this.rHip);
+      this.lKn = new THREE.Group(); this.lKn.position.y = -THIGH_L; this.lHip.add(this.lKn);
+      this.rKn = new THREE.Group(); this.rKn.position.y = -THIGH_L; this.rHip.add(this.rKn);
+      scene.add(this.root);
 
       // shadow blob
       const blob = new THREE.Mesh(new THREE.CircleGeometry(0.42, 20), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false }));
-      blob.rotation.x = -Math.PI / 2; blob.position.y = 0.012; this.root.add(blob);
+      blob.rotation.x = -Math.PI / 2; blob.position.y = 0.012; scene.add(blob);
       this.blob = blob;
 
-      scene.add(this.root);
+      this.scene = scene;
       this.pose = copyPose(POSES.idle);
-      this.px = 0; this.pz = 0; this.yaw = 0; this.initialized = false;
+      this.px = 0; this.pz = 0; this.yaw = 0; this.initialized = false; this.physMode = false;
       this.flash = 0; this.stepPhase = 0;
       this._v = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
       this._pole = new THREE.Vector3();
@@ -250,6 +267,11 @@
       this._dmgC = new THREE.Color(); this._red = new THREE.Color(0.75, 0.25, 0.22); this._bruise = new THREE.Color(0.38, 0.22, 0.42);
       this._eul = new THREE.Euler(); this._qHip = new THREE.Quaternion(); this._yAxis = new THREE.Vector3(0, 1, 0);
       this._tipArr = [0, 0, 0];
+    }
+
+    dispose() {
+      for (const n in this.segs) this.scene.remove(this.segs[n]);
+      this.scene.remove(this.root); this.scene.remove(this.blob);
     }
 
     setColors(color, skin) { this.mats.shortsMat.color.setHex(color); this.skinBase.setHex(skin); for (const k of ['skinMat', 'headMat', 'bodyMat', 'legMat']) this.mats[k].color.setHex(skin); }
@@ -347,20 +369,67 @@
       const hand = st.tip === 'hand';
       if (hand) {
         // lunge: if the fist is beyond the arm's reach, carry the body forward with it
-        const sx = (st.limb === 'lh' ? -SHOULDER_X : SHOULDER_X) + p.ox, sy = p.h + SHOULDER_Y, sz = p.oz + 0.05;
-        const over = Math.hypot(lx - sx, ly - sy, lz - sz) - (UPPER + FORE + 0.07);
+        const sx = (st.limb === 'lh' ? -SH_X : SH_X) + p.ox, sy = p.h + SH_Y, sz = p.oz + 0.05;
+        const over = Math.hypot(lx - sx, ly - sy, lz - sz) - (UPPER_L + FORE_L + 0.07);
         if (over > 0) { p.oz += Math.min(0.32, over); p.lean += Math.min(0.25, over * 0.6); }
       } else {
-        const hx0 = st.limb === 'll' ? -HIP_X : HIP_X;
-        const hx = hx0 * Math.cos(p.hipYaw) + p.ox, hy = p.h - 0.08, hz = -hx0 * Math.sin(p.hipYaw) + p.oz;
-        const reach = st.tip === 'knee' ? THIGH : THIGH + SHIN;
+        const hx0 = st.limb === 'll' ? -HIP_XX : HIP_XX;
+        const hx = hx0 * Math.cos(p.hipYaw) + p.ox, hy = p.h + HIP_Y, hz = -hx0 * Math.sin(p.hipYaw) + p.oz;
+        const reach = st.tip === 'knee' ? THIGH_L : THIGH_L + SHIN_L;
         const over = Math.hypot(lx - hx, ly - hy, lz - hz) - (reach + 0.02);
         if (over > 0) { p.oz += Math.min(0.28, over * 0.9); if (st.tip !== 'knee') p.h -= Math.min(0.06, over * 0.2); }
       }
       return { st, lx, ly, lz, hand };
     }
 
+    // ---- segments <- physics snapshot (11 x [px,py,pz,qx,qy,qz,qw])
+    _applySnapshot(pose, dt, k) {
+      const a = 1 - Math.exp(-dt * k);
+      for (let i = 0; i < SEG_ORDER.length; i++) {
+        const g = this.segs[SEG_ORDER[i]], o = i * 7;
+        _pw.set(pose[o], pose[o + 1], pose[o + 2]);
+        _q.set(pose[o + 3], pose[o + 4], pose[o + 5], pose[o + 6]);
+        if (this.physMode) { g.position.lerp(_pw, a); g.quaternion.slerp(_q, a); }
+        else { g.position.copy(_pw); g.quaternion.copy(_q); }
+      }
+    }
+    // ---- segments <- hidden IK skeleton
+    _segFromBone(name, bone, offY, offZ) {
+      const g = this.segs[name];
+      bone.getWorldQuaternion(g.quaternion);
+      bone.getWorldPosition(g.position);
+      if (offY || offZ) { _off.set(0, offY || 0, offZ || 0).applyQuaternion(g.quaternion); g.position.add(_off); }
+    }
+    _applySkeleton() {
+      this.root.updateMatrixWorld(true);
+      this._segFromBone('pelvis', this.body);
+      this._segFromBone('chest', this.torso, RIG.chestUp);
+      this._segFromBone('head', this.neck);
+      this._segFromBone('lUpperArm', this.lSh, -RIG.upperArm[0] - 0.02); this._segFromBone('rUpperArm', this.rSh, -RIG.upperArm[0] - 0.02);
+      this._segFromBone('lForearm', this.lEl, -RIG.forearm[0] - 0.02); this._segFromBone('rForearm', this.rEl, -RIG.forearm[0] - 0.02);
+      this._segFromBone('lThigh', this.lHip, -RIG.thigh[0] - 0.03); this._segFromBone('rThigh', this.rHip, -RIG.thigh[0] - 0.03);
+      this._segFromBone('lShin', this.lKn, -RIG.shin[0] - 0.03); this._segFromBone('rShin', this.rKn, -RIG.shin[0] - 0.03);
+    }
+
     update(f, S, opp, dt, time, groundAxis, posLerp) {
+      // ---- live ragdoll: the sim publishes every bone, nothing to pose
+      if (f.pose && f.pose.length >= SEG_ORDER.length * 7 && !f.ground) {
+        this._applySnapshot(f.pose, dt, posLerp && posLerp < 15 ? 14 : 40); // guests smooth between snapshots
+        const pv = this.segs.pelvis.position;
+        this.px = pv.x; this.pz = pv.z;
+        _off.set(0, 0, 1).applyQuaternion(this.segs.pelvis.quaternion);
+        this.yaw = Math.atan2(_off.x, _off.z);
+        this.initialized = true;
+        this.physMode = true;
+        this.blob.position.set(this.px, 0.012, this.pz);
+        this.blob.material.opacity = 0.35;
+        if (this.flash > 0) this.flash -= dt * 4;
+        this.updateDamage(f);
+        return;
+      }
+      const wasPhys = this.physMode;
+      this.physMode = false;
+
       // ---- position & facing ----
       let tx = f.x, tz = f.z, tyaw;
       if (S.ground && f.ground) {
@@ -388,14 +457,14 @@
       this.px += (tx - this.px) * expo(dt, k); this.pz += (tz - this.pz) * expo(dt, k);
       let dy = tyaw - this.yaw; while (dy > Math.PI) dy -= Math.PI * 2; while (dy < -Math.PI) dy += Math.PI * 2;
       this.yaw += dy * expo(dt, 10);
-      const vx = (tx - this.px), vz = (tz - this.pz);
       const moving = f.act.type === 'move' && !f.ground;
 
       // ---- pose ----
       const target = this.targetPose(f, S, this._tp);
       this._tp = target;
       const speed = (f.act.type === 'strike' || f.act.type === 'hit' || f.act.type === 'dodge') ? 26 : 12;
-      lerpPose(this.pose, target, expo(dt, speed), this.pose);
+      if (wasPhys) copyPose(target, this.pose); // coming off the ragdoll: start from the new pose, not a stale one
+      else lerpPose(this.pose, target, expo(dt, speed), this.pose);
       // overrides (striking limb, lunge) are applied to a per-frame copy so they never feed back into the smoothing
       const p = copyPose(this.pose, this._rp); this._rp = p;
 
@@ -429,7 +498,7 @@
           // feet are already in the root frame; a knee strike carries the foot tucked under the knee
           const left = ov.st.limb === 'll';
           const fxz = left ? p.lf : p.rf;
-          if (ov.st.tip === 'knee') { fxz[0] = ov.lx; fxz[1] = ov.lz - 0.22; if (left) p.lfy = ov.ly - SHIN * 0.85; else p.rfy = ov.ly - SHIN * 0.85; }
+          if (ov.st.tip === 'knee') { fxz[0] = ov.lx; fxz[1] = ov.lz - 0.22; if (left) p.lfy = ov.ly - SHIN_L * 0.85; else p.rfy = ov.ly - SHIN_L * 0.85; }
           else { fxz[0] = ov.lx; fxz[1] = ov.lz; if (left) p.lfy = ov.ly; else p.rfy = ov.ly; }
           const kxz = left ? this.pose.lf : this.pose.rf; kxz[0] = fxz[0]; kxz[1] = fxz[1];
           if (left) this.pose.lfy = p.lfy; else this.pose.rfy = p.rfy;
@@ -438,12 +507,12 @@
 
       // ---- IK arms (torso frame) ----
       const v = this._v;
-      v[0].set(-SHOULDER_X, SHOULDER_Y, 0); v[1].fromArray(p.lh);
+      v[0].set(-SH_X, SH_Y, 0); v[1].fromArray(p.lh);
       this._pole.set(-1, -0.4 - p.elbowOut * 0.3 + p.elbowUp, -0.6); // elbows down/out/back (raised for hooks)
-      solveIK(v[0], v[1], UPPER, FORE, this._pole, this.lSh, this.lEl);
-      v[0].set(SHOULDER_X, SHOULDER_Y, 0); v[1].fromArray(p.rh);
+      solveIK(v[0], v[1], UPPER_L, FORE_L, this._pole, this.lSh, this.lEl);
+      v[0].set(SH_X, SH_Y, 0); v[1].fromArray(p.rh);
       this._pole.set(1, -0.4 - p.elbowOut * 0.3 + p.elbowUp, -0.6);
-      solveIK(v[0], v[1], UPPER, FORE, this._pole, this.rSh, this.rEl);
+      solveIK(v[0], v[1], UPPER_L, FORE_L, this._pole, this.rSh, this.rEl);
 
       // ---- IK legs (body frame) ----
       if (p.lie > -0.5) {
@@ -459,16 +528,18 @@
         const ch = Math.cos(p.hipYaw), sh = Math.sin(p.hipYaw);
         const toBody = (x, z, out) => { out.x = x * ch - z * sh; out.z = x * sh + z * ch; return out; };
         toBody(lfx - p.ox, lfz - p.oz, v[1]); v[1].y = lfy - (p.h + bob) + 0.05;
-        v[0].set(-HIP_X, -0.08, 0); this._pole.fromArray(p.lPole); solveIK(v[0], v[1], THIGH, SHIN, this._pole, this.lHip, this.lKn);
+        v[0].set(-HIP_XX, HIP_Y, 0); this._pole.fromArray(p.lPole); solveIK(v[0], v[1], THIGH_L, SHIN_L, this._pole, this.lHip, this.lKn);
         toBody(rfx - p.ox, rfz - p.oz, v[1]); v[1].y = rfy - (p.h + bob) + 0.05;
-        v[0].set(HIP_X, -0.08, 0); this._pole.fromArray(p.rPole); solveIK(v[0], v[1], THIGH, SHIN, this._pole, this.rHip, this.rKn);
+        v[0].set(HIP_XX, HIP_Y, 0); this._pole.fromArray(p.rPole); solveIK(v[0], v[1], THIGH_L, SHIN_L, this._pole, this.rHip, this.rKn);
       } else {
         // lying on back: body frame rotated; targets given directly in body frame
-        v[0].set(-HIP_X, -0.08, 0); v[1].set(p.lf[0], p.lfy, p.lf[1]);
-        this._pole.set(0, 0.3, 1); solveIK(v[0], v[1], THIGH, SHIN, this._pole, this.lHip, this.lKn);
-        v[0].set(HIP_X, -0.08, 0); v[1].set(p.rf[0], p.rfy, p.rf[1]);
-        this._pole.set(0, 0.3, 1); solveIK(v[0], v[1], THIGH, SHIN, this._pole, this.rHip, this.rKn);
+        v[0].set(-HIP_XX, HIP_Y, 0); v[1].set(p.lf[0], p.lfy, p.lf[1]);
+        this._pole.set(0, 0.3, 1); solveIK(v[0], v[1], THIGH_L, SHIN_L, this._pole, this.lHip, this.lKn);
+        v[0].set(HIP_XX, HIP_Y, 0); v[1].set(p.rf[0], p.rfy, p.rf[1]);
+        this._pole.set(0, 0.3, 1); solveIK(v[0], v[1], THIGH_L, SHIN_L, this._pole, this.rHip, this.rKn);
       }
+      this._applySkeleton();
+      this.blob.position.set(this.px, 0.012, this.pz);
       this.blob.material.opacity = p.lie < -0.5 ? 0.15 : 0.35;
 
       // hit flash + accumulated damage on the skin
@@ -476,8 +547,8 @@
       this.updateDamage(f);
     }
 
-    headWorld(out) { return this.head.getWorldPosition(out); }
-    torsoWorld(out) { return this.torso.getWorldPosition(out).add(new THREE.Vector3(0, 0.35, 0)); }
+    headWorld(out) { return out.copy(this.segs.head.position); }
+    torsoWorld(out) { return out.copy(this.segs.chest.position); }
   }
 
   // ---------- arena ----------
@@ -633,7 +704,7 @@
     }
 
     setFighters(S) {
-      for (const m of this.models) this.scene.remove(m.root);
+      for (const m of this.models) m.dispose();
       this.models = S.f.map((f, i) => new FighterModel(this.scene, f.color, f.skin, i));
       this.lastGround = false;
     }

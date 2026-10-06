@@ -52,6 +52,13 @@
       const oppShooting = op.act.type === 'takedown' && !op.act.hit;
       const tired = me.stam < 22;
 
+      // opponent knocked down: wrestlers and grapplers dive on him, strikers let him up and reset
+      if (op.act.type === 'kd') {
+        const follow = S.grappling !== false && r() < (st.wre * 0.06 + st.bjj * 0.04) * (0.5 + d);
+        if (follow) { if (dist <= 1.8) this.pressed |= IN.GRAPPLE; else held |= IN.FWD; }
+        else if (dist < 1.4) held |= IN.BACK;
+        this.held = held; return { held, pressed: this.pressed };
+      }
       if (me.rocked > 0) {
         held |= IN.BLOCK; if (r() < 0.6) held |= IN.BACK;
         if (r() < 0.02) held |= (r() < 0.5 ? IN.LEFT : IN.RIGHT);
@@ -85,7 +92,7 @@
         if (dist <= 1.7 && r() < aggr) {
           // takedown?
           const tdWant = st.wre * 0.22 + (oppWinding ? 0.25 : 0) + (op.rocked > 0 ? 0.2 : 0) + (me.dmg.head > 55 ? 0.2 : 0);
-          if (dist <= 1.5 && me.stam > 20 && r() < tdWant * (0.4 + d * 0.6)) {
+          if (S.grappling !== false && dist <= 1.5 && me.stam > 20 && r() < tdWant * (0.4 + d * 0.6)) {
             this.pressed |= IN.GRAPPLE;
           } else {
             const pick = this._pickStrike(me, op, dist);

@@ -4,17 +4,27 @@ A 3D one‑on‑one mixed martial arts simulation. Play online against a friend
 (peer‑to‑peer, no server to run) or practice against the CPU. Pure static
 files — made for GitHub Pages.
 
+The standing game is **physics based**: both fighters are active ragdolls
+(eleven rigid bodies each, joint motors chasing stance / guard / strike
+poses, simulated with [Rapier](https://rapier.rs) at 240 Hz). A punch is a
+real fist being thrown at the opponent — it only does damage if it actually
+arrives, with speed, square to the target — and a guard works because the
+forearms are physically in the way. Everything else (ground game, takedowns,
+submissions, stamina, judging, netcode) is the regular Cage Rules ruleset.
+
 ## Host on GitHub Pages
 
 1. Create a repository (e.g. `cage-rules`) and push every file in this folder
    to the root of the `main` branch (`index.html`, `css/`, `js/`, `lib/`).
+   `lib/rapier3d-compat.js` (the physics engine, ~4 MB, WebAssembly inlined)
+   is required; it is loaded in the background and the first fight waits for it.
 2. Repo **Settings → Pages → Build and deployment**: Source = *Deploy from a
    branch*, Branch = `main`, folder = `/ (root)`. Save.
 3. After a minute the game is live at `https://<your-user>.github.io/cage-rules/`.
 
-Three.js and PeerJS load from cdnjs. If you prefer to self‑host them, drop
-`three.min.js` (r128) and `peerjs.min.js` (1.5.x) into `lib/` — the page
-falls back to those automatically if the CDN is unreachable.
+Three.js and PeerJS load from cdnjs; copies of `three.min.js` (r128) and
+`peerjs.min.js` (1.5.x) are vendored in `lib/` and the page falls back to
+them automatically if the CDN is unreachable.
 
 ## Online play
 
@@ -73,17 +83,21 @@ works from any camera angle.
   left, or overdrawing one) wears it down too. In the corner you get 20 %
   of it back and start the next round with a full tank.
 * **Striking is physical.** Each strike is a limb (U/I/J/K) plus a kind
-  chosen by the modifier you hold. The simulation traces the fist, foot or
-  knee along an authored path and only registers a hit when it actually
-  reaches the head, torso or legs — the 3D limb follows the same path, so
-  what you see is what lands. Damage scales with the **closing speed**
-  between the limb and the target: step or circle into a hook or a head
-  kick and it hits harder; back away from a punch and it lands soft or
-  misses. A strike that makes contact before the limb extends (throwing a
-  long shot from the clinch) is **smothered** and does a fraction of its
-  damage. Short weapons (uppercuts, hooks, knees) are for the pocket;
-  straights, teeps and kicks need room. A kick aimed at the head can
-  still catch the body if that is what is in the way.
+  chosen by the modifier you hold. The strike is a keyframed pose that the
+  ragdoll's joint motors chase — hips and shoulders turn into the blow
+  first, the limb fires last — and the fist / shin / instep is a real rigid
+  body. When it touches the opponent the game reads the contact normal and
+  the pre‑impact velocities and computes `vn` (closing speed along the
+  normal) and how **clean** the hit is. Below 2.2 m/s or less than 35 %
+  square it is a **glancing** blow and does nothing; otherwise damage grows
+  with `(vn − 2.2)^1.3`, so stepping into a shot or catching someone walking
+  in hurts a lot more, and a punch thrown from the clinch has no room to
+  build speed. Whatever is physically in the way takes the hit: a head kick
+  into a raised arm is a block, a low kick into a braced shin is **checked**,
+  a jab that lands on the gloves is picked off. Short weapons (uppercuts,
+  hooks, knees) are for the pocket; straights, teeps and kicks need room.
+  Hard shots physically stagger the ragdoll (gains drop, the body gets
+  shoved); a KO drops the fighter where he stands.
 * **Combos flow.** As soon as a strike has landed (or whiffed) you can throw
   the next one straight out of the recovery, and a press made while a strike
   is still in the air is buffered and fires the instant it can. Chained
@@ -94,15 +108,21 @@ works from any camera angle.
 * Landing on an opponent mid‑windup is a **counter** (+35 %). A hard punch
   that catches someone mid‑kick cancels the kick, hits harder still
   (+30 %), stuns them longer and charges them for the wasted kick. Slipping
-  (Shift) moves your head off line: head shots whiff and the attacker
-  over‑commits, but body and leg strikes still land. Blocks absorb 85 %
-  (45 % vs low kicks) and cost the blocker stamina. Teeps shove the
-  opponent back.
+  (Shift) physically moves your head off the centre line: straight shots
+  whiff and the attacker over‑commits, but body and leg strikes still land.
+  Holding block raises a tight guard: hits on the forearms do 15 % (45 %
+  for a checked low kick) and cost the blocker stamina; a stray arm that
+  happens to be in the way (not blocking) still soaks about half. Teeps
+  shove the opponent back.
 * **Wrestling** — takedown success depends on both wrestling stats,
   whether the defender is sprawling (holding block), caught mid‑strike,
   rocked or tired. Failed shots leave you stumbling. A takedown lands in
   closed guard (half guard if the shooter is a strong wrestler who caught
-  you swinging); a knockdown lands in half guard.
+  you swinging); a **knockdown** is physical: the hurt fighter drops where he
+  stands and spends about two seconds getting back up (he can't be hit while
+  he is down and comes up rocked). While he is on the mat the attacker can
+  press the takedown key to **follow him down** into half guard, or let him
+  up and keep it standing.
 * **Ground positions** — closed guard → half guard → side control → mount,
   plus back control. The top fighter advances with **takedown key + W**
   (pass / take mount); the bottom fighter works with **takedown key + a
@@ -126,6 +146,9 @@ works from any camera angle.
   key to attempt an escape — timing it when the attacker lets go to breathe
   gives the best odds. Escapes improve the defender's position; running out
   of gas on a hold loses it. The referee stands up a stalled fight.
+* **Striking only** — the lobby's *Grappling* setting (host decides) turns
+  takedowns and the ground game off (and following a knocked‑down opponent
+  to the mat); the fight can only end by KO, TKO or decision.
 * **Scoring** — three judges, 10‑point must. Rounds are scored on damage,
   volume, takedowns, control time, submission attempts and knockdowns;
   dominant rounds are 10‑8. Three (or 1 / 5) rounds, 1–5 minutes each.
@@ -133,16 +156,47 @@ works from any camera angle.
 ## Files
 
 ```
-index.html        page + HUD + menus
+index.html        page + HUD + menus (+ loads the physics engine in the background)
 css/style.css
-js/sim.js         fight simulation (deterministic, seeded, fixed‑step)
+js/physics.js     MMAPhys: Rapier world, active ragdolls, stance / guard / strike poses,
+                  contact → damage. No Three.js, runs in Node too.
+js/sim.js         fight simulation (seeded, fixed‑step). Standing = ragdolls, ground = ruleset
 js/ai.js          CPU opponent
-js/render.js      Three.js arena, procedural fighters (two‑bone IK), camera, FX
-js/net.js         PeerJS rooms (host‑authoritative)
+js/render.js      Three.js arena, segment fighters (follow the ragdoll bones when standing,
+                  a two‑bone IK rig posed from POSES on the ground), camera, FX
+js/net.js         PeerJS rooms (host‑authoritative; bone poses ride in the state snapshot)
 js/audio.js       WebAudio sound effects
 js/main.js        menus, lobby, input, game loop, HUD
+lib/              rapier3d-compat.js (physics), three.min.js, peerjs.min.js
+tools/            node scripts: headless.js (CPU vs CPU fights + stats),
+                  probe.js (throw every strike at a dummy over a range of distances),
+                  browser-test.js (run the page in headless Chromium)
 ```
 
-Tuning lives at the top of `js/sim.js` (`ROSTER` stats, `KIND_STATS` timings and
-damage, `handPath` / `legPath` limb trajectories, `DEFAULT_MOVESET`). Strike
-body poses live in `STRIKE_POSES` in `js/render.js`.
+### Tuning the physics
+
+Everything you will want first sits at the top of `js/physics.js`:
+
+* `DMG_SCALE` — overall damage from a clean impact (fights should go rounds).
+  `DMG_CAP` caps a single shot. `VMIN` / `MIN_CLEAN` decide what counts as a
+  glancing blow. `PART_MULT` / `BLOCK_MULT` / `ARM_MULT` / `CHECK_MULT` say
+  where a strike hurts and how much a guard soaks.
+* `STRIKES` — every strike's keyframes (Euler degrees in the parent limb's
+  frame), `active` damage window, `cost`, `speed` (how violently the motors
+  chase the pose), `lunge` (how much the body drives forward) and, for kicks,
+  `lift` (hips rise) and `pelvisTilt`. Lead‑side versions are mirrored from the
+  rear‑side ones. `RANGE` is what the AI believes each strike reaches.
+* `STANCE` / `GUARD` / `SLIP` / `SHOOT` / `SPRAWL` / `STUMBLE` poses, segment
+  sizes and masses in `SEGS`, muscle stiffness `w0`, `HOVER_HEIGHT`,
+  `MOVE_SPEED`.
+
+`node tools/probe.js` prints, for each strike, what it connects with at every
+distance (and how hard) against a dummy in stance (`node tools/probe.js guard`
+for a dummy holding block). `node tools/headless.js 6` plays six CPU fights
+and prints landed / blocked / whiffed counts, damage per hit, finishes and
+simulation cost. In the browser, `?auto=1` lets the CPU drive your fighter in
+practice mode, and `window.CageRules` exposes the live sim, state and renderer.
+
+The old swept‑tip striking model is still in `js/sim.js` and is used
+automatically if the physics engine fails to load. Its tuning (`KIND_STATS`,
+`handPath` / `legPath`) only matters in that fallback.
