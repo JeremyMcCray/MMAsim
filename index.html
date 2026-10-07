@@ -7,7 +7,7 @@
 <meta name="description" content="Cage Rules: a 3D one-on-one mixed martial arts simulation you can play online against a friend, right in the browser.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700;900&family=Barlow:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=12">
+<link rel="stylesheet" href="css/style.css?v=15">
 </head>
 <body>
 <canvas id="gl"></canvas>
@@ -60,11 +60,16 @@
       <button class="big ghost" id="btnWatch">WATCH AI vs AI</button>
       <button class="ghost" id="btnOptions">OPTIONS · CONTROLS</button>
     </div>
+    <label class="mute-music"><input type="checkbox" id="muteMusic"> Mute music</label>
     <div class="join-row hidden" id="joinRow">
       <input id="joinCode" maxlength="5" placeholder="ROOM CODE" autocomplete="off" spellcheck="false">
       <button id="btnJoinGo">CONNECT</button>
     </div>
     <p class="fine">Peer-to-peer over WebRTC — the host's browser runs the fight. Desktop keyboard recommended.</p>
+    <div class="credits">
+      <div class="credits-title">CREDITS</div>
+      <p>Music by <b>MintoDog</b></p>
+    </div>
   </div>
 </div>
 
@@ -122,6 +127,14 @@
       </div>
       <div class="opt-note">Press <b>ESC</b> at any time to open or close this panel. In practice the fight pauses.</div>
     </div>
+    <div class="opt-audio">
+      <h3>AUDIO</h3>
+      <label class="vol-row">Music volume
+        <input type="range" id="musicVol" min="0" max="100" step="1" value="20" aria-label="Music volume">
+        <span id="musicVolLbl">20</span>
+      </label>
+      <label class="mute-music"><input type="checkbox" id="muteMusicOpt"> Mute music</label>
+    </div>
     <div class="opt-cols">
       <div class="opt-col">
         <h3>KEY BINDINGS</h3>
@@ -158,8 +171,8 @@
 <script src="js/brain.js?v=12"></script>
 <script src="js/render.js?v=12"></script>
 <script src="js/net.js?v=12"></script>
-<script src="js/audio.js?v=12"></script>
-<script src="js/main.js?v=12"></script>
+<script src="js/audio.js?v=15"></script>
+<script src="js/main.js?v=15"></script>
 <script src="lib/rapier3d-compat.js?v=12"></script>
 <script>
   // Rapier physics engine (vendored, WASM inlined, plain script so the game also runs from file://).
