@@ -5,6 +5,7 @@
   'use strict';
   const { IN, Sim, ROSTER, describe, LIMBS, LIMB_NAME, MODS, HAND_KINDS, LEG_KINDS, KIND_LABEL, DEFAULT_MOVESET, normalizeMoveset, POS_NAME, MOVES, SUBS_BY, BOTTOM_CAN_STRIKE, KD } = window.MMASim;
   const { CpuBrain } = window.MMAAI;
+  const NeuralBrain = window.MMABrain && window.MMABrain.NeuralBrain;
   const { Renderer } = window.MMARender;
   const { Net } = window.MMANet;
   const { Audio } = window.MMAAudio;
@@ -65,11 +66,54 @@
   const App = {
     mode: null, net: null, sim: null, renderer: null, audio: new Audio(), brain: null,
     myIdx: 0, held: 0, pressed: 0, remote: { h: 0, p: 0 },
-    lobby: { picks: ['striker', 'wrestler'], names: ['', ''], ready: [false, false], settings: { rounds: 3, len: 180, diff: 0.6 }, cpuPick: 'random', movesets: [null, null] },
+    lobby: { picks: ['striker', 'wrestler'], names: ['', ''], ready: [false, false], settings: { rounds: 3, len: 180, diff: 0.6 }, cpuPick: 'random', movesets: [null, null], brains: ['cpu', 'cpu'] },
     optionsOpen: false, paused: false,
     state: null, playing: false, lastSnap: 0, lastInputSend: 0, evQueue: [], rematch: [false, false],
     feedLines: [], hintsHidden: false
   };
+
+  // practice (you vs a brain) and watch (brain vs brain) both run the sim locally with no network
+  const isLocal = () => App.mode === 'practice' || App.mode === 'watch';
+
+  // ============================================================
+  //  Brains: the scripted CPU (js/ai.js) or an evolved neural brain (js/brain.js) from brains/index.json
+  // ============================================================
+  const Brains = { index: null, genomes: {}, loading: null };
+  function loadBrainIndex() {
+    if (Brains.loading) return Brains.loading;
+    Brains.loading = fetch('brains/index.json', { cache: 'no-cache' })
+      .then(r => r.ok ? r.json() : { brains: [] }).catch(() => ({ brains: [] }))
+      .then(ix => { Brains.index = (ix && ix.brains || []).slice().sort((a, b) => a.gen - b.gen); if (isLocal()) refreshLobby(); return Brains.index; });
+    return Brains.loading;
+  }
+  const brainEntry = (id) => (Brains.index || []).find(b => b.file === id);
+  function brainLabel(id) {
+    if (id === 'cpu') return 'Scripted CPU';
+    const e = brainEntry(id); return e ? e.name + ' \u00b7 ' + Math.round(e.winRate * 100) + '% vs CPU' : id;
+  }
+  function brainShort(id) { if (id === 'cpu') return 'CPU'; const e = brainEntry(id); return e ? e.name.toUpperCase() : 'AI'; }
+  function ensureGenome(id) {
+    if (id === 'cpu' || !NeuralBrain) return Promise.resolve(null);
+    if (Brains.genomes[id]) return Promise.resolve(Brains.genomes[id]);
+    return fetch('brains/' + id, { cache: 'no-cache' }).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(g => (Brains.genomes[id] = g))
+      .catch(e => { toast('Could not load ' + brainLabel(id) + ' — using the scripted CPU.', 5000); console.error(e); return null; });
+  }
+  function makeBrain(idx, id, diff) {
+    if (id !== 'cpu' && NeuralBrain && Brains.genomes[id]) return new NeuralBrain(idx, Brains.genomes[id]);
+    return new CpuBrain(idx, diff);
+  }
+  function brainSelect(id, sel) {
+    const list = Brains.index || [];
+    let h = '<select id="' + id + '"><option value="cpu"' + (sel === 'cpu' ? ' selected' : '') + '>Scripted CPU</option>';
+    for (const b of list) h += '<option value="' + b.file + '"' + (sel === b.file ? ' selected' : '') + '>' + brainLabel(b.file) + '</option>';
+    if (!list.length) h += '<option disabled>' + (Brains.index ? 'no evolved brains yet (run the training action)' : 'loading evolved brains\u2026') + '</option>';
+    return h + '</select>';
+  }
+  function fighterSelect(id, sel, random) {
+    return '<select id="' + id + '">' + (random ? '<option value="random"' + (sel === 'random' ? ' selected' : '') + '>Random</option>' : '') +
+      Object.keys(ROSTER).map(k => '<option value="' + k + '"' + (sel === k ? ' selected' : '') + '>' + ROSTER[k].name + ' (' + ROSTER[k].style + ')</option>').join('') + '</select>';
+  }
 
   // ============================================================
   //  UI helpers
@@ -108,34 +152,44 @@
     const L = App.lobby, me = App.myIdx, opp = 1 - me;
     document.querySelectorAll('.card').forEach(c => {
       c.classList.toggle('sel', c.dataset.key === L.picks[me]);
-      c.classList.toggle('opp', App.mode !== 'practice' && c.dataset.key === L.picks[opp]);
+      c.classList.toggle('opp', !isLocal() && c.dataset.key === L.picks[opp]);
     });
     const isHost = App.mode !== 'guest';
     $('#settingsBox').style.display = isHost ? '' : 'none';
-    $('#diffWrap').style.display = App.mode === 'practice' ? '' : 'none';
+    $('#diffWrap').style.display = isLocal() ? '' : 'none';
+    $('#nameInput').parentElement.style.display = App.mode === 'watch' ? 'none' : '';
     $('#codeBox').classList.toggle('hidden', App.mode !== 'host');
     const st = $('#lobbyStatus');
     const rules = L.settings.grappling === false ? ' · STRIKING ONLY' : '';
     if (App.mode === 'practice') { st.textContent = 'Pick your fighter, then hit READY.' + rules; }
+    else if (App.mode === 'watch') { st.textContent = 'Pick the red corner\'s fighter above, choose a brain for each corner, then hit READY to watch.' + rules; }
     else if (App.mode === 'host') {
       st.textContent = (App.net && App.net.connected ? (L.ready[opp] ? 'Opponent is READY.' : 'Opponent connected — picking a fighter...') : 'Share the room code. Waiting for an opponent to join...') + rules;
     } else {
       st.textContent = (L.ready[opp] ? 'Host is READY.' : 'Connected. Host is picking a fighter...') + rules;
     }
     const op = $('#oppPick');
-    if (App.mode === 'practice') {
-      if (!op.querySelector('select')) {
-        op.innerHTML = 'CPU opponent: <select id="cpuPick"><option value="random">Random</option>' + Object.keys(ROSTER).map(k => '<option value="' + k + '">' + ROSTER[k].name + ' (' + ROSTER[k].style + ')</option>').join('') + '</select>';
-        $('#cpuPick').onchange = (e) => { App.lobby.cpuPick = e.target.value; };
+    if (isLocal()) {
+      const bp = (i) => { const el = $('#brainPick' + i); if (el) el.onchange = (e) => { L.brains[i] = e.target.value; ensureGenome(e.target.value); refreshLobby(); }; };
+      if (App.mode === 'practice') {
+        op.innerHTML = '<div class="pick-row">CPU opponent: ' + fighterSelect('cpuPick', L.cpuPick, true) + ' brain: ' + brainSelect('brainPick1', L.brains[1]) + '</div>' +
+          '<div class="pick-note">' + (L.brains[1] === 'cpu' ? 'The scripted CPU plays at the CPU level set above.' : 'An evolved brain plays the way self-play taught it; the CPU level does not apply.') + '</div>';
+      } else {
+        op.innerHTML = '<div class="pick-row"><span class="corner red">RED</span> ' + ROSTER[L.picks[0]].name + ' brain: ' + brainSelect('brainPick0', L.brains[0]) + '</div>' +
+          '<div class="pick-row"><span class="corner blue">BLUE</span> ' + fighterSelect('cpuPick', L.cpuPick, true) + ' brain: ' + brainSelect('brainPick1', L.brains[1]) + '</div>' +
+          '<div class="pick-note">Scripted CPU plays at the CPU level above. Evolved brains are checkpoints from self-play training (win rate is against the scripted CPU).</div>';
+        bp(0);
       }
+      $('#cpuPick').onchange = (e) => { App.lobby.cpuPick = e.target.value; };
+      bp(1);
     } else {
       const on = L.names[opp] || (opp === 0 ? 'Host' : 'Guest');
       op.textContent = App.net && App.net.connected ? on + ' picked ' + ROSTER[L.picks[opp]].name + (L.ready[opp] ? ' ✓' : '') : '';
     }
     const rb = $('#btnReady');
     rb.textContent = L.ready[me] ? 'WAITING...' : 'READY';
-    rb.disabled = L.ready[me] || (App.mode !== 'practice' && !(App.net && App.net.connected));
-    $('#lobbyTitle').textContent = App.mode === 'practice' ? 'PRACTICE' : App.mode === 'host' ? 'HOST — FIGHTER SELECT' : 'GUEST — FIGHTER SELECT';
+    rb.disabled = L.ready[me] || (!isLocal() && !(App.net && App.net.connected));
+    $('#lobbyTitle').textContent = App.mode === 'practice' ? 'PRACTICE' : App.mode === 'watch' ? 'AI vs AI' : App.mode === 'host' ? 'HOST — FIGHTER SELECT' : 'GUEST — FIGHTER SELECT';
   }
 
   // ============================================================
@@ -158,6 +212,7 @@
     App.mode = mode; App.myIdx = mode === 'guest' ? 1 : 0;
     App.lobby.ready = [false, false]; App.rematch = [false, false];
     buildRoster(); screen('lobby'); refreshLobby();
+    if (isLocal()) loadBrainIndex();
   }
 
   function startHost() {
@@ -219,11 +274,11 @@
   }
 
   function maybeStart() {
-    if (App.mode === 'practice') { if (App.lobby.ready[0]) launchHostFight(); return; }
+    if (isLocal()) { if (App.lobby.ready[0]) launchHostFight(); return; }
     if (App.mode === 'host' && App.lobby.ready[0] && App.lobby.ready[1]) launchHostFight();
   }
   function maybeRematch() {
-    if (App.mode === 'practice' && App.rematch[0]) launchHostFight();
+    if (isLocal() && App.rematch[0]) launchHostFight();
     if (App.mode === 'host' && App.rematch[0] && App.rematch[1]) launchHostFight();
   }
 
@@ -231,15 +286,17 @@
     readSettings();
     const L = App.lobby;
     let p1 = L.picks[1];
-    if (App.mode === 'practice') { p1 = L.cpuPick === 'random' ? Object.keys(ROSTER)[Math.floor(Math.random() * 4)] : L.cpuPick; }
+    if (isLocal()) { p1 = L.cpuPick === 'random' ? Object.keys(ROSTER)[Math.floor(Math.random() * 4)] : L.cpuPick; }
+    const tag = (i) => ' (' + (L.brains[i] === 'cpu' ? 'CPU' : brainEntry(L.brains[i]) ? brainEntry(L.brains[i]).name : 'AI') + ')';
     const players = [
-      { fighter: L.picks[0], name: L.names[0] || myName() || ROSTER[L.picks[0]].name, moveset: Controls.moveset },
-      { fighter: p1, name: App.mode === 'practice' ? ROSTER[p1].name + ' (CPU)' : (L.names[1] || ROSTER[p1].name), moveset: App.mode === 'practice' ? DEFAULT_MOVESET : (L.movesets[1] || DEFAULT_MOVESET) }
+      { fighter: L.picks[0], name: App.mode === 'watch' ? ROSTER[L.picks[0]].name + tag(0) : (L.names[0] || myName() || ROSTER[L.picks[0]].name), moveset: App.mode === 'watch' ? DEFAULT_MOVESET : Controls.moveset },
+      { fighter: p1, name: isLocal() ? ROSTER[p1].name + tag(1) : (L.names[1] || ROSTER[p1].name), moveset: isLocal() ? DEFAULT_MOVESET : (L.movesets[1] || DEFAULT_MOVESET) }
     ];
     // same archetype -> alternate shorts colour so they're distinguishable
     if (players[0].fighter === players[1].fighter) players[1].color = 0x8e44ad;
     const msg = { t: 'start', seed: (Math.random() * 1e9) | 0, players, settings: { rounds: L.settings.rounds, len: L.settings.len, grappling: L.settings.grappling !== false } };
     if (App.mode === 'host') App.net.send(msg);
+    if (isLocal()) { Promise.all([ensureGenome(L.brains[0]), ensureGenome(L.brains[1])]).then(() => beginFight(msg)); return; }
     beginFight(msg);
   }
 
@@ -266,9 +323,11 @@
     if (isHost) {
       App.sim = new Sim({ seed: msg.seed, rounds: msg.settings.rounds, roundLen: msg.settings.len, players: msg.players, grappling: msg.settings.grappling !== false });
       App.state = App.sim.state;
-      App.brain = App.mode === 'practice' ? new CpuBrain(1, App.lobby.settings.diff) : null;
-      // ?auto=1 : let the CPU drive your fighter too (handy for watching / tuning the physics)
-      App.autoPilot = App.mode === 'practice' && /[?&]auto=1/.test(location.search) ? new CpuBrain(0, App.lobby.settings.diff) : null;
+      const diff = App.lobby.settings.diff;
+      App.brain = isLocal() ? makeBrain(1, App.lobby.brains[1], diff) : null;
+      // watch mode: a brain drives the red corner too. ?auto=1 : let the CPU drive your fighter in practice (handy for tuning)
+      App.autoPilot = App.mode === 'watch' ? makeBrain(0, App.lobby.brains[0], diff)
+        : App.mode === 'practice' && /[?&]auto=1/.test(location.search) ? new CpuBrain(0, diff) : null;
       if (!App.sim.phys) toast('Physics engine unavailable — running the classic striking model.', 5000);
     } else {
       // placeholder state until the first snapshot arrives
@@ -280,9 +339,10 @@
     R.posLerp = isHost ? 18 : 10;
     App.feedLines = []; $('#feed').innerHTML = '';
     $('#fp0 .nm').textContent = App.state.f[0].name; $('#fp1 .nm').textContent = App.state.f[1].name;
-    $('#fp0 .tag').textContent = App.myIdx === 0 ? 'YOU' : (App.mode === 'practice' ? 'P1' : 'P1');
-    $('#fp1 .tag').textContent = App.myIdx === 1 ? 'YOU' : (App.mode === 'practice' ? 'CPU' : 'P2');
+    $('#fp0 .tag').textContent = App.mode === 'watch' ? brainShort(App.lobby.brains[0]) : App.myIdx === 0 ? 'YOU' : 'P1';
+    $('#fp1 .tag').textContent = App.myIdx === 1 ? 'YOU' : (isLocal() ? brainShort(App.lobby.brains[1]) : 'P2');
     screen(null);
+    $('#controlsHint').style.display = App.mode === 'watch' || App.hintsHidden ? 'none' : '';
     App.playing = true;
     App.audio.setCrowd(0.06);
     centerMsg('ROUND 1<small>' + App.state.f[0].name + ' vs ' + App.state.f[1].name + (App.state.grappling === false ? ' · striking only' : '') + '</small>', 2600);
@@ -295,8 +355,8 @@
     const w = R.winner == null ? null : S.f[R.winner];
     $('#endMethod').textContent = R.method.toUpperCase() + (R.method.indexOf('Decision') < 0 && R.method !== 'Majority Draw' ? ' · ROUND ' + R.round + ' · ' + R.time : '');
     $('#endWinner').textContent = w ? w.name + ' WINS' : 'DRAW';
-    $('#endWinner').style.color = w ? (R.winner === App.myIdx ? '#52d273' : '#e23b3b') : '#fff';
-    $('#endDetail').textContent = w ? (R.winner === App.myIdx ? 'Victory.' : 'Defeat.') : 'The judges could not separate them.';
+    $('#endWinner').style.color = w ? (App.mode === 'watch' ? '#fff' : R.winner === App.myIdx ? '#52d273' : '#e23b3b') : '#fff';
+    $('#endDetail').textContent = w ? (App.mode === 'watch' ? '' : R.winner === App.myIdx ? 'Victory.' : 'Defeat.') : 'The judges could not separate them.';
     // scorecards
     let h = '<tr><th>Judges</th>' + S.cards.map(c => '<th>R' + c.round + '</th>').join('') + '<th>Total</th></tr>';
     for (let j = 0; j < 3; j++) {
@@ -392,12 +452,12 @@
     }
     $('#roundLbl').textContent = App.paused ? 'PAUSED' : S.phase === 'break' ? 'BREAK ' + Math.ceil(10 - S.phaseT) : 'ROUND ' + S.round + '/' + S.rounds;
     const c = Math.max(0, S.clock); $('#clock').textContent = Math.floor(c / 60) + ':' + String(Math.floor(c % 60)).padStart(2, '0');
-    $('#pingLbl').textContent = App.net && App.net.connected ? App.net.ping + ' ms' : (App.mode === 'practice' ? 'CPU' : '');
+    $('#pingLbl').textContent = App.net && App.net.connected ? App.net.ping + ' ms' : App.mode === 'practice' ? 'CPU' : App.mode === 'watch' ? 'AI vs AI' : '';
     // knockdown prompt: the downed fighter chooses when to get up; the other may dive on him
     const kh = $('#kdHint');
     const me = S.f[App.myIdx], op = S.f[1 - App.myIdx];
     let kdTxt = '';
-    if (S.phase === 'fight' && !S.ground) {
+    if (S.phase === 'fight' && !S.ground && App.mode !== 'watch') {
       if (me.act.type === 'kd') {
         if (me.act.name === 'down') {
           const left = Math.max(0, KD.STAY - me.act.t);
@@ -420,7 +480,7 @@
       const ar = $('#attRow');
       if (G.trans) {
         ar.classList.add('show');
-        $('#attName').textContent = (G.trans.by === App.myIdx ? 'YOU: ' : S.f[G.trans.by].name.toUpperCase() + ': ') + G.trans.name.toUpperCase();
+        $('#attName').textContent = (G.trans.by === App.myIdx && App.mode !== 'watch' ? 'YOU: ' : S.f[G.trans.by].name.toUpperCase() + ': ') + G.trans.name.toUpperCase();
         ar.querySelector('.fill').style.width = pct(G.trans.t / G.trans.dur * 100);
         ar.classList.toggle('mine', G.trans.by === App.myIdx);
       } else ar.classList.remove('show');
@@ -428,7 +488,7 @@
         const sub = G.sub, mineAtt = sub.att === App.myIdx;
         g.querySelector('.sub .fill').style.width = pct(sub.prog); $('#subName').textContent = sub.name.toUpperCase();
         $('#subState').textContent = (sub.squeezing ? 'SQUEEZING' : 'LOOSE') + (sub.defending ? ' · DEFENDING' : '');
-        $('#gHint').textContent = mineAtt
+        $('#gHint').textContent = App.mode === 'watch' ? '' : mineAtt
           ? 'Hold ' + kn('grapple') + ' to squeeze (burns stamina) — let go to breathe, but they can slip out when it\'s loose.'
           : 'Hold ' + kn('block') + ' to fight the hold (slows it). Tap ' + kn('grapple') + ' to attempt an escape — best when the squeeze is loose.';
       } else {
@@ -440,7 +500,7 @@
         parts.push('hold ' + kn('block') + (role === 'top' ? ' base (deny escapes)' : ' frame (deny passes, cover up)'));
         if (role === 'top') parts.push(kn('dodge') + ' let them up');
         const cd = G.cd[App.myIdx] > 0 ? ' · recovering ' + G.cd[App.myIdx].toFixed(1) + 's' : '';
-        $('#gHint').textContent = parts.join(' · ') + cd;
+        $('#gHint').textContent = App.mode === 'watch' ? '' : parts.join(' · ') + cd;
       }
     } else g.classList.remove('show');
   }
@@ -468,7 +528,7 @@
     mt.innerHTML = h;
     mt.querySelectorAll('select').forEach(sel => sel.onchange = () => { Controls.moveset[sel.dataset.mod][sel.dataset.limb] = sel.value; saveControls(); updateHint(); });
     document.querySelectorAll('#options b[data-mod]').forEach(b => { b.textContent = keyName(Controls.binds[b.dataset.mod][0]); });
-    $('#optStatus').textContent = App.playing ? (App.mode === 'practice' ? 'Fight paused. Changes apply instantly.' : 'Online: the fight keeps running while this is open. Strike changes apply next fight.') : 'Changes are saved automatically.';
+    $('#optStatus').textContent = App.playing ? (isLocal() ? 'Fight paused. Changes apply instantly.' : 'Online: the fight keeps running while this is open. Strike changes apply next fight.') : 'Changes are saved automatically.';
   }
   function startCapture(act, slot, btn) {
     cancelCapture();
@@ -492,7 +552,7 @@
   }
   function openOptions() {
     App.optionsOpen = true; App.held = 0; App.pressed = 0;
-    if (App.playing && App.mode === 'practice') App.paused = true;
+    if (App.playing && isLocal()) App.paused = true;
     buildOptions(); show($('#options'));
   }
   function closeOptions() {
@@ -550,14 +610,14 @@
 
     const isHost = App.mode !== 'guest';
     let inputs = [0, 0];
-    if (App.paused && App.mode === 'practice') { App.pressed = 0; App.renderer.update(App.state, 0, inputs); updateHUD(App.state); return; }
+    if (App.paused && isLocal()) { App.pressed = 0; App.renderer.update(App.state, 0, inputs); updateHUD(App.state); return; }
     if (isHost) {
       const sim = App.sim;
-      if (App.autoPilot) { const o = App.autoPilot.update(sim.state, dt); sim.setInput(0, o.held | App.held, o.pressed | App.pressed); App.pressed = 0; }
+      if (App.autoPilot) { const o = App.autoPilot.update(sim.state, dt); const watch = App.mode === 'watch'; sim.setInput(0, watch ? o.held : (o.held | App.held), watch ? o.pressed : (o.pressed | App.pressed)); App.pressed = 0; if (watch) inputs[0] = o.held; }
       else { sim.setInput(0, App.held, App.pressed); App.pressed = 0; }
       if (App.brain) { const o = App.brain.update(sim.state, dt); sim.setInput(1, o.held, o.pressed); inputs[1] = o.held; }
       else { sim.setInput(1, App.remote.h, App.remote.p); App.remote.p = 0; inputs[1] = App.remote.h; }
-      inputs[0] = App.held;
+      if (App.mode !== 'watch') inputs[0] = App.held;
       sim.step(dt);
       const evs = sim.drainEvents();
       if (evs.length) processEvents(evs, sim.state);
@@ -595,6 +655,7 @@
   $('#btnJoinGo').onclick = () => { const c = $('#joinCode').value.trim(); if (c.length < 4) { toast('Enter the 5-letter room code.'); return; } startJoin(c); };
   $('#joinCode').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#btnJoinGo').click(); });
   $('#btnPractice').onclick = () => { App.audio.init(); enterLobby('practice'); };
+  $('#btnWatch').onclick = () => { App.audio.init(); enterLobby('watch'); };
   $('#btnOptions').onclick = () => openOptions();
   $('#btnLobbyOptions').onclick = () => openOptions();
   $('#btnOptClose').onclick = () => closeOptions();

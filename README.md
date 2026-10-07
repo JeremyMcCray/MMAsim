@@ -159,6 +159,51 @@ works from any camera angle.
   volume, takedowns, control time, submission attempts and knockdowns;
   dominant rounds are 10‑8. Three (or 1 / 5) rounds, 1–5 minutes each.
 
+
+## Evolved brains (machine learning)
+
+Besides the scripted CPU (`js/ai.js`) the game has **neural brains**: a small
+neural network (`js/brain.js`, 61 inputs → 48 → 32 → 48 outputs, ~6 k weights)
+that reads the fight state every 3 ticks — distance, stamina, damage by region,
+what each fighter is doing, both stat sheets, the ground position, any
+submission in progress — and emits the same key presses a player would: move /
+circle / block / slip / takedown / one of the 16 strikes, and on the ground a
+transition, a submission attempt, a strike or a base, squeeze / hand‑fight /
+escape inside a hold.
+
+The weights are **evolved by self‑play** (`tools/train.js`): a population of
+brains fights itself (random archetypes, random seeds), one scripted CPU each
+and one earlier champion from the hall of fame; the shaped score (win / loss,
+damage dealt vs taken, knockdowns, takedowns, not swinging at air) is its
+fitness; the best survive unchanged and the rest of the next generation is bred
+from tournament‑selected parents with crossover and mutation.
+
+* **Training on GitHub Actions** — *Actions → Train fighter brains → Run
+  workflow* (manual only). Inputs: time budget in minutes (default 300, the job
+  limit is 360), population size (32) and *fresh* to discard the saved population.
+  The run writes **10 checkpoints** of the reigning champion at evenly spaced
+  points of its time budget (`brains/gen-NNNN.json`), each benchmarked against
+  the scripted CPU at Rookie / Contender / Champion level on both sides and
+  all four archetypes, and commits `brains/` back to `main`. The job summary
+  shows the table. Every run resumes from `brains/population.json`, so running
+  it again keeps evolving the same lineage (`index.json` keeps the 40 most
+  evenly spread checkpoints).
+* **Training locally** — `node tools/train.js --minutes 30 --pop 16` (any of
+  `--gens N`, `--matches`, `--len`, `--rounds`, `--workers`, `--fresh`, `--out`).
+  Training fights are one full 3‑minute round by default (short fights breed
+  brains that empty the tank in thirty seconds); a standing fight costs about
+  1 ms of physics per tick, so a generation of 32 brains is a few minutes on
+  four cores and a 5‑hour run is on the order of 50–100 generations.
+* **In the game** — *PRACTICE vs CPU* lets you pick the opponent's brain
+  (scripted CPU, or any checkpoint, labelled with its win rate against the
+  scripted CPU); *WATCH AI vs AI* lets you put a brain in each corner — two
+  checkpoints from different points of the run, or a brain against the
+  scripted CPU — pick the fighters, and watch. Brains are loaded from
+  `brains/index.json` relative to the page (GitHub Pages or any static server;
+  opening `index.html` from disk cannot fetch them).
+* `node tools/versus.js brains/gen-0120.json cpu:0.9 10` plays ten full fights
+  between two brains headless and prints the record.
+
 ## Files
 
 ```
@@ -167,14 +212,19 @@ css/style.css
 js/physics.js     MMAPhys: Rapier world, active ragdolls, stance / guard / strike poses,
                   contact → damage. No Three.js, runs in Node too.
 js/sim.js         fight simulation (seeded, fixed‑step). Standing = ragdolls, ground = ruleset
-js/ai.js          CPU opponent
+js/ai.js          scripted CPU opponent
+js/brain.js       neural fighter brain (evolved weights from brains/*.json)
 js/render.js      Three.js arena, segment fighters (follow the ragdoll bones when standing,
                   a two‑bone IK rig posed from POSES on the ground), camera, FX
 js/net.js         PeerJS rooms (host‑authoritative; bone poses ride in the state snapshot)
 js/audio.js       WebAudio sound effects
 js/main.js        menus, lobby, input, game loop, HUD
 lib/              rapier3d-compat.js (physics), three.min.js, peerjs.min.js
+brains/           evolved brain checkpoints + index.json (written by the training action)
+.github/workflows train.yml: self-play training on GitHub Actions
 tools/            node scripts: headless.js (CPU vs CPU fights + stats),
+                  train.js (evolve brains by self-play), arena.js (headless match runner),
+                  versus.js (brain vs brain record), brain-test.js (AI vs AI in headless Chromium),
                   probe.js (throw every strike at a dummy over a range of distances),
                   posecheck.js (does a stance / guard pose clip the arms through the chest?),
                   browser-test.js (run the page in headless Chromium)

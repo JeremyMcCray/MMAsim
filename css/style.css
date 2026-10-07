@@ -168,3 +168,11 @@ table td:first-child, table th:first-child { text-align: left; color: var(--mute
 .seq-timer i { display: block; height: 100%; background: var(--gold); }
 .seq-row.flash-ok .seq-keys span { border-color: #52d273; }
 .seq-row.flash-bad .seq-keys span { border-color: var(--red); background: rgba(226,59,59,.3); }
+
+/* lobby: brain / opponent pickers (practice and AI vs AI) */
+.opp-pick .pick-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.opp-pick .pick-row select { max-width: 260px; }
+.opp-pick .pick-note { font-size: 12px; opacity: .7; margin-top: 6px; }
+.opp-pick .corner { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; letter-spacing: .1em; padding: 2px 8px; border-radius: 3px; color: #fff; }
+.opp-pick .corner.red { background: var(--red); }
+.opp-pick .corner.blue { background: var(--blue); }
