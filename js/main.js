@@ -3,7 +3,7 @@
    ============================================================ */
 (function () {
   'use strict';
-  const { IN, Sim, ROSTER, describe, LIMBS, LIMB_NAME, MODS, HAND_KINDS, LEG_KINDS, KIND_LABEL, DEFAULT_MOVESET, normalizeMoveset, POS_NAME, MOVES, SUBS_BY, BOTTOM_CAN_STRIKE } = window.MMASim;
+  const { IN, Sim, ROSTER, describe, LIMBS, LIMB_NAME, MODS, HAND_KINDS, LEG_KINDS, KIND_LABEL, DEFAULT_MOVESET, normalizeMoveset, POS_NAME, MOVES, SUBS_BY, BOTTOM_CAN_STRIKE, KD } = window.MMASim;
   const { CpuBrain } = window.MMAAI;
   const { Renderer } = window.MMARender;
   const { Net } = window.MMANet;
@@ -335,6 +335,7 @@
         case 'miss': A.whiff(); if (ev.slipped) feed(text); break;
         case 'kd': A.slam(); centerMsg('KNOCKDOWN!', 1400); feed(text, true); break;
         case 'follow': A.slam(); feed(text, true); break;
+        case 'getup': feed(text); break;
         case 'td': A.slam(); feed(text, true); break;
         case 'sweep': A.slam(); feed(text, true); break;
         case 'tdfail': case 'shoot': case 'standup': case 'subfail': feed(text); break;
@@ -381,7 +382,7 @@
       const st = p.querySelector('.status');
       let txt = '', cls = 'status';
       if (f.act.type === 'down') txt = 'OUT';
-      else if (f.act.type === 'kd') { txt = 'DOWN'; cls += ' rocked'; }
+      else if (f.act.type === 'kd') { txt = f.act.name === 'rise' ? 'GETTING UP' : 'DOWN'; cls += ' rocked'; }
       else if (f.rocked > 0) { txt = 'ROCKED'; cls += ' rocked'; }
       else if (f.ground === 'top') txt = 'TOP';
       else if (f.ground === 'bottom') txt = 'BOTTOM';
@@ -392,6 +393,22 @@
     $('#roundLbl').textContent = App.paused ? 'PAUSED' : S.phase === 'break' ? 'BREAK ' + Math.ceil(10 - S.phaseT) : 'ROUND ' + S.round + '/' + S.rounds;
     const c = Math.max(0, S.clock); $('#clock').textContent = Math.floor(c / 60) + ':' + String(Math.floor(c % 60)).padStart(2, '0');
     $('#pingLbl').textContent = App.net && App.net.connected ? App.net.ping + ' ms' : (App.mode === 'practice' ? 'CPU' : '');
+    // knockdown prompt: the downed fighter chooses when to get up; the other may dive on him
+    const kh = $('#kdHint');
+    const me = S.f[App.myIdx], op = S.f[1 - App.myIdx];
+    let kdTxt = '';
+    if (S.phase === 'fight' && !S.ground) {
+      if (me.act.type === 'kd') {
+        if (me.act.name === 'down') {
+          const left = Math.max(0, KD.STAY - me.act.t);
+          kdTxt = '<span class="t">YOU ARE DOWN</span><b>' + kn('fwd') + '</b> / any direction / <b>' + kn('dodge') + '</b> get up now (you come up rocked) · stay down to clear your head — ref waves you up in ' + left.toFixed(1) + 's';
+        } else if (me.act.name === 'rise') kdTxt = '<span class="t">GETTING UP</span>Still rocked — cover up.';
+      } else if (op.act.type === 'kd' && op.act.name !== 'rise' && S.grappling) {
+        const dist = Math.hypot(op.x - me.x, op.z - me.z);
+        kdTxt = '<span class="t">' + op.name.toUpperCase() + ' IS DOWN</span><b>' + kn('grapple') + '</b> dive on him' + (dist > KD.FOLLOW_DIST ? ' (get closer)' : '') + ' · back off to keep it standing — he comes up rocked';
+      }
+    }
+    if (kdTxt) { kh.innerHTML = kdTxt; kh.classList.add('show'); } else kh.classList.remove('show');
     // ground panel
     const g = $('#grapple');
     if (S.ground && S.phase === 'fight') {
@@ -495,7 +512,7 @@
     $('#controlsHint').innerHTML =
       '<div class="ctl-row">' + [B('fwd'), B('left'), B('back'), B('right')].join(' ') + ' move / circle (stepping into a shot adds power, backing off takes it away) · ' + B('lh') + ' left hand · ' + B('rh') + ' right hand · ' + B('ll') + ' left leg · ' + B('rl') + ' right leg</div>' +
       '<div class="ctl-row">' + MODS.map(row).join(' · ') + '</div>' +
-      '<div class="ctl-row">' + B('block') + ' hold: block / sprawl · ' + B('grapple') + ' takedown · ' + B('dodge') + ' slip · ground: hands & legs strike, ' + B('grapple') + ' submission / sweep, ' + B('block') + ' posture / cover, ' + B('dodge') + ' let up · <b>ESC</b> options · <b>H</b> hide this · <b>M</b> mute</div>';
+      '<div class="ctl-row">' + B('block') + ' hold: block / sprawl · ' + B('grapple') + ' takedown / dive on a downed opponent · ' + B('dodge') + ' slip · knocked down: a direction or ' + B('dodge') + ' gets up, or stay down to recover · ground: hands & legs strike, ' + B('grapple') + ' submission / sweep, ' + B('block') + ' posture / cover, ' + B('dodge') + ' let up · <b>ESC</b> options · <b>H</b> hide this · <b>M</b> mute</div>';
   }
 
   // ============================================================

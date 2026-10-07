@@ -344,6 +344,8 @@
   // stamina economy
   const MISS_PENALTY = 0.30;   // a whiffed strike costs this much extra (fraction of its cost)
   const CLEAN_REFUND = 0.33;   // an unblocked landing gives this much of its cost back
+  const BLOCK_REWARD = 0.08;   // a strike taken on a raised guard gives the BLOCKER this much of its cost (reading a shot pays)
+  const GROUND_BLOCK_REWARD = 0.4; // stamina for covering a ground strike
   const STAM_MAX_FLOOR = 30;   // max stamina can never erode below this
   const EMPTY_SWING_COST = 1.5; // max stamina lost per strike press made with an empty tank
   const OVERDRAW_COST = 0.5;   // max stamina lost per point a strike overdraws the tank
@@ -351,9 +353,19 @@
   const KICK_CANCEL_DMG = 2.8; // a hand strike this hard lands on a kicker mid-kick: cancels the kick
   const KICK_CANCEL_BONUS = 1.3;
   const KICK_CANCEL_STUN = 0.3; // extra seconds of hit-stun for being caught on one leg
-  const KD_DOWN = 1.1;          // seconds a knocked-down fighter lies on the mat
-  const KD_RISE = 1.1;          // seconds it takes him to climb back to his feet
-  const KD_FOLLOW_DIST = 1.9;   // the attacker can follow him down from this far (takedown key)
+  // rocked / knockdown tuning
+  const ROCK_T0 = 1.3, ROCK_PER_DMG = 0.05; // seconds rocked = ROCK_T0 + dmg * ROCK_PER_DMG (was 2.2 + 0.06/dmg)
+  const KD_THR_MIN = 3.4;       // weakest head shot that drops an already-rocked fighter
+  const KD_THR_FRAC = 0.62;     // ...or this fraction of his rock threshold, whichever is higher
+  const KD_FLASH_FRAC = 1.9;    // a shot this many times the rock threshold drops him outright
+  const KD_FALL = 1.0;          // seconds a knocked-down fighter is falling / limp before he can do anything
+  const KD_STAY = 4.0;          // longest he may stay down before the referee waves him up
+  const KD_RISE = 1.0;          // seconds it takes him to climb back to his feet
+  const KD_ROCKED = 3.2;        // rocked time set by a knockdown (recovers 2.5x faster while he stays down)
+  const KD_DOWN_RECOVER = 2.5;
+  const KD_FOLLOW_DIST = 2.3;   // the attacker can dive on him from this far (takedown key)
+  const KD_SHOVE = 0.5;         // impulse per kg the knockdown blow gives the falling body (was 1.4: he flew)
+  const KD_RISE_KEYS = DIR_BITS | IN.DODGE; // a direction or the stand-up key gets a downed fighter up
 
   class Sim {
     constructor(opts) {
@@ -542,7 +554,7 @@
 
       // stamina / timers
       for (const f of F) {
-        if (f.rocked > 0) { f.rocked -= dt; if (f.rocked < 0) f.rocked = 0; }
+        if (f.rocked > 0) { f.rocked -= dt * (f.act.type === 'kd' && f.act.name === 'down' ? KD_DOWN_RECOVER : 1); if (f.rocked < 0) f.rocked = 0; }
         f.wobble = Math.max(0, f.wobble - dt * 0.8);
         let regen = 2.2 + f.stats.car * 4.5;
         regen *= (1 - f.dmg.body / 160);
@@ -646,6 +658,9 @@
         if (!rag) { f.vx = 0; f.vz = 0; }
         if (rag) { rag.move[0] = 0; rag.move[1] = 0; }
 
+        // knocked down: fall -> down (his choice: get up now, or stay down a while and recover) -> rise
+        if (f.act.type === 'kd') { this._kdTick(f, i, held, pressed); continue; }
+
         // movement — allowed while striking at half speed, so you can step into (or away from) shots
         if (!busy || striking) {
           let mx = 0, mz = 0;
@@ -681,10 +696,11 @@
             f.act = { type: 'dodge', name: '', t: 0, dur: 0.45, hit: false };
             f.blocking = false;
             if (rag) rag.shove(lx * 0.4 - fx * 0.3, lz * 0.4 - fz * 0.3, 1.1); // slip outside the lead shoulder
-          } else if (pressed & IN.GRAPPLE && S.grappling && F[1 - i].act.type === 'kd' && F[1 - i].act.t < KD_DOWN + 0.35 && dist <= KD_FOLLOW_DIST) {
-            // follow a knocked-down opponent to the mat
+          } else if (pressed & IN.GRAPPLE && S.grappling && this._canFollow(f, F[1 - i], dist)) {
+            // dive on a knocked-down opponent: flat on his back he gives up side control, half guard if he was already rising
+            const o = F[1 - i];
             this._emit({ k: 'follow', i, j: 1 - i });
-            this._enterGround(f, F[1 - i], 'kd', 'half');
+            this._enterGround(f, o, 'kd', o.act.name === 'down' ? 'side' : 'half');
             return;
           } else if (pressed & IN.GRAPPLE && f.rocked <= 0 && S.grappling) {
             if (dist <= 1.7 && f.stam > 8) {
@@ -716,6 +732,31 @@
         const push = (MIN_DIST - d) / 2, nx = dx / d, nz = dz / d;
         F[0].x -= nx * push; F[0].z -= nz * push; F[1].x += nx * push; F[1].z += nz * push;
       }
+    }
+
+    // the attacker may dive on a knocked-down opponent while he is falling, lying there, or just starting to get up
+    _canFollow(f, o, dist) {
+      const a = o.act;
+      if (a.type !== 'kd' || dist > KD_FOLLOW_DIST) return false;
+      return a.name !== 'rise' || a.t < 0.3;
+    }
+
+    // knocked-down fighter: act.name is the phase. 'fall' (limp, KD_FALL s) -> 'down' (he can get up with a direction /
+    // the stand-up key, or stay down and recover faster, up to KD_STAY s) -> 'rise' (KD_RISE s) -> idle, still rocked.
+    _kdTick(f, i, held, pressed) {
+      const a = f.act, rag = this.phys ? this.phys.fighters[i] : null;
+      f.blocking = false; f.buf = null;
+      if (a.name === 'fall' && a.t >= KD_FALL) { a.name = 'down'; a.t = 0; }
+      if (a.name === 'down') {
+        // a press works at once; a key that was already held when he hit the mat has to be held a moment longer
+        const wants = (pressed & KD_RISE_KEYS) || (a.t > 0.25 && (held & KD_RISE_KEYS));
+        if (wants || a.t >= KD_STAY) {
+          a.name = 'rise'; a.t = 0;
+          if (rag) rag.getUp(KD_RISE);
+          this._emit({ k: 'getup', i, forced: !wants });
+        }
+      }
+      if (a.name === 'rise' && a.t >= KD_RISE) f.act = idleAct();
     }
 
     // limb pressed + modifier held -> strike key, via the fighter's moveset
@@ -879,7 +920,7 @@
       if (o.blocking) {
         blocked = true;
         if (part === 'legs') dmg *= 0.45; else dmg *= 0.15;
-        o.stam = Math.max(0, o.stam - st.dmg * 0.35);
+        o.stam = Math.min(o.stamMax, o.stam + st.stam * BLOCK_REWARD);
       }
       o.dmg[part] = clamp(o.dmg[part] + dmg, 0, 100);
       f.rs.landed++;
@@ -969,7 +1010,7 @@
       f.rs.sig += dmg;
       rag.takeHit(h, dmg, res.blocked);
       if (res.blocked) {
-        o.stam = Math.max(0, o.stam - def.cost * 0.35);
+        if (o.blocking) o.stam = Math.min(o.stamMax, o.stam + def.cost * BLOCK_REWARD); // a stray arm in the way is free, a real block is rewarded
         this._emit({ k: 'block', i: f.idx, j: o.idx, name: def.name, part, at, passive: !o.blocking, vn: Math.round(h.vn * 10) / 10 });
         if (def.push) rag.shove(fwd.fx, fwd.fz, PHYS_PUSH * 0.5);
         return;
@@ -995,14 +1036,16 @@
       // rocked / knockdown
       if (part === 'head') {
         const thr = (4.6 + o.stats.chin * 4.6) * (1 - o.dmg.head / 170);
-        if (o.rocked > 0 && dmg >= 2.8 && !onGround) {
+        // a rocked fighter goes down to a solid follow-up shot, not to a pawing jab; the bar drops as his head damage climbs
+        const kdThr = Math.max(KD_THR_MIN, thr * KD_THR_FRAC);
+        if (o.rocked > 0 && dmg >= kdThr && !onGround) {
           this._knockdown(f, o);
         } else if (dmg >= thr) {
-          o.rocked = Math.max(o.rocked, 2.2 + dmg * 0.06);
+          o.rocked = Math.max(o.rocked, ROCK_T0 + dmg * ROCK_PER_DMG);
           o.wobble = 1;
           ev.rocked = true;
           this._emit({ k: 'rocked', i: f.idx, j: o.idx });
-          if (!onGround && dmg >= thr * 1.6) this._knockdown(f, o);
+          if (!onGround && dmg >= thr * KD_FLASH_FRAC) this._knockdown(f, o);
         }
       } else if (part === 'body' && dmg >= 3.6 && this.rand() < 0.35) {
         o.stam = Math.max(0, o.stam - 12);
@@ -1021,7 +1064,7 @@
       if (o.rocked > 0) dmg *= 1.25;
       if (f.rocked > 0) dmg *= 0.7;
       let blocked = false;
-      if (this.inputs[o.idx].held & IN.BLOCK) { blocked = true; dmg *= 0.3; o.stam = Math.max(0, o.stam - 1.5); }
+      if (this.inputs[o.idx].held & IN.BLOCK) { blocked = true; dmg *= 0.3; o.stam = Math.min(o.stamMax, o.stam + GROUND_BLOCK_REWARD); }
       o.dmg[st.part] = clamp(o.dmg[st.part] + dmg, 0, 100);
       f.rs.landed++; f.rs.sig += dmg;
       if (blocked) { this._emit({ k: 'block', i: f.idx, j: o.idx, name: st.name, part: st.part }); return; }
@@ -1041,15 +1084,20 @@
       if (vic.dmg.head >= 84) { this._emit({ k: 'kd', i: att.idx, j: vic.idx, standing: !S.grappling }); vic.dmg.head = 100; return; } // flash KO, caught by stoppage check
       this._emit({ k: 'kd', i: att.idx, j: vic.idx });
       if (this.phys) {
-        // he drops where he stands and has to climb back up; the attacker may follow him down (takedown key)
-        // while he is on the mat, or let him up and keep it standing
-        vic.rocked = Math.max(vic.rocked, 3.5 + KD_DOWN);
-        vic.act = { type: 'kd', name: '', t: 0, dur: KD_DOWN + KD_RISE, hit: false };
+        // he drops where he stands. Once he has landed it is his call: get up straight away (a direction / the
+        // stand-up key) and come up rocked, or stay down a few seconds and recover while the attacker may dive on him
+        // (takedown key) — the referee waves him up after KD_STAY seconds. See _kdTick.
+        vic.rocked = Math.max(vic.rocked, KD_ROCKED);
+        vic.act = { type: 'kd', name: 'fall', t: 0, dur: 99, hit: false };
         vic.blocking = false; vic.buf = null;
         vic.stamMax = Math.max(STAM_MAX_FLOOR, vic.stamMax - 6);
         const rag = this.phys.fighters[vic.idx], fr = this._frame(att, vic);
-        rag.knockDown(KD_DOWN, KD_RISE);
-        rag.shove(fr.fx, fr.fz, 1.4);
+        // which way he goes: a shot that drives him back sits him down onto his back (he comes up in an open guard);
+        // otherwise — or when the legs just give out — he crumples forward onto his hands and knees (turtle)
+        const facing = Math.sin(rag.yaw) * fr.fx + Math.cos(rag.yaw) * fr.fz; // shove along his own facing (< 0: pushed backward)
+        const dir = facing < -0.2 && this.rand() < 0.65 ? 'back' : 'fwd';
+        rag.knockDown(KD_FALL, dir);
+        rag.shove(fr.fx, fr.fz, dir === 'back' ? KD_SHOVE : KD_SHOVE * 0.35);
         return;
       }
       if (!S.grappling) { vic.rocked = Math.max(vic.rocked, 4); vic.act = { type: 'hit', name: 'head', t: 0, dur: 1.0, hit: false }; return; }
@@ -1325,7 +1373,8 @@
       case 'miss': return ev.slipped ? n(ev.j) + ' slips the ' + ev.name + '.' : n(ev.i) + ' misses with the ' + ev.name + '.';
       case 'rocked': return null;
       case 'kd': return n(ev.j) + ' GOES DOWN!';
-      case 'follow': return n(ev.i) + ' follows him to the mat!';
+      case 'follow': return n(ev.i) + ' dives on him!';
+      case 'getup': return ev.forced ? 'The referee waves ' + n(ev.i) + ' back up.' : n(ev.i) + ' climbs back to his feet.';
       case 'shoot': return n(ev.i) + ' shoots for the takedown...';
       case 'td': return 'Takedown complete — ' + n(ev.i) + ' is on top.';
       case 'tdfail': return ev.sprawl ? n(ev.j) + ' sprawls and stuffs it!' : ev.air ? n(ev.i) + ' shoots at air.' : n(ev.j) + ' defends the takedown.';
@@ -1352,6 +1401,7 @@
   }
 
   const API = { IN, STRIKES, ROSTER, SUBS, POS_NAME, MOVES, SUBS_BY, BOTTOM_CAN_STRIKE, Sim, describe, CAGE_R, DT,
+    KD: { FALL: KD_FALL, STAY: KD_STAY, RISE: KD_RISE, FOLLOW_DIST: KD_FOLLOW_DIST },
     LIMBS, LIMB_BIT, LIMB_NAME, MODS, MOD_BIT, HAND_KINDS, LEG_KINDS, KIND_LABEL, KIND_STATS, DEFAULT_MOVESET, normalizeMoveset, modOf, strikeTip, TIP_R, recovering };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   root.MMASim = API;

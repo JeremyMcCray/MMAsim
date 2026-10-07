@@ -48,10 +48,13 @@
     topSub: P({ h: 0.38, lean: 1.15, yaw: 0.3, lh: [-0.1, -0.2, 0.55], rh: [0.2, -0.15, 0.5], lf: [-0.3, -0.5], rf: [0.3, -0.45], hp: 0.1, hy: 0.3 }),
     topHit: P({ h: 0.5, lean: -0.1, yaw: 0.2, lh: [-0.3, 0.3, 0.3], rh: [0.3, 0.3, 0.3], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: -0.3 }),
     // --- positional ground poses ---
-    // bottom in closed guard: on the back, legs wrapped high around the top's waist
-    bottomGuard: P({ lie: -Math.PI / 2, h: 0.22, lean: 0.3, yaw: 0, lh: [-0.18, 0.45, 0.35], rh: [0.18, 0.42, 0.33], lf: [-0.3, 0.42], rf: [0.3, 0.42], lfy: -0.05, rfy: -0.05, hp: 0.4, hy: 0 }),
-    // half guard: one leg hooked, the other flat
-    bottomHalf: P({ lie: -Math.PI / 2, h: 0.2, lean: 0.25, yaw: 0.15, lh: [-0.18, 0.45, 0.35], rh: [0.18, 0.42, 0.33], lf: [-0.28, 0.3], rf: [0.22, -0.2], lfy: -0.15, rfy: -0.5, hp: 0.4, hy: 0 }),
+    // Lying poses: lf/rf = [across, height above the hips], lfy/rfy = -(distance towards the feet end); the knee
+    // poles are [across, towards the head, up]. The top fighter kneels GROUND_OFF.guard (0.32 m) towards the feet end
+    // with his hips 0.5 m up, so the guard's ankles cross behind his back: 0.55 m down the axis, 0.62 m off the mat.
+    // bottom in closed guard: hips lifted onto the top's thighs, knees out wide around his waist, ankles crossed behind him
+    bottomGuard: P({ lie: -Math.PI / 2, h: 0.3, lean: 0.3, yaw: 0, lh: [-0.18, 0.45, 0.35], rh: [0.18, 0.42, 0.33], lf: [0.1, 0.32], rf: [-0.1, 0.3], lfy: -0.55, rfy: -0.55, lPole: [-1, 0, 0.5], rPole: [1, 0, 0.5], hp: 0.4, hy: 0 }),
+    // half guard: one leg hooked around the top's thigh (knee out, foot behind his knee), the other flat
+    bottomHalf: P({ lie: -Math.PI / 2, h: 0.2, lean: 0.25, yaw: 0.15, lh: [-0.18, 0.45, 0.35], rh: [0.18, 0.42, 0.33], lf: [0.0, 0.2], rf: [0.22, -0.2], lfy: -0.55, rfy: -0.5, lPole: [-1, 0, 0.6], hp: 0.4, hy: 0 }),
     // flat on the back (side control / mount): framing with the arms, legs flat
     bottomFlat: P({ lie: -Math.PI / 2, h: 0.18, lean: 0.1, yaw: 0, lh: [-0.2, 0.55, 0.3], rh: [0.2, 0.52, 0.3], lf: [-0.22, -0.2], rf: [0.22, -0.2], lfy: -0.5, rfy: -0.5, hp: 0.3, hy: 0 }),
     // turtled (back control): on hands and knees
@@ -134,6 +137,12 @@
     return out;
   }
   function copyPose(a, out) { return lerpPose(a, a, 0, out); }
+  // take the hips and legs of `legs` (a lying position pose) into `pose`, keeping its upper body
+  function legsFrom(pose, legs) {
+    pose.h = legs.h; pose.lfy = legs.lfy; pose.rfy = legs.rfy;
+    for (const k of ['lf', 'rf', 'lPole', 'rPole']) { pose[k] = pose[k] || []; for (let i = 0; i < legs[k].length; i++) pose[k][i] = legs[k][i]; }
+    return pose;
+  }
 
   // ---------- two-bone IK ----------
   const _d = new THREE.Vector3(), _p = new THREE.Vector3(), _u = new THREE.Vector3(), _e = new THREE.Vector3(), _l = new THREE.Vector3();
@@ -203,38 +212,136 @@
       this.skinBase = new THREE.Color(skin);
 
       // ---- visible segments (world-space groups)
+      // Each physics segment is a group holding an anatomical-ish body part built from lathes (smooth, tapered
+      // muscle shapes) plus a few spheres and boxes for landmarks. Everything stays inside / close to the physics
+      // collider of that segment so what you see is what gets hit.
       this.segs = {};
       const seg = (name) => { const g = new THREE.Group(); scene.add(g); this.segs[name] = g; return g; };
-      const addMesh = (g, geo, mat, offset) => { const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; if (offset) m.position.set(...offset); g.add(m); return m; };
-      // r128 has no CapsuleGeometry: cylinder + two hemispheres along Y
-      const addCapsule = (g, r, half, mat) => { addMesh(g, new THREE.CylinderGeometry(r, r, half * 2, 12, 1, true), mat); addMesh(g, new THREE.SphereGeometry(r, 12, 8), mat, [0, half, 0]); addMesh(g, new THREE.SphereGeometry(r, 12, 8), mat, [0, -half, 0]); };
+      const addMesh = (g, geo, mat, offset, scale) => {
+        const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true;
+        if (offset) m.position.set(...offset); if (scale) m.scale.set(...scale); g.add(m); return m;
+      };
+      // lathe around Y from a profile of [y, radius] pairs (top to bottom); zScale squashes it into an ellipse
+      const lathe = (g, profile, mat, zScale, offset) => {
+        // LatheGeometry winds its faces outward for points ordered bottom-to-top; profiles here are written top-down
+        const ordered = profile[0][0] > profile[profile.length - 1][0] ? profile.slice().reverse() : profile;
+        const pts = ordered.map(([y, r]) => new THREE.Vector2(Math.max(r, 0.001), y));
+        const m = addMesh(g, new THREE.LatheGeometry(pts, 24), mat, offset, zScale ? [1, 1, zScale] : null);
+        return m;
+      };
+      // smooth limb: capped lathe with rounded ends, radius given at the top, the belly (fraction f down) and the bottom
+      const limb = (g, half, rTop, rBelly, rBot, f, mat, ySkew) => {
+        const prof = [];
+        const N = 14;
+        for (let i = 0; i <= N; i++) {
+          const t = i / N, y = half - t * half * 2;
+          // blend top -> belly -> bottom with smooth cosine shoulders
+          let r;
+          if (t < f) { const u = t / f; r = rTop + (rBelly - rTop) * (0.5 - 0.5 * Math.cos(u * Math.PI)); }
+          else { const u = (t - f) / (1 - f); r = rBelly + (rBot - rBelly) * (0.5 - 0.5 * Math.cos(u * Math.PI)); }
+          prof.push([y, r]);
+        }
+        // rounded ends
+        prof.unshift([half + rTop * 0.6, rTop * 0.75], [half + rTop * 0.9, rTop * 0.35], [half + rTop, 0]);
+        prof.push([-half - rBot * 0.6, rBot * 0.75], [-half - rBot * 0.9, rBot * 0.35], [-half - rBot, 0]);
+        return lathe(g, prof, mat, null, ySkew ? [0, ySkew, 0] : null);
+      };
       const R = RIG;
-      addMesh(seg('pelvis'), new THREE.BoxGeometry(R.pelvis[0] * 2, R.pelvis[1] * 2, R.pelvis[2] * 2), shortsMat);
+      const trimMat = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.7 });
+      const bandMat = new THREE.MeshStandardMaterial({ color: 0x15151a, roughness: 0.85 });
+      const eyeWhite = new THREE.MeshStandardMaterial({ color: 0xf4f0ea, roughness: 0.4 });
+      const mouthMat = new THREE.MeshStandardMaterial({ color: 0x5a2a2a, roughness: 0.8 });
+
+      // -- pelvis: fight shorts. Waistband at the top, hips flare, hem just above the thigh tops, a seam stripe.
+      const pelvis = seg('pelvis');
+      const PW = R.pelvis[0], PH = R.pelvis[1], PD = R.pelvis[2];
+      lathe(pelvis, [[PH + 0.015, PW * 0.86], [PH, PW * 0.98], [PH * 0.4, PW * 1.06], [-PH * 0.3, PW * 1.1], [-PH - 0.02, PW * 1.06], [-PH - 0.05, PW * 0.98], [-PH - 0.06, 0.6 * PW]], shortsMat, PD / PW * 1.05);
+      lathe(pelvis, [[PH + 0.03, PW * 0.9], [PH + 0.03, PW * 0.84], [PH - 0.015, PW * 0.84], [PH - 0.015, PW * 1.0], [PH + 0.03, PW * 1.0]], bandMat, PD / PW * 1.05); // waistband
+      addMesh(pelvis, new THREE.BoxGeometry(0.02, PH * 1.6, 0.012), trimMat, [PW * 1.07, -0.01, 0]);   // side stripes
+      addMesh(pelvis, new THREE.BoxGeometry(0.02, PH * 1.6, 0.012), trimMat, [-PW * 1.07, -0.01, 0]);
+
+      // -- chest: a torso lathe (wide shoulders, narrow waist) squashed front-to-back, with traps, pecs and abs
       const chest = seg('chest');
-      addMesh(chest, new THREE.BoxGeometry(R.chest[0] * 2, R.chest[1] * 2, R.chest[2] * 2), bodyMat);
-      addMesh(chest, new THREE.BoxGeometry(R.chest[0] * 2 + 0.02, 0.1, R.chest[2] * 2 + 0.02), shortsMat, [0, -R.chest[1] + 0.03, 0]); // waistband
+      const CW = R.chest[0], CH = R.chest[1], CD = R.chest[2];
+      lathe(chest, [[CH + 0.045, CW * 0.36], [CH + 0.02, CW * 0.8], [CH - 0.01, CW * 1.04], [CH - 0.08, CW * 1.03], [0, CW * 0.95], [-CH * 0.55, CW * 0.86], [-CH, CW * 0.84], [-CH - 0.03, CW * 0.8]], bodyMat, CD / CW * 1.1);
+      // trapezius wedges running from the neck to the shoulders
+      addMesh(chest, new THREE.SphereGeometry(0.07, 14, 10), bodyMat, [0.1, CH - 0.01, -0.01], [1.5, 0.6, 0.75]);
+      addMesh(chest, new THREE.SphereGeometry(0.07, 14, 10), bodyMat, [-0.1, CH - 0.01, -0.01], [1.5, 0.6, 0.75]);
+      // pecs
+      addMesh(chest, new THREE.SphereGeometry(0.085, 16, 12), bodyMat, [0.085, CH * 0.3, CD * 0.62], [1.05, 0.68, 0.38]);
+      addMesh(chest, new THREE.SphereGeometry(0.085, 16, 12), bodyMat, [-0.085, CH * 0.3, CD * 0.62], [1.05, 0.68, 0.38]);
+      // abs: three rows of paired blocks down the front
+      for (let i = 0; i < 3; i++) for (const sx of [-1, 1]) addMesh(chest, new THREE.SphereGeometry(0.04, 10, 8), bodyMat, [sx * 0.04, -0.03 - i * 0.06, CD * 1.0], [0.95, 0.68, 0.2]);
+      // shoulder blades hint at the back
+      addMesh(chest, new THREE.SphereGeometry(0.09, 14, 10), bodyMat, [0.085, CH * 0.35, -CD * 0.62], [1.0, 1.0, 0.35]);
+      addMesh(chest, new THREE.SphereGeometry(0.09, 14, 10), bodyMat, [-0.085, CH * 0.35, -CD * 0.62], [1.0, 1.0, 0.35]);
+      // neck column rises from the chest (the head carries its own short neck so there is never a gap)
+      addMesh(chest, new THREE.CylinderGeometry(0.052, 0.062, 0.1, 16), bodyMat, [0, CH + 0.04, -0.005]);
+
+      // -- head: slightly egg-shaped skull, jaw, ears, brow, nose, eyes, mouth and a short crop of hair
       const head = seg('head');
-      this.head = addMesh(head, new THREE.SphereGeometry(R.headR, 20, 16), headMat);
-      addMesh(head, new THREE.SphereGeometry(R.headR * 0.98, 20, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), darkMat); // hair cap
-      addMesh(head, new THREE.SphereGeometry(0.018, 8, 8), darkMat, [-0.045, 0.02, R.headR - 0.015]);
-      addMesh(head, new THREE.SphereGeometry(0.018, 8, 8), darkMat, [0.045, 0.02, R.headR - 0.015]);
+      const HR = R.headR;
+      this.head = addMesh(head, new THREE.SphereGeometry(HR, 28, 22), headMat, [0, 0.01, -0.005], [0.93, 1.05, 1.0]);
+      addMesh(head, new THREE.SphereGeometry(HR * 0.78, 20, 16), headMat, [0, -HR * 0.52, HR * 0.18], [0.86, 0.72, 0.9]);     // jaw
+      addMesh(head, new THREE.CylinderGeometry(0.05, 0.056, 0.1, 16), headMat, [0, -HR - 0.02, -0.01]);                       // neck
+      addMesh(head, new THREE.SphereGeometry(0.028, 10, 8), headMat, [HR * 0.93, -0.005, -0.01], [0.55, 1.0, 0.8]);          // ears
+      addMesh(head, new THREE.SphereGeometry(0.028, 10, 8), headMat, [-HR * 0.93, -0.005, -0.01], [0.55, 1.0, 0.8]);
+      addMesh(head, new THREE.SphereGeometry(0.03, 12, 10), headMat, [0, 0.052, HR * 0.68], [2.2, 0.4, 0.7]);                 // brow ridge
+      addMesh(head, new THREE.SphereGeometry(0.02, 10, 8), headMat, [0, -0.02, HR * 0.94], [0.7, 1.25, 0.9]);               // nose
+      for (const sx of [-1, 1]) {
+        addMesh(head, new THREE.SphereGeometry(0.02, 10, 8), eyeWhite, [sx * 0.045, 0.02, HR * 0.82], [1.1, 0.7, 0.6]);
+        addMesh(head, new THREE.SphereGeometry(0.011, 8, 8), darkMat, [sx * 0.045, 0.02, HR * 0.82 + 0.014]);
+        addMesh(head, new THREE.SphereGeometry(0.05, 12, 10), headMat, [sx * 0.06, -0.03, HR * 0.5], [0.8, 0.75, 0.75]);     // cheekbones
+      }
+      addMesh(head, new THREE.BoxGeometry(0.05, 0.008, 0.01), mouthMat, [0, -0.065, HR * 0.86]);                              // mouth
+      addMesh(head, new THREE.SphereGeometry(HR * 1.01, 28, 14, 0, Math.PI * 2, 0, Math.PI * 0.44), darkMat, [0, 0.012, -0.015], [0.94, 1.05, 1.0]); // hair cap
+
       for (const side of ['l', 'r']) {
-        addCapsule(seg(side + 'UpperArm'), R.upperArm[1], R.upperArm[0], skinMat);
+        const sx = side === 'l' ? -1 : 1;
+        // -- upper arm: deltoid cap at the shoulder, bicep belly, narrowing to the elbow
+        const ua = seg(side + 'UpperArm');
+        const UH = R.upperArm[0], UR = R.upperArm[1];
+        limb(ua, UH, UR * 1.15, UR * 1.3, UR * 0.95, 0.45, skinMat);
+        addMesh(ua, new THREE.SphereGeometry(UR * 1.55, 16, 12), skinMat, [0, UH + 0.01, 0], [1.0, 0.9, 1.0]);           // deltoid
+        // -- forearm + glove
         const fa = seg(side + 'Forearm');
-        addCapsule(fa, R.forearm[1], R.forearm[0], skinMat);
-        addMesh(fa, new THREE.SphereGeometry(R.fistR, 14, 12), gloveMat, [0, R.fistY, 0]);
-        addCapsule(seg(side + 'Thigh'), R.thigh[1], R.thigh[0], shortsMat);
+        const FH = R.forearm[0], FR = R.forearm[1];
+        limb(fa, FH, FR * 1.1, FR * 1.25, FR * 0.82, 0.3, skinMat);
+        addMesh(fa, new THREE.SphereGeometry(FR * 1.1, 12, 10), skinMat, [0, FH + 0.005, 0]);                              // elbow
+        // MMA glove: padded knuckle block over the fist, open palm side, thumb, wrist strap
+        const GY = R.fistY, GR = R.fistR;
+        addMesh(fa, new THREE.SphereGeometry(GR, 18, 14), gloveMat, [0, GY, 0.005], [1.0, 1.0, 0.85]);                      // fist
+        addMesh(fa, new THREE.SphereGeometry(GR * 0.95, 16, 12), gloveMat, [0, GY - 0.01, 0.025], [1.05, 0.8, 0.8]);         // knuckle pad
+        addMesh(fa, new THREE.SphereGeometry(GR * 0.45, 10, 8), gloveMat, [sx * -GR * 0.75, GY + 0.015, 0.03], [0.8, 1.2, 0.8]); // thumb
+        for (let i = 0; i < 4; i++) addMesh(fa, new THREE.SphereGeometry(0.012, 8, 6), skinMat, [(-0.03 + i * 0.02) * -sx, GY - GR * 0.95, 0.01]); // fingertips
+        addMesh(fa, new THREE.CylinderGeometry(FR * 1.1, FR * 1.2, 0.06, 16), gloveMat, [0, GY + GR + 0.01, 0]);         // wrist strap
+        addMesh(fa, new THREE.CylinderGeometry(FR * 1.14, FR * 1.14, 0.014, 16), bandMat, [0, GY + GR + 0.02, 0]);     // strap seam
+        // -- thigh: shorts leg over the top half, quad belly, knee cap
+        const th = seg(side + 'Thigh');
+        const TH = R.thigh[0], TR = R.thigh[1];
+        limb(th, TH, TR * 1.12, TR * 1.26, TR * 0.86, 0.4, legMat);
+        lathe(th, [[TH + 0.03, TR * 1.15], [TH, TR * 1.32], [TH * 0.5, TR * 1.36], [0.02, TR * 1.33], [-0.01, TR * 1.28], [-0.015, TR * 0.9]], shortsMat, 1);
+        addMesh(th, new THREE.CylinderGeometry(TR * 1.32, TR * 1.32, 0.012, 20), trimMat, [0, -0.005, 0]);           // hem trim
+        addMesh(th, new THREE.SphereGeometry(TR * 0.72, 14, 10), legMat, [0, -TH - 0.01, 0.015], [1.0, 1.0, 0.9]);   // knee
+        // -- shin: calf belly high at the back, thin ankle, bare foot
         const sh = seg(side + 'Shin');
-        addCapsule(sh, R.shin[1], R.shin[0], legMat);
-        addMesh(sh, new THREE.BoxGeometry(R.foot[0] * 2, R.foot[1] * 2, R.foot[2] * 2), darkMat, R.footPos);
+        const SH = R.shin[0], SR = R.shin[1];
+        limb(sh, SH, SR * 1.12, SR * 1.28, SR * 0.82, 0.3, legMat);
+        addMesh(sh, new THREE.SphereGeometry(SR * 1.15, 14, 10), legMat, [0, SH * 0.45, -SR * 0.5], [0.95, 1.5, 0.95]);  // calf
+        const fp = R.footPos, FW = R.foot[0], FHh = R.foot[1], FL = R.foot[2];
+        addMesh(sh, new THREE.SphereGeometry(SR * 0.9, 12, 10), legMat, [0, fp[1] + FHh + 0.02, -0.005], [1.0, 0.8, 1.0]); // ankle
+        addMesh(sh, new THREE.BoxGeometry(FW * 2, FHh * 2, FL * 1.6), legMat, [fp[0], fp[1], fp[2] - FL * 0.2]);          // foot body
+        addMesh(sh, new THREE.SphereGeometry(FW, 14, 10), legMat, [fp[0], fp[1] - FHh * 0.1, fp[2] + FL * 0.6], [1.0, 0.75, 1.0]); // toes
+        addMesh(sh, new THREE.SphereGeometry(FW * 0.9, 12, 10), legMat, [fp[0], fp[1], fp[2] - FL * 0.95], [1.0, 0.8, 0.7]);     // heel
+        addMesh(sh, new THREE.BoxGeometry(FW * 2.05, 0.008, FL * 2.05), bandMat, [fp[0], fp[1] - FHh, fp[2] - FL * 0.02]);      // sole
       }
       // blood: a cut over the eye, a bloody nose/mouth, and a smear on the chest (shown as damage climbs)
       const bloodMat = new THREE.MeshStandardMaterial({ color: 0x8a0f12, roughness: 0.35, transparent: true, opacity: 0 });
       this.bloodMat = bloodMat;
-      const cut = addMesh(head, new THREE.BoxGeometry(0.05, 0.018, 0.02), bloodMat, [0.05, 0.05, R.headR - 0.01]); cut.rotation.z = 0.3; cut.castShadow = false;
-      const nose = addMesh(head, new THREE.BoxGeometry(0.035, 0.06, 0.02), bloodMat, [0, -0.04, R.headR - 0.005]); nose.castShadow = false;
-      const cheek = addMesh(head, new THREE.SphereGeometry(0.03, 8, 6), bloodMat, [-0.07, -0.01, R.headR - 0.04]); cheek.scale.set(1, 1.3, 0.5); cheek.castShadow = false;
-      const smear = addMesh(chest, new THREE.BoxGeometry(0.14, 0.22, 0.01), bloodMat, [0.02, 0.02, R.chest[2] + 0.005]); smear.castShadow = false;
+      const cut = addMesh(head, new THREE.BoxGeometry(0.05, 0.016, 0.02), bloodMat, [0.05, 0.062, R.headR * 0.78]); cut.rotation.z = 0.3; cut.castShadow = false;
+      const nose = addMesh(head, new THREE.BoxGeometry(0.03, 0.06, 0.02), bloodMat, [0, -0.05, R.headR * 0.88]); nose.castShadow = false;
+      const cheek = addMesh(head, new THREE.SphereGeometry(0.03, 8, 6), bloodMat, [-0.075, -0.02, R.headR * 0.7]); cheek.scale.set(1, 1.3, 0.5); cheek.castShadow = false;
+      const smear = addMesh(chest, new THREE.BoxGeometry(0.14, 0.22, 0.01), bloodMat, [0.02, 0.0, R.chest[2] * 1.1 + 0.01]); smear.castShadow = false;
       this.blood = { cut, nose, cheek, smear };
 
       // ---- hidden IK skeleton (drives the segments when the ragdoll is parked)
@@ -305,12 +412,15 @@
         const pos = S.ground ? S.ground.pos : 'guard';
         const base = pos === 'guard' ? POSES.bottomGuard : pos === 'half' ? POSES.bottomHalf : pos === 'back' ? POSES.turtle : POSES.bottomFlat;
         if (a.type === 'strike') return this._strikePose(f, out, base);
+        // in guard / half guard the legs stay wrapped around the top fighter whatever the upper body is doing
+        const wrap = pos === 'guard' || pos === 'half';
         if (a.type === 'sub') pose = POSES.bottomSub;
         else if (a.type === 'hit') pose = pos === 'back' ? POSES.turtle : POSES.bottomHit;
         else if (a.type === 'caught') pose = POSES.bottomHit;
         else if (a.type === 'trans') return lerpPose(base, pos === 'back' ? POSES.bottomHalf : POSES.bottomHit, 0.35 + 0.25 * Math.sin(a.t * 14), out);
-        else if ((this.inputHint & IN.BLOCK) && pos !== 'back') return lerpPose(base, POSES.bottomBlock, 0.6, out);
+        else if ((this.inputHint & IN.BLOCK) && pos !== 'back') return legsFrom(lerpPose(base, POSES.bottomBlock, 0.6, out), base);
         else pose = base;
+        if (wrap && pose !== base && pose !== POSES.bottomSub) return legsFrom(copyPose(pose, out), base);
       } else if (f.ground === 'top') {
         const pos = S.ground ? S.ground.pos : 'guard';
         const base = pos === 'guard' ? POSES.topGuard : pos === 'half' ? POSES.top : pos === 'side' ? POSES.topSide : pos === 'mount' ? POSES.topMount : POSES.topBack;
@@ -532,11 +642,12 @@
         toBody(rfx - p.ox, rfz - p.oz, v[1]); v[1].y = rfy - (p.h + bob) + 0.05;
         v[0].set(HIP_XX, HIP_Y, 0); this._pole.fromArray(p.rPole); solveIK(v[0], v[1], THIGH_L, SHIN_L, this._pole, this.rHip, this.rKn);
       } else {
-        // lying on back: body frame rotated; targets given directly in body frame
+        // lying on back: body frame rotated; targets given directly in body frame. The pose's knee poles are
+        // [across, towards the head, up] (default: knees up and a little towards the head)
         v[0].set(-HIP_XX, HIP_Y, 0); v[1].set(p.lf[0], p.lfy, p.lf[1]);
-        this._pole.set(0, 0.3, 1); solveIK(v[0], v[1], THIGH_L, SHIN_L, this._pole, this.lHip, this.lKn);
+        this._pole.set(p.lPole[0], p.lPole[1] + 0.3, p.lPole[2]); solveIK(v[0], v[1], THIGH_L, SHIN_L, this._pole, this.lHip, this.lKn);
         v[0].set(HIP_XX, HIP_Y, 0); v[1].set(p.rf[0], p.rfy, p.rf[1]);
-        this._pole.set(0, 0.3, 1); solveIK(v[0], v[1], THIGH_L, SHIN_L, this._pole, this.rHip, this.rKn);
+        this._pole.set(p.rPole[0], p.rPole[1] + 0.3, p.rPole[2]); solveIK(v[0], v[1], THIGH_L, SHIN_L, this._pole, this.rHip, this.rKn);
       }
       this._applySkeleton();
       this.blob.position.set(this.px, 0.012, this.pz);

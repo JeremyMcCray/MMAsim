@@ -7,7 +7,7 @@
 <meta name="description" content="Cage Rules: a 3D one-on-one mixed martial arts simulation you can play online against a friend, right in the browser.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700;900&family=Barlow:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=9">
+<link rel="stylesheet" href="css/style.css?v=11">
 </head>
 <body>
 <canvas id="gl"></canvas>
@@ -34,6 +34,7 @@
     </div>
   </div>
   <div class="center-msg" id="centerMsg"></div>
+  <div class="kd-hint" id="kdHint"></div>
   <div class="grapple" id="grapple">
     <div class="g-title" id="gTitle">GROUND</div>
     <div class="g-row att" id="attRow"><span id="attName">ATTEMPT</span><div class="bar g att"><div class="fill"></div></div></div>
@@ -150,14 +151,14 @@
   if (typeof THREE === 'undefined') document.write('<script src="lib/three.min.js"><\/script>');
   if (typeof Peer === 'undefined') document.write('<script src="lib/peerjs.min.js"><\/script>');
 </script>
-<script src="js/physics.js?v=9"></script>
-<script src="js/sim.js?v=9"></script>
-<script src="js/ai.js?v=9"></script>
-<script src="js/render.js?v=9"></script>
-<script src="js/net.js?v=9"></script>
-<script src="js/audio.js?v=9"></script>
-<script src="js/main.js?v=9"></script>
-<script src="lib/rapier3d-compat.js?v=9"></script>
+<script src="js/physics.js?v=11"></script>
+<script src="js/sim.js?v=11"></script>
+<script src="js/ai.js?v=11"></script>
+<script src="js/render.js?v=11"></script>
+<script src="js/net.js?v=11"></script>
+<script src="js/audio.js?v=11"></script>
+<script src="js/main.js?v=11"></script>
+<script src="lib/rapier3d-compat.js?v=11"></script>
 <script>
   // Rapier physics engine (vendored, WASM inlined, plain script so the game also runs from file://).
   (function () {

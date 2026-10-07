@@ -52,13 +52,30 @@
       const oppShooting = op.act.type === 'takedown' && !op.act.hit;
       const tired = me.stam < 22;
 
-      // opponent knocked down: wrestlers and grapplers dive on him, strikers let him up and reset
+      // knocked down myself: stay down a moment to clear the head (longer the worse it is), then get up
+      if (me.act.type === 'kd') {
+        if (me.act.name === 'fall') {
+          const hurt = Math.min(1, me.dmg.head / 80);
+          this.kdRest = 0.3 + r() * 0.8 + hurt * 1.6 + (st.chin < 0.6 ? 0.4 : 0);
+          // a wrestler closing in is a reason to get up at once
+          if (S.grappling !== false && op.stats.wre > 0.75 && r() < 0.5 + d * 0.3) this.kdRest = Math.min(this.kdRest, 0.3);
+        } else if (me.act.name === 'down' && me.act.t >= (this.kdRest || 0)) this.pressed |= IN.FWD;
+        this.held = 0; return { held: 0, pressed: this.pressed };
+      }
+      // opponent knocked down: decide once whether to dive on him (wrestlers and grapplers do, strikers let him up)
       if (op.act.type === 'kd') {
-        const follow = S.grappling !== false && r() < (st.wre * 0.06 + st.bjj * 0.04) * (0.5 + d);
-        if (follow) { if (dist <= 1.8) this.pressed |= IN.GRAPPLE; else held |= IN.FWD; }
-        else if (dist < 1.4) held |= IN.BACK;
+        if (!this.kdPlan) {
+          const dive = S.grappling !== false && r() < (0.15 + st.wre * 0.5 + st.bjj * 0.3) * (0.4 + d * 0.6);
+          this.kdPlan = { dive, t: 0 };
+        }
+        this.kdPlan.t += dt;
+        if (this.kdPlan.dive) {
+          if (dist <= 2.0) { if (this.kdPlan.t > 0.35 && r() < 0.5) this.pressed |= IN.GRAPPLE; }
+          else held |= IN.FWD;
+        } else if (dist < 1.6) held |= IN.BACK;
         this.held = held; return { held, pressed: this.pressed };
       }
+      this.kdPlan = null;
       if (me.rocked > 0) {
         held |= IN.BLOCK; if (r() < 0.6) held |= IN.BACK;
         if (r() < 0.02) held |= (r() < 0.5 ? IN.LEFT : IN.RIGHT);

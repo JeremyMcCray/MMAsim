@@ -116,6 +116,10 @@ table.moves select { width: 100%; font-size: 13px; padding: 5px 6px; }
 .bar.g { margin-top: 0; height: 10px; }
 .bar.g.esc .fill { background: #52a9d2; } .bar.g.sub .fill { background: #e23b3b; }
 .g-hint { font-size: 12px; color: var(--muted); text-align: center; margin-top: 6px; }
+.kd-hint { position: absolute; left: 50%; top: 110px; transform: translateX(-50%); max-width: 520px; background: rgba(8,8,12,.65); border: 1px solid rgba(255,255,255,.1); border-radius: 8px; padding: 8px 14px; font-size: 13px; color: var(--muted); text-align: center; display: none; }
+.kd-hint.show { display: block; }
+.kd-hint b { color: #fff; font-family: var(--font-head); font-size: 13px; letter-spacing: .05em; }
+.kd-hint .t { display: block; font-family: var(--font-head); font-size: 13px; letter-spacing: .2em; color: var(--gold); margin-bottom: 3px; }
 .bottom { position: absolute; left: 14px; right: 14px; bottom: 12px; display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; }
 .feed { display: flex; flex-direction: column-reverse; gap: 3px; min-height: 90px; }
 .feed div { font-size: 15px; background: rgba(8,8,12,.6); padding: 3px 10px; border-radius: 4px; border-left: 3px solid var(--gold); opacity: .95; animation: fadein .2s; }

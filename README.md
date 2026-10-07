@@ -59,8 +59,8 @@ browser. Defaults:
 | **R** (hold) | hands → overhands, legs → low kicks | hands → body shots | — |
 | *(no modifier)* | hands → uppercuts, lead leg → teep, rear leg → knee | | |
 | **L** (hold) | block / sprawl vs takedowns | posture up (kills escape progress) | cover up vs strikes |
-| **Space** | takedown | submission attempt | sweep / reversal |
-| **Shift** | slip (dodge) | stand up and let them up | — |
+| **Space** | takedown / dive on a knocked‑down opponent | submission attempt | sweep / reversal |
+| **Shift** | slip (dodge) / get up when knocked down (any direction works too) | stand up and let them up | — |
 | **Esc** / **H** / **M** | options / hide controls / mute | | |
 
 Movement is relative to your opponent (W always moves toward them), so it
@@ -69,8 +69,9 @@ works from any camera angle.
 ## Fight model
 
 * **Damage by region** — head, body and legs. Head damage is your main
-  health bar; heavy shots can **rock** you (slow, vulnerable), and getting
-  hit while rocked is a **knockdown**. Body damage drains stamina regen
+  health bar; heavy shots can **rock** you (slow, vulnerable, for a second
+  or two), and a solid head shot while you are rocked is a **knockdown** —
+  the bar for that drops as your head damage climbs. Body damage drains stamina regen
   and can finish you (TKO body); leg damage slows you, can buckle your
   leg and can also end the fight.
 * **Stamina** governs strike speed, power, movement and grappling. Cardio
@@ -111,18 +112,23 @@ works from any camera angle.
   (Shift) physically moves your head off the centre line: straight shots
   whiff and the attacker over‑commits, but body and leg strikes still land.
   Holding block raises a tight guard: hits on the forearms do 15 % (45 %
-  for a checked low kick) and cost the blocker stamina; a stray arm that
-  happens to be in the way (not blocking) still soaks about half. Teeps
+  for a checked low kick) and a clean block gives the blocker a sliver of
+  stamina back (8 % of what the strike cost the attacker); a stray arm that
+  happens to be in the way (not blocking) still soaks about half, for nothing. Teeps
   shove the opponent back.
 * **Wrestling** — takedown success depends on both wrestling stats,
   whether the defender is sprawling (holding block), caught mid‑strike,
   rocked or tired. Failed shots leave you stumbling. A takedown lands in
   closed guard (half guard if the shooter is a strong wrestler who caught
-  you swinging); a **knockdown** is physical: the hurt fighter drops where he
-  stands and spends about two seconds getting back up (he can't be hit while
-  he is down and comes up rocked). While he is on the mat the attacker can
-  press the takedown key to **follow him down** into half guard, or let him
-  up and keep it standing.
+  you swinging).
+* **Knockdowns** are physical: the hurt fighter drops where he stands and
+  can't be hit while he is down. Once he has landed it is his call — press a
+  direction (or the slip key) to **get up now**, coming up still rocked, or
+  **stay down** to clear his head (rocked wears off 2.5× faster on the mat;
+  the referee waves him up after four seconds). While he is down the other
+  fighter can press the takedown key to **dive on him** — side control if he
+  is lying flat, half guard if he was already getting up — or back off and
+  keep it standing.
 * **Ground positions** — closed guard → half guard → side control → mount,
   plus back control. The top fighter advances with **takedown key + W**
   (pass / take mount); the bottom fighter works with **takedown key + a
@@ -170,6 +176,7 @@ js/main.js        menus, lobby, input, game loop, HUD
 lib/              rapier3d-compat.js (physics), three.min.js, peerjs.min.js
 tools/            node scripts: headless.js (CPU vs CPU fights + stats),
                   probe.js (throw every strike at a dummy over a range of distances),
+                  posecheck.js (does a stance / guard pose clip the arms through the chest?),
                   browser-test.js (run the page in headless Chromium)
 ```
 
