@@ -127,6 +127,7 @@
     for (const id of ['menu', 'lobby', 'end']) { const el = $('#' + id); if (id === name) show(el); else hide(el); }
     if (App.optionsOpen) closeOptions();
     if (name) hide($('#hud')); else show($('#hud'));
+    App.audio.play(name === 'menu' || name === 'lobby' ? 'menu' : 'fight');
   }
   function centerMsg(html, ms) {
     const el = $('#centerMsg'); el.innerHTML = html; el.classList.add('show');
@@ -663,6 +664,20 @@
   $('#btnLobbyOptions').onclick = () => openOptions();
   $('#btnOptClose').onclick = () => closeOptions();
   $('#btnOptReset').onclick = () => resetControls();
+  (function bindMusicVolume() {
+    const sl = $('#musicVol'), lbl = $('#musicVolLbl');
+    const boxes = [$('#muteMusic'), $('#muteMusicOpt')];
+    const showVol = (p) => { sl.value = String(p); lbl.textContent = String(p); };
+    showVol(Math.round(App.audio.musicVol * 100));
+    sl.addEventListener('input', () => {
+      const p = Math.max(0, Math.min(100, parseInt(sl.value, 10) || 0));
+      App.audio.setMusicVolume(p / 100);
+      lbl.textContent = String(p);
+    });
+    const syncMute = () => { for (const box of boxes) box.checked = App.audio.musicMuted; };
+    syncMute();
+    for (const box of boxes) box.addEventListener('change', () => { App.audio.setMusicMuted(box.checked); syncMute(); });
+  })();
   updateHint();
   $('#btnBack').onclick = () => { if (App.net) { App.net.destroy(); App.net = null; } App.mode = null; screen('menu'); };
   $('#btnCopy').onclick = () => { navigator.clipboard && navigator.clipboard.writeText($('#codeLbl').textContent).then(() => toast('Room code copied', 1500)); };
@@ -704,4 +719,11 @@
       App.state = demo.state; R.setFighters(demo.state);
     } catch (e) { console.error(e); toast('WebGL failed to start: ' + e.message, 8000); }
   });
+  // Browsers block audio until a gesture, and a rejected play() must be retried on the next one.
+  function unlockMusic() {
+    const onMenu = !$('#menu').classList.contains('hidden') || !$('#lobby').classList.contains('hidden');
+    App.audio.play(onMenu ? 'menu' : 'fight');
+  }
+  window.addEventListener('pointerdown', unlockMusic);
+  window.addEventListener('keydown', unlockMusic);
 })();

@@ -25,7 +25,14 @@ h1 { font-family: var(--font-head); font-weight: 900; font-size: 84px; line-heig
 h1 span { color: var(--red); display: block; font-size: 64px; letter-spacing: .22em; }
 .sub { color: var(--muted); margin: 10px 0 28px; font-size: 16px; letter-spacing: .08em; text-transform: uppercase; }
 .fine { color: var(--muted); font-size: 13px; margin-top: 22px; }
+.credits { margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.08); }
+.credits-title { font-family: var(--font-head); font-weight: 700; font-size: 14px; letter-spacing: .2em; color: var(--gold); }
+.credits p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+.credits b { color: #fff; font-weight: 600; }
 .menu-btns { display: flex; flex-direction: column; gap: 12px; }
+.mute-music { display: inline-flex; align-items: center; gap: 8px; margin-top: 14px; color: var(--muted); font-size: 14px; letter-spacing: .06em; text-transform: uppercase; cursor: pointer; }
+.mute-music input { accent-color: var(--gold); width: 16px; height: 16px; margin: 0; cursor: pointer; }
+.opt-audio .mute-music { margin-top: 8px; }
 .join-row { display: flex; gap: 10px; margin-top: 14px; justify-content: center; }
 .join-row input { font-family: var(--font-head); font-size: 28px; letter-spacing: .3em; text-transform: uppercase; width: 220px; text-align: center; }
 
@@ -61,7 +68,11 @@ h1 span { color: var(--red); display: block; font-size: 64px; letter-spacing: .2
 .opt-note { color: var(--muted); font-size: 13px; max-width: 320px; text-align: right; }
 .opt-note b, .opt-help b { color: #fff; font-family: var(--font-head); letter-spacing: .05em; }
 .opt-cols { display: grid; grid-template-columns: 1fr 1.25fr; gap: 28px; margin-top: 10px; }
-.opt-col h3 { font-family: var(--font-head); font-weight: 700; font-size: 18px; letter-spacing: .15em; color: var(--gold); margin: 10px 0 6px; }
+.opt-audio { margin-top: 4px; }
+.opt-audio h3, .opt-col h3 { font-family: var(--font-head); font-weight: 700; font-size: 18px; letter-spacing: .15em; color: var(--gold); margin: 10px 0 6px; }
+.vol-row { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .08em; max-width: 420px; }
+.vol-row input[type="range"] { flex: 1; accent-color: var(--gold); cursor: pointer; }
+.vol-row span { min-width: 2.2em; color: #fff; font-family: var(--font-head); font-size: 18px; letter-spacing: .04em; }
 .opt-help { color: var(--muted); font-size: 13px; margin: 0 0 10px; line-height: 1.4; }
 table.keys, table.moves { width: 100%; border-collapse: collapse; font-size: 14px; }
 table.keys td, table.keys th, table.moves td, table.moves th { padding: 4px 6px; border-bottom: 1px solid rgba(255,255,255,.08); text-align: left; }
