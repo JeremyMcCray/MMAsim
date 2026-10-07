@@ -9,7 +9,7 @@ const ROOT = path.resolve(__dirname, '..');
 const seconds = parseFloat(process.argv[2] || '20');
 const outdir = process.argv[3] || '/tmp/shots';
 fs.mkdirSync(outdir, { recursive: true });
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm', '.png': 'image/png' };
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm', '.png': 'image/png', '.gltf': 'model/gltf+json', '.bin': 'application/octet-stream' };
 
 const server = http.createServer((req, res) => {
   const url = decodeURIComponent(req.url.split('?')[0]);
@@ -41,6 +41,7 @@ const server = http.createServer((req, res) => {
   await page.waitForTimeout(300);
   await page.evaluate(() => { const s = document.querySelector('#selDiff'); s.value = '0.9'; s.dispatchEvent(new Event('change')); });
   await page.click('#btnReady');
+  await page.waitForFunction(() => { const R = window.CageRules && window.CageRules.renderer; return R && R.models.length === 2 && R.models.every(m => m.human || m.procedural); }, null, { timeout: 30000 }).catch(() => console.log('warning: fighter models did not finish loading'));
   await page.waitForTimeout(500);
   const t0 = Date.now();
   let shot = 1, lastPhase = '', lastFeed = '';

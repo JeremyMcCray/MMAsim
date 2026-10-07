@@ -37,15 +37,19 @@ const server = http.createServer((req, res) => {
   console.log('physics ready:', physOk);
   await page.click('#btnPractice');
   await page.waitForTimeout(300);
+  // CPU corner: a fixed opponent (CPU_PICK env, default wrestler) so the shots are reproducible
+  await page.evaluate((pick) => { window.CageRules.lobby.cpuPick = pick; }, process.env.CPU_PICK || 'wrestler');
   await page.click('#btnReady');
   await page.waitForTimeout(500);
+  // the human model loads asynchronously after the fight starts
+  await page.waitForFunction(() => { const R = window.CageRules && window.CageRules.renderer; return R && R.models.length === 2 && R.models.every(m => m.human || m.procedural); }, null, { timeout: 30000 }).catch(() => console.log('warning: fighter models did not finish loading'));
   // helpers run in the page: tick the sim with given inputs for P1, render a few frames, screenshot
   const tick = (n, held, pressed) => page.evaluate(([n, held, pressed]) => {
     const A = window.CageRules, sim = A.sim; A.brain = null; // CPU off: we script both
     for (let k = 0; k < n; k++) { sim.setInput(0, held, k === 0 ? pressed : 0); sim.setInput(1, 0, 0); sim.acc = 0; sim.step(1 / 60); const evs = sim.drainEvents(); if (evs.length) A.renderer.handleEvent && evs.forEach(e => A.renderer.handleEvent(e, sim.state)); }
     for (let k = 0; k < 30; k++) A.renderer.update(sim.state, 1 / 30, [held, 0]);
   }, [n, held, pressed]);
-  const shot = async (name, info) => { await page.waitForTimeout(150); await page.screenshot({ path: path.join(outdir, name + '.png') }); console.log(name, info || ''); };
+  const shot = async (name, info) => { await page.waitForTimeout(150); await page.screenshot({ path: path.join(outdir, name + '.png'), timeout: 180000 }); console.log(name, info || ''); };
   const state = () => page.evaluate(() => { const S = window.CageRules.state; return { phase: S.phase, f: S.f.map(f => f.act.type + ':' + (f.act.name || '') + ' rocked ' + f.rocked.toFixed(1)), ground: S.ground && S.ground.pos }; });
   const IN = await page.evaluate(() => window.MMASim.IN);
   // wait for the bell
