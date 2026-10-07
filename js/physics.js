@@ -145,8 +145,12 @@
   // collide with each other, so a pose that folds an upper arm across the chest simply clips through it.
   // Elbows stay beside / in front of the ribs, outside the chest box; only the forearms and gloves come inside.
   const STANCE = { pelvisYaw: 14, chest: [4, 16, 0], head: [8, -14, 0], lUpperArm: [-32, -22, -10], lForearm: [-132, 0, 0], rUpperArm: [-30, -16, 6], rForearm: [-138, 0, -22], lThigh: [-22, 0, -4], lShin: [26, 0, 0], rThigh: [12, 0, 8], rShin: [6, 0, 0] };
-  // high guard: elbows tucked at the sides, forearms vertical in front of the face, gloves at the temples
-  const GUARD  = { pelvisYaw: 16, chest: [12, 18, 0], head: [16, -16, 0], lUpperArm: [-60, -20, -10], lForearm: [-140, 0, 40], rUpperArm: [-55, -20, 8], rForearm: [-135, 0, -15], lThigh: [-20, 0, -4], lShin: [30, 0, 0], rThigh: [10, 0, 8], rShin: [10, 0, 0] };
+  // high guard: elbows in front of the ribs and pulled in, forearms rising close together in front of the face,
+  // gloves up at the temples — a glove's width apart, level with the top of the head — so the shell closes the
+  // middle against straights, the sides against hooks and the top against head kicks. Placed by search
+  // (tools/guard-test.js battery): elbows at chest-local (+-0.18, 0.08, 0.25), gloves at (+-0.15, 0.42, 0.12).
+  // The upper arms press into the front corners of the chest box (~3 cm), as a real tucked guard does.
+  const GUARD  = { pelvisYaw: 16, chest: [12, 18, 0], head: [16, -16, 0], lUpperArm: [-76, 3, 12], lForearm: [-128, 0, 9], rUpperArm: [-76, -3, -12], rForearm: [-128, 0, -9], lThigh: [-20, 0, -4], lShin: [30, 0, 0], rThigh: [10, 0, 8], rShin: [10, 0, 0] };
   const LIMP   = { pelvisYaw: 0, chest: [0, 0, 0], head: [0, 0, 0], lUpperArm: [0, 0, 20], lForearm: [-20, 0, 0], rUpperArm: [0, 0, -20], rForearm: [-20, 0, 0], lThigh: [0, 0, 0], lShin: [10, 0, 0], rThigh: [0, 0, 0], rShin: [10, 0, 0] };
   // slip: head off the centre line (outside the lead shoulder), hands up
   const SLIP   = { pelvisYaw: 30, chest: [22, 30, -22], head: [10, -20, -10], lUpperArm: [-70, 10, 28], lForearm: [-125, 0, 14], rUpperArm: [-62, -14, -34], rForearm: [-135, 0, -14], lThigh: [-30, 0, -6], lShin: [40, 0, 0], rThigh: [8, 0, 10], rShin: [14, 0, 0] };
@@ -769,8 +773,9 @@
         if (result) break;
       }
       if (!result) return null;
-      // glove on glove is a touch, not a blow: the punch keeps travelling
-      if (result.vn < VMIN || result.clean < MIN_CLEAN || result.partName === 'fist') {
+      // glove on glove is a touch, not a blow: the punch keeps travelling — unless he is guarding, when a glove
+      // held at the temple is part of the shell and catches the shot like a forearm
+      if (result.vn < VMIN || result.clean < MIN_CLEAN || (result.partName === 'fist' && !opp.guard)) {
         if (st.glanced) return null;
         st.glanced = true;
         result.glance = true;
