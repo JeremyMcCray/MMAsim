@@ -18,6 +18,7 @@
       this.modT = 0;
       this.rangeMode = 'kick'; // 'punch' = get in the pocket, 'kick' = fight at leg range
       this.rangeT = 0;
+      this.pushT = 0;          // > 0: second BLOCK tap of a push is pending
     }
 
     update(S, dt) {
@@ -96,6 +97,12 @@
       if (this.latT <= 0) { this.lateral = r() < 0.4 ? 0 : (r() < 0.5 ? IN.LEFT : IN.RIGHT); this.latT = 0.6 + r() * 1.2; }
       if (dist > desired + 0.1) held |= IN.FWD;
       else if (dist < desired - 0.34 && !(st.wre > 0.75)) held |= IN.BACK;
+      // smothered: shove him off (double tap BLOCK) — strikers do it to make room, anyone does it when tired
+      if (this.pushT > 0) { this.pushT -= dt; if (this.pushT <= 0) this.pressed |= IN.BLOCK; }
+      else if (dist < 0.98 && me.act.type !== 'strike' && me.act.type !== 'push' && !oppShooting && me.stam > 12) {
+        const want = (st.wre > 0.75 ? 0.15 : 0.5) + (tired ? 0.6 : 0) + (this.rangeMode === 'kick' ? 0.4 : 0);
+        if (r() < want * (0.4 + d * 0.6) * dt) { this.pressed |= IN.BLOCK; this.pushT = 0.08; }
+      }
       if (tired && dist < 1.6 && r() < 0.5) held |= IN.BACK;
       if (!(held & IN.BLOCK) || r() < 0.3) held |= this.lateral;
 

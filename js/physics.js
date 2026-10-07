@@ -154,6 +154,8 @@
   const SHOOT  = { pelvisYaw: 0, chest: [55, 0, 0], head: [-30, 0, 0], lUpperArm: [-85, 0, 10], lForearm: [-20, 0, 0], rUpperArm: [-85, 0, -10], rForearm: [-20, 0, 0], lThigh: [-70, 0, -6], lShin: [70, 0, 0], rThigh: [-20, 0, 8], rShin: [60, 0, 0] };
   // sprawl: hips back, chest down on the shooter
   const SPRAWL = { pelvisYaw: 0, chest: [70, 0, 0], head: [-35, 0, 0], lUpperArm: [-110, 0, 20], lForearm: [-30, 0, 0], rUpperArm: [-110, 0, -20], rForearm: [-30, 0, 0], lThigh: [30, 0, -10], lShin: [20, 0, 0], rThigh: [30, 0, 10], rShin: [20, 0, 0] };
+  // push: both arms driven straight out at chest height, weight forward, feet staggered to drive
+  const PUSH   = { pelvisYaw: 6, chest: [18, 6, 0], head: [-6, -6, 0], lUpperArm: [-92, -6, 8], lForearm: [-12, 0, 0], rUpperArm: [-90, 4, -8], rForearm: [-12, 0, 0], lThigh: [-34, 0, -6], lShin: [40, 0, 0], rThigh: [14, 0, 10], rShin: [10, 0, 0] };
   // stumble: bent over, arms down, feet wide
   const STUMBLE = { pelvisYaw: 0, chest: [40, 0, 0], head: [10, 0, 0], lUpperArm: [-30, 0, 30], lForearm: [-40, 0, 0], rUpperArm: [-30, 0, -30], rForearm: [-40, 0, 0], lThigh: [-35, 0, -12], lShin: [40, 0, 0], rThigh: [20, 0, 12], rShin: [30, 0, 0] };
   // getting back up after a knockdown: crouched, hands coming off the mat
@@ -169,7 +171,7 @@
   const CELEBRATE = { pelvisYaw: 0, chest: [-8, 0, 0], head: [-12, 0, 0], lUpperArm: [-170, 0, 30], lForearm: [-20, 0, 0], rUpperArm: [-170, 0, -30], rForearm: [-20, 0, 0], lThigh: [-5, 0, -8], lShin: [8, 0, 0], rThigh: [-5, 0, 8], rShin: [8, 0, 0] };
   // rocked: chin up, hands low, knees soft
   const WOBBLE = { pelvisYaw: 10, chest: [-6, 10, 0], head: [-10, -8, 0], lUpperArm: [-40, 8, -12], lForearm: [-70, 0, 8], rUpperArm: [-30, -10, 10], rForearm: [-80, 0, -6], lThigh: [-30, 0, -6], lShin: [38, 0, 0], rThigh: [4, 0, 10], rShin: [20, 0, 0] };
-  const POSES = { STANCE, GUARD, LIMP, SLIP, SHOOT, SPRAWL, STUMBLE, CELEBRATE, WOBBLE, GETUP, KD_FALL_FWD, KD_TURTLE, KD_FALL_BACK, KD_GUARD };
+  const POSES = { STANCE, GUARD, LIMP, SLIP, SHOOT, SPRAWL, PUSH, STUMBLE, CELEBRATE, WOBBLE, GETUP, KD_FALL_FWD, KD_TURTLE, KD_FALL_BACK, KD_GUARD };
 
   // ---------------------------------------------------------------- strikes
   // keys: joints a strike animates. Every keyframe must give each of those joints (or 'stance').
@@ -392,7 +394,7 @@
       this.move = [0, 0];       // local x (right), z (forward), -1..1
       this.moveSpeed = 1;       // multiplier on MOVE_SPEED
       this.guard = false;
-      this.override = null;     // pose name: SLIP | SHOOT | SPRAWL | STUMBLE | CELEBRATE | WOBBLE
+      this.override = null;     // pose name: SLIP | SHOOT | SPRAWL | PUSH | STUMBLE | CELEBRATE | WOBBLE
       this.ko = false;
       this.downT = 0; this.downTotal = 1; this.riseT = 0; this.riseTotal = 1; // knocked down: catching himself, then climbing back up
       this.lying = false;       // knocked down and staying down (turtled / on his back until getUp() is called)

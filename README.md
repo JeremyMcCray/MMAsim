@@ -58,7 +58,7 @@ browser. Defaults:
 | **E** (hold) | hands → straights, legs → head kicks | hands → hammer fists | — |
 | **R** (hold) | hands → overhands, legs → low kicks | hands → body shots | — |
 | *(no modifier)* | hands → uppercuts, lead leg → teep, rear leg → knee | | |
-| **L** (hold) | block / sprawl vs takedowns | posture up (kills escape progress) | cover up vs strikes |
+| **L** (hold, or tap twice to push) | block / sprawl vs takedowns; tap twice to shove them off you when they're too close | posture up (kills escape progress) | cover up vs strikes |
 | **Space** | takedown / dive on a knocked‑down opponent | submission attempt | sweep / reversal |
 | **Shift** | slip (dodge) / get up when knocked down (any direction works too) | stand up and let them up | — |
 | **Esc** / **H** / **M** | options / hide controls / mute | | |

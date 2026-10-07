@@ -33,6 +33,7 @@
     hitHead: P({ lean: -0.3, hp: -0.55, hy: 0.4, lh: [-0.2, 0.3, 0.25], rh: [0.22, 0.25, 0.1], h: HIP_H - 0.03 }),
     hitBody: P({ lean: 0.5, h: HIP_H - 0.14, hp: 0.4, lh: [-0.1, 0.1, 0.3], rh: [0.15, 0.05, 0.25] }),
     hitLegs: P({ lean: 0.25, h: HIP_H - 0.2, roll: 0.25, lh: [-0.14, 0.3, 0.3], rh: [0.3, 0.2, 0.1] }),
+    push: P({ lean: 0.3, h: HIP_H - 0.06, oz: 0.08, lh: [-0.17, 0.46, 0.66], rh: [0.17, 0.46, 0.66], hp: 0.05, elbowOut: 0.2 }),
     stumble: P({ lean: 0.55, h: HIP_H - 0.25, lh: [-0.3, -0.1, 0.4], rh: [0.3, -0.05, 0.35], hp: 0.3 }),
     sprawl: P({ lean: 1.05, h: HIP_H - 0.32, lh: [-0.26, -0.3, 0.5], rh: [0.26, -0.3, 0.5], lf: [-0.2, -0.25], rf: [0.22, -0.3], hp: -0.3 }),
     tdWind: P({ lean: 0.75, h: HIP_H - 0.3, lh: [-0.2, 0.0, 0.5], rh: [0.2, 0.0, 0.45], lf: [-0.16, 0.3], rf: [0.2, -0.3], hp: -0.3 }),
@@ -435,6 +436,7 @@
           case 'strike': return this._strikePose(f, out);
           case 'hit': pose = a.name === 'body' ? POSES.hitBody : a.name === 'legs' ? POSES.hitLegs : POSES.hitHead; break;
           case 'dodge': pose = POSES.dodge; break;
+          case 'push': pose = a.t < 0.26 ? POSES.push : POSES.idle; break;
           case 'stumble': pose = POSES.stumble; break;
           case 'sprawl': pose = POSES.sprawl; break;
           case 'takedown': {
@@ -572,7 +574,7 @@
       // ---- pose ----
       const target = this.targetPose(f, S, this._tp);
       this._tp = target;
-      const speed = (f.act.type === 'strike' || f.act.type === 'hit' || f.act.type === 'dodge') ? 26 : 12;
+      const speed = (f.act.type === 'strike' || f.act.type === 'hit' || f.act.type === 'dodge' || f.act.type === 'push') ? 26 : 12;
       if (wasPhys) copyPose(target, this.pose); // coming off the ragdoll: start from the new pose, not a stale one
       else lerpPose(this.pose, target, expo(dt, speed), this.pose);
       // overrides (striking limb, lunge) are applied to a per-frame copy so they never feed back into the smoothing

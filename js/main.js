@@ -27,7 +27,7 @@
     { id: 'mod1', label: 'Modifier 1 (hold)', bit: IN.MOD1, def: ['KeyQ', ''] },
     { id: 'mod2', label: 'Modifier 2 (hold)', bit: IN.MOD2, def: ['KeyE', ''] },
     { id: 'mod3', label: 'Modifier 3 (hold)', bit: IN.MOD3, def: ['KeyR', ''] },
-    { id: 'block', label: 'Block / sprawl / cover (hold)', bit: IN.BLOCK, def: ['KeyL', 'Semicolon'] },
+    { id: 'block', label: 'Block / sprawl / cover (hold) · push (tap twice)', bit: IN.BLOCK, def: ['KeyL', 'Semicolon'] },
     { id: 'grapple', label: 'Takedown / submission / sweep', bit: IN.GRAPPLE, def: ['Space', ''] },
     { id: 'dodge', label: 'Slip / stand up', bit: IN.DODGE, def: ['ShiftLeft', 'ShiftRight'] }
   ];
@@ -392,6 +392,7 @@
       switch (ev.k) {
         case 'hit': A.hit(ev.big || ev.rocked, ev.part); feed(text, ev.big || ev.rocked || ev.counter); break;
         case 'block': A.block(); if (Math.random() < 0.35) feed(text); break;
+        case 'push': if (ev.ok) { A.block(); feed(text); } else A.whiff(); break;
         case 'miss': A.whiff(); if (ev.slipped) feed(text); break;
         case 'kd': A.slam(); centerMsg('KNOCKDOWN!', 1400); feed(text, true); break;
         case 'follow': A.slam(); feed(text, true); break;
@@ -447,6 +448,7 @@
       else if (f.ground === 'top') txt = 'TOP';
       else if (f.ground === 'bottom') txt = 'BOTTOM';
       else if (f.blocking) txt = 'BLOCK';
+      else if (f.act.type === 'push') txt = 'PUSH';
       else if (f.stam < 22) txt = 'GASSED';
       st.textContent = txt; st.className = cls;
     }
@@ -572,7 +574,7 @@
     $('#controlsHint').innerHTML =
       '<div class="ctl-row">' + [B('fwd'), B('left'), B('back'), B('right')].join(' ') + ' move / circle (stepping into a shot adds power, backing off takes it away) · ' + B('lh') + ' left hand · ' + B('rh') + ' right hand · ' + B('ll') + ' left leg · ' + B('rl') + ' right leg</div>' +
       '<div class="ctl-row">' + MODS.map(row).join(' · ') + '</div>' +
-      '<div class="ctl-row">' + B('block') + ' hold: block / sprawl · ' + B('grapple') + ' takedown / dive on a downed opponent · ' + B('dodge') + ' slip · knocked down: a direction or ' + B('dodge') + ' gets up, or stay down to recover · ground: hands & legs strike, ' + B('grapple') + ' submission / sweep, ' + B('block') + ' posture / cover, ' + B('dodge') + ' let up · <b>ESC</b> options · <b>H</b> hide this · <b>M</b> mute</div>';
+      '<div class="ctl-row">' + B('block') + ' hold: block / sprawl, tap twice: push them off · ' + B('grapple') + ' takedown / dive on a downed opponent · ' + B('dodge') + ' slip · knocked down: a direction or ' + B('dodge') + ' gets up, or stay down to recover · ground: hands & legs strike, ' + B('grapple') + ' submission / sweep, ' + B('block') + ' posture / cover, ' + B('dodge') + ' let up · <b>ESC</b> options · <b>H</b> hide this · <b>M</b> mute</div>';
   }
 
   // ============================================================

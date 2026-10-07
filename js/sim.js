@@ -318,6 +318,7 @@
       buf: null,          // buffered strike {key, t}
       combo: 0, comboT: 0, // strikes chained without a pause
       blocking: false,
+      blockTap: -9,       // sim time of the last BLOCK press (double tap = push)
       rocked: 0,          // seconds remaining rocked
       wobble: 0,          // visual wobble intensity
       kdCount: 0,
@@ -341,6 +342,12 @@
   }
   const PHYS_PUSH = 0.9; // teep shove (impulse per kg) in the physics model
   const BUFFER_T = 0.3; // seconds a buffered strike press stays valid
+  // push: BLOCK tapped twice in quick succession stiff-arms the opponent off you
+  const PUSH_TAP_T = 0.3;   // the second BLOCK tap has to come within this many seconds of the first
+  const PUSH_DIST = 1.2;    // arm's length — any further and the push grabs air
+  const PUSH_COST = 4;      // stamina
+  const PUSH_SHOVE = 2.8;   // impulse per kg given to the opponent (a teep is 0.9)
+  const PUSH_DUR = 0.38;    // seconds the pusher is committed
   // stamina economy
   const MISS_PENALTY = 0.30;   // a whiffed strike costs this much extra (fraction of its cost)
   const CLEAN_REFUND = 0.33;   // an unblocked landing gives this much of its cost back
@@ -654,6 +661,9 @@
         const lx = -fz, lz = fx;
 
         f.blocking = !busy && !!(held & IN.BLOCK) && f.rocked <= 0.4;
+        // BLOCK tapped twice quickly = push (the taps are remembered even mid-strike, the push waits until he is free)
+        let push = false;
+        if (pressed & IN.BLOCK) { push = S.t - f.blockTap <= PUSH_TAP_T; f.blockTap = push ? -9 : S.t; }
         const rag = this.phys ? this.phys.fighters[i] : null;
         if (!rag) { f.vx = 0; f.vz = 0; }
         if (rag) { rag.move[0] = 0; rag.move[1] = 0; }
@@ -691,7 +701,9 @@
 
         if (!busy) {
           // actions (press-triggered)
-          if (pressed & IN.DODGE && f.stam > 6 && f.rocked <= 0) {
+          if (push && f.stam > PUSH_COST && f.rocked <= 0) {
+            this._push(f, F[1 - i], dist, fx, fz);
+          } else if (pressed & IN.DODGE && f.stam > 6 && f.rocked <= 0) {
             f.stam -= 5;
             f.act = { type: 'dodge', name: '', t: 0, dur: 0.45, hit: false };
             f.blocking = false;
@@ -732,6 +744,32 @@
         const push = (MIN_DIST - d) / 2, nx = dx / d, nz = dz / d;
         F[0].x -= nx * push; F[0].z -= nz * push; F[1].x += nx * push; F[1].z += nz * push;
       }
+    }
+
+    // stiff-arm: both hands into his chest and drive. Lands inside arm's length — harder the closer he is — and
+    // breaks whatever he was doing (a strike in flight is cancelled, its stamina already spent). Nothing a fighter
+    // who is already down / falling can be pushed off of.
+    _push(f, o, dist, fx, fz) {
+      const S = this.state;
+      f.stam = Math.max(0, f.stam - PUSH_COST);
+      f.act = { type: 'push', name: '', t: 0, dur: PUSH_DUR, hit: false };
+      f.blocking = false; f.buf = null;
+      const rag = this.phys ? this.phys.fighters[f.idx] : null;
+      const orag = this.phys ? this.phys.fighters[o.idx] : null;
+      const ok = dist <= PUSH_DIST && o.act.type !== 'kd' && o.act.type !== 'down';
+      if (ok) {
+        const w = 0.6 + 0.4 * clamp(1 - (dist - MIN_DIST) / (PUSH_DIST - MIN_DIST), 0, 1); // closer = more of the push lands
+        const ot = o.act.type;
+        if (ot === 'idle' || ot === 'move' || ot === 'strike' || ot === 'dodge' || ot === 'sprawl') {
+          o.act = { type: 'stumble', name: 'push', t: 0, dur: 0.45 * w + 0.1, hit: false };
+          o.blocking = false; o.buf = null;
+        }
+        if (orag) { orag.shove(fx, fz, PUSH_SHOVE * w); orag.stagger(0.3 * w); }
+        else { o.x += fx * 0.6 * w; o.z += fz * 0.6 * w; }
+        if (rag) rag.shove(-fx, -fz, 0.2 * w); // equal and opposite: a little of it comes back through his arms
+        f.act.hit = true;
+      }
+      this._emit({ k: 'push', i: f.idx, j: o.idx, ok, t: S.t });
     }
 
     // the attacker may dive on a knocked-down opponent while he is falling, lying there, or just starting to get up
@@ -959,6 +997,7 @@
         // body language from the action
         let ov = null;
         if (a.type === 'dodge') ov = a.t < 0.32 ? 'SLIP' : null;
+        else if (a.type === 'push') ov = a.t < 0.26 ? 'PUSH' : null;
         else if (a.type === 'takedown') ov = a.t < 0.32 ? 'SHOOT' : 'STUMBLE';
         else if (a.type === 'stumble') ov = 'STUMBLE';
         else if (a.type === 'sprawl') ov = 'SPRAWL';
@@ -1370,6 +1409,7 @@
         return n(ev.i) + ' lands a ' + ev.name + where + '.';
       }
       case 'block': return ev.passive ? n(ev.i) + "'s " + ev.name + ' is picked off by the arms.' : n(ev.j) + ' blocks the ' + ev.name + '.';
+      case 'push': return ev.ok ? n(ev.i) + ' shoves ' + n(ev.j) + ' off.' : n(ev.i) + ' pushes at air.';
       case 'miss': return ev.slipped ? n(ev.j) + ' slips the ' + ev.name + '.' : n(ev.i) + ' misses with the ' + ev.name + '.';
       case 'rocked': return null;
       case 'kd': return n(ev.j) + ' GOES DOWN!';
