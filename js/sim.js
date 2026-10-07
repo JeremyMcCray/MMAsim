@@ -319,6 +319,8 @@
       combo: 0, comboT: 0, // strikes chained without a pause
       blocking: false,
       blockTap: -9,       // sim time of the last BLOCK press (double tap = push)
+      kickReady: -9,      // sim time the kicking foot is back on the mat: no kick can start before it
+      restT: 0,           // seconds since he last blocked or threw: stamina regen ramps up the longer this runs
       rocked: 0,          // seconds remaining rocked
       wobble: 0,          // visual wobble intensity
       kdCount: 0,
@@ -333,6 +335,14 @@
   const idleAct = () => ({ type: 'idle', name: '', t: 0, dur: 0, hit: false });
   // A strike whose active window has passed can be cancelled into the next action (combo flow),
   // unless it was slipped — an over-committed whiff has to be ridden out.
+  // a kick whose foot is still in the air (the strike is live, including its recovery, where the leg re-chambers)
+  function kickInFlight(f, now) {
+    if (now != null && now < f.kickReady) return true; // the last kick's foot is still on its way back down
+    if (f.act.type !== 'strike') return false;
+    const st = STRIKES[f.act.name];
+    return !!st && !st.ground && (st.limb === 'll' || st.limb === 'rl');
+  }
+  function isKickKey(key) { return key.startsWith('ll_') || key.startsWith('rl_'); }
   function recovering(f) {
     const a = f.act;
     if (a.type !== 'strike') return false;
@@ -345,10 +355,11 @@
   const BODY_TOUGHNESS = 0.5; // body damage bar fills this much per point of damage (the stamina drain still uses the full hit)
   // push: BLOCK tapped twice in quick succession stiff-arms the opponent off you
   const PUSH_TAP_T = 0.3;   // the second BLOCK tap has to come within this many seconds of the first
-  const PUSH_DIST = 1.2;    // arm's length — any further and the push grabs air
+  const PUSH_DIST = 1.0;    // arm's length — any further and the push grabs air
   const PUSH_COST = 4;      // stamina
   const PUSH_SHOVE = 2.8;   // impulse per kg given to the opponent (a teep is 0.9)
   const PUSH_DUR = 0.38;    // seconds the pusher is committed
+  const PUSH_STUN_DIST = PUSH_DIST * 0.5; // the stumble / stagger only lands inside half of max range: a push at arm's length just shoves
   // stamina economy
   const MISS_PENALTY = 0.30;   // a whiffed strike costs this much extra (fraction of its cost)
   const CLEAN_REFUND = 0.33;   // an unblocked landing gives this much of its cost back
@@ -358,9 +369,15 @@
   const EMPTY_SWING_COST = 1.5; // max stamina lost per strike press made with an empty tank
   const OVERDRAW_COST = 0.5;   // max stamina lost per point a strike overdraws the tank
   const ROUND_MAX_RECOVERY = 20; // max stamina regained in the corner
+  // rest ramp: regen doubles every REST_DOUBLE_T seconds spent neither blocking nor striking, up to REST_MAX x.
+  // Blocking or throwing anything resets it, so the rhythm is get in, rip a combo, get out and breathe, go again.
+  const REST_DOUBLE_T = 1.2;
+  const REST_MAX = 4;
   const KICK_CANCEL_DMG = 2.8; // a hand strike this hard lands on a kicker mid-kick: cancels the kick
   const KICK_CANCEL_BONUS = 1.3;
   const KICK_CANCEL_STUN = 0.3; // extra seconds of hit-stun for being caught on one leg
+  const KICK_PLANT_T = 0.2;     // seconds after a kick ends before the foot is planted enough to kick again
+  const TEEP_PLANT_T = 0.2;     // a teep takes longer to pull back and re-set the stance (no teep spam)
   // rocked / knockdown tuning
   const ROCK_T0 = 1.3, ROCK_PER_DMG = 0.05; // seconds rocked = ROCK_T0 + dmg * ROCK_PER_DMG (was 2.2 + 0.06/dmg)
   const KD_THR_MIN = 3.4;       // weakest head shot that drops an already-rocked fighter
@@ -564,10 +581,12 @@
       for (const f of F) {
         if (f.rocked > 0) { f.rocked -= dt * (f.act.type === 'kd' && f.act.name === 'down' ? KD_DOWN_RECOVER : 1); if (f.rocked < 0) f.rocked = 0; }
         f.wobble = Math.max(0, f.wobble - dt * 0.8);
+        if (f.blocking) f.restT = 0; else f.restT += dt;
         let regen = 2.2 + f.stats.car * 4.5;
+        regen *= Math.min(REST_MAX, Math.pow(2, f.restT / REST_DOUBLE_T));
         regen *= (1 - f.dmg.body / 160);
         if (f.blocking) regen *= 0.75;
-        if (f.act.type === 'move') regen *= 0.55;
+        if (f.act.type === 'move') regen *= 0.85;
         if (f.ground === 'bottom') regen *= (S.ground && (S.ground.pos === 'mount' || S.ground.pos === 'back')) ? 0.45 : 0.7;
         if (S.ground && S.ground.sub) regen = 0;
         f.stam = clamp(f.stam + regen * dt, 0, f.stamMax);
@@ -724,8 +743,10 @@
             }
           } else if (pressed & LIMB_BITS) {
             const key = this._pickStrikeKey(f, pressed, held, false);
-            if (key) this._startStrike(f, key, canCancel);
-          } else if (f.buf && S.t - f.buf.t <= BUFFER_T) {
+            // no kicking with a leg already off the ground: a kick pressed mid-kick waits (buffered) for the foot to land
+            if (key && isKickKey(key) && kickInFlight(f, S.t)) f.buf = { key, t: S.t };
+            else if (key) this._startStrike(f, key, canCancel);
+          } else if (f.buf && S.t - f.buf.t <= BUFFER_T && !(isKickKey(f.buf.key) && kickInFlight(f, S.t))) {
             this._startStrike(f, f.buf.key, canCancel);
           }
           if (f.buf && (f.act.type !== 'strike' || S.t - f.buf.t > BUFFER_T || f.act.t === 0)) f.buf = null;
@@ -754,18 +775,19 @@
       const S = this.state;
       f.stam = Math.max(0, f.stam - PUSH_COST);
       f.act = { type: 'push', name: '', t: 0, dur: PUSH_DUR, hit: false };
-      f.blocking = false; f.buf = null;
+      f.blocking = false; f.buf = null; f.restT = 0;
       const rag = this.phys ? this.phys.fighters[f.idx] : null;
       const orag = this.phys ? this.phys.fighters[o.idx] : null;
       const ok = dist <= PUSH_DIST && o.act.type !== 'kd' && o.act.type !== 'down';
       if (ok) {
         const w = 0.6 + 0.4 * clamp(1 - (dist - MIN_DIST) / (PUSH_DIST - MIN_DIST), 0, 1); // closer = more of the push lands
         const ot = o.act.type;
-        if (ot === 'idle' || ot === 'move' || ot === 'strike' || ot === 'dodge' || ot === 'sprawl') {
-          o.act = { type: 'stumble', name: 'push', t: 0, dur: 0.45 * w + 0.1, hit: false };
+        const stuns = dist <= PUSH_STUN_DIST; // spamming push from max range does not stun
+        if (stuns && (ot === 'idle' || ot === 'move' || ot === 'strike' || ot === 'dodge' || ot === 'sprawl')) {
+          o.act = { type: 'stumble', name: 'push', t: 0, dur: (0.45 * w + 0.1) * 0.5, hit: false };
           o.blocking = false; o.buf = null;
         }
-        if (orag) { orag.shove(fx, fz, PUSH_SHOVE * w); orag.stagger(0.3 * w); }
+        if (orag) { orag.shove(fx, fz, PUSH_SHOVE * w); if (stuns) orag.stagger(0.15 * w); }
         else { o.x += fx * 0.6 * w; o.z += fz * 0.6 * w; }
         if (rag) rag.shove(-fx, -fz, 0.2 * w); // equal and opposite: a little of it comes back through his arms
         f.act.hit = true;
@@ -843,8 +865,10 @@
       } else {
         f.act = { type: 'strike', name: key, t: 0, dur: (st.w + st.a + st.r) * tf, tf, hit: false, tip: null, tipT: null, slipped: false, chained: !!chained, cost, cancelAt: (st.w + st.a) * tf };
       }
-      f.blocking = false;
+      f.blocking = false; f.restT = 0;
       f.rs.thrown++;
+      // a kick's foot is not back under him the moment the strike ends: no second kick until it has planted
+      if (!st.ground && (st.limb === 'll' || st.limb === 'rl')) f.kickReady = this.state.t + f.act.dur + (st.push ? TEEP_PLANT_T : KICK_PLANT_T);
     }
 
     // opponent hitboxes in world space, as capsules {part, a:[x,y,z], b:[x,y,z], r}
