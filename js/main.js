@@ -557,6 +557,7 @@
   function openOptions() {
     App.optionsOpen = true; App.held = 0; App.pressed = 0;
     if (App.playing && isLocal()) App.paused = true;
+    $('#btnOptQuit').style.display = $('#menu').classList.contains('hidden') ? '' : 'none'; // nothing to quit from on the main menu
     buildOptions(); show($('#options'));
   }
   function closeOptions() {
@@ -688,6 +689,7 @@
   $('#nameInput').addEventListener('change', () => { App.lobby.names[App.myIdx] = myName(); sendPick(); refreshLobby(); });
   for (const id of ['selRounds', 'selLen', 'selGrapple']) $('#' + id).addEventListener('change', () => { readSettings(); sendPick(); refreshLobby(); });
   $('#btnMenu').onclick = () => { stopFight(); if (App.net) { App.net.destroy(); App.net = null; } App.mode = null; screen('menu'); };
+  $('#btnOptQuit').onclick = () => { closeOptions(); stopFight(); if (App.net) { App.net.destroy(); App.net = null; } App.mode = null; screen('menu'); };
   $('#btnRematch').onclick = () => {
     if (App.mode === 'guest') { App.net.send({ t: 'rematch' }); $('#btnRematch').textContent = 'WAITING FOR HOST…'; $('#btnRematch').disabled = true; return; }
     App.rematch[0] = true;

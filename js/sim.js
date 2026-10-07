@@ -106,7 +106,8 @@
       case 'straight': return [G, [w, g[0] - 0.08, s * 0.17, 1.3], [w + a * 0.75, lead ? 0.92 : 1.0, s * 0.02, 1.5], [w + a, lead ? 0.88 : 0.96, s * 0.02, 1.49], E];
       case 'hook':     return [G, [w, 0.28, s * 0.4, 1.4], [w + a * 0.35, 0.64, s * 0.3, 1.5], [w + a * 0.8, 0.86, -s * 0.06, 1.5], [w + a, 0.72, -s * 0.3, 1.48], E];
       case 'uppercut': return [G, [w, 0.2, s * 0.2, 1.0], [w + a * 0.7, 0.72, s * 0.05, 1.5], [w + a, 0.66, s * 0.04, 1.74], E];
-      case 'overhand': return [G, [w, -0.05, s * 0.3, 1.6], [w + a * 0.3, 0.45, s * 0.18, 1.82], [w + a * 0.8, 0.92, -s * 0.05, 1.5], [w + a, 0.84, -s * 0.1, 1.36], E];
+      // overhand: out wide and up beside the head, over the top, then down AND across onto the jaw (a diagonal loop, not a chop)
+      case 'overhand': return [G, [w * 0.5, 0.08, s * 0.34, 1.34], [w, 0.24, s * 0.44, 1.56], [w + a * 0.3, 0.58, s * 0.24, 1.6], [w + a * 0.8, 0.9, -s * 0.04, 1.42], [w + a, 0.84, -s * 0.18, 1.3], E];
     }
   }
   function legPath(limb, kind, w, a, r) {
@@ -256,7 +257,9 @@
   const DENY_PENALTY = 0.08;    // odds lost when the other fighter is basing / framing during your attempt
   const PUNISH_CHANCE = 0.35;   // a denied failure gets pushed into mv.failTo this often
   const SUB_ATTEMPT_STAM = 5;   // it costs something to hunt for a hold
-  const SUB_FAIL_CD = 2.0;      // attacker's cooldown after a stuffed, lost or escaped submission
+  const SUB_FAIL_CD = 2.0;
+  const TD_FAIL_STUN = 0.25;     // a failed shot's stumble is cut to a quarter of its old length...
+  const TD_FAIL_CD = 3.0;       // ...but the shooter can't shoot again for this many seconds      // attacker's cooldown after a stuffed, lost or escaped submission
   const SUB_DECAY = 8;          // hold progress lost per second while not squeezing
   function dirOf(held) { for (const k in DIR_KEYS) if (held & DIR_KEYS[k]) return k; return null; }
 
@@ -321,7 +324,8 @@
       blockTap: -9,       // sim time of the last BLOCK press (double tap = push)
       kickReady: -9,      // sim time the kicking foot is back on the mat: no kick can start before it
       restT: 0,           // seconds since he last blocked or threw: stamina regen ramps up the longer this runs
-      rocked: 0,          // seconds remaining rocked
+      rocked: 0,
+      tdCd: 0,            // seconds until he may shoot again after a failed takedown          // seconds remaining rocked
       wobble: 0,          // visual wobble intensity
       kdCount: 0,
       ground: null,       // null | 'top' | 'bottom'
@@ -379,6 +383,7 @@
   const KICK_PLANT_T = 0.2;     // seconds after a kick ends before the foot is planted enough to kick again
   const TEEP_PLANT_T = 0.2;     // a teep takes longer to pull back and re-set the stance (no teep spam)
   // rocked / knockdown tuning
+  const ROCK_TIME_MULT = 0.35;  // rocked stun timers cut by 65%
   const ROCK_T0 = 1.3, ROCK_PER_DMG = 0.05; // seconds rocked = ROCK_T0 + dmg * ROCK_PER_DMG (was 2.2 + 0.06/dmg)
   const KD_THR_MIN = 3.4;       // weakest head shot that drops an already-rocked fighter
   const KD_THR_FRAC = 0.62;     // ...or this fraction of his rock threshold, whichever is higher
@@ -579,6 +584,7 @@
 
       // stamina / timers
       for (const f of F) {
+        if (f.tdCd > 0) f.tdCd = Math.max(0, f.tdCd - dt);
         if (f.rocked > 0) { f.rocked -= dt * (f.act.type === 'kd' && f.act.name === 'down' ? KD_DOWN_RECOVER : 1); if (f.rocked < 0) f.rocked = 0; }
         f.wobble = Math.max(0, f.wobble - dt * 0.8);
         if (f.blocking) f.restT = 0; else f.restT += dt;
@@ -735,7 +741,7 @@
             this._enterGround(f, o, 'kd', o.act.name === 'down' ? 'side' : 'half');
             return;
           } else if (pressed & IN.GRAPPLE && f.rocked <= 0 && S.grappling) {
-            if (dist <= 1.7 && f.stam > 8) {
+            if (dist <= 1.7 && f.stam > 8 && !(f.tdCd > 0)) {
               f.stam -= 7; f.rs.tdAtt++;
               f.act = { type: 'takedown', name: '', t: 0, dur: 0.75, hit: false };
               f.blocking = false;
@@ -1106,7 +1112,7 @@
         if (o.rocked > 0 && dmg >= kdThr && !onGround) {
           this._knockdown(f, o);
         } else if (dmg >= thr) {
-          o.rocked = Math.max(o.rocked, ROCK_T0 + dmg * ROCK_PER_DMG);
+          o.rocked = Math.max(o.rocked, (ROCK_T0 + dmg * ROCK_PER_DMG) * ROCK_TIME_MULT);
           o.wobble = 1;
           ev.rocked = true;
           this._emit({ k: 'rocked', i: f.idx, j: o.idx });
@@ -1145,14 +1151,14 @@
       const S = this.state;
       if (S.ground) return;
       vic.kdCount++; att.rs.kd++;
-      vic.rocked = Math.max(vic.rocked, 3);
+      vic.rocked = Math.max(vic.rocked, 3 * ROCK_TIME_MULT);
       if (vic.dmg.head >= 84) { this._emit({ k: 'kd', i: att.idx, j: vic.idx, standing: !S.grappling }); vic.dmg.head = 100; return; } // flash KO, caught by stoppage check
       this._emit({ k: 'kd', i: att.idx, j: vic.idx });
       if (this.phys) {
         // he drops where he stands. Once he has landed it is his call: get up straight away (a direction / the
         // stand-up key) and come up rocked, or stay down a few seconds and recover while the attacker may dive on him
         // (takedown key) — the referee waves him up after KD_STAY seconds. See _kdTick.
-        vic.rocked = Math.max(vic.rocked, KD_ROCKED);
+        vic.rocked = Math.max(vic.rocked, KD_ROCKED * ROCK_TIME_MULT);
         vic.act = { type: 'kd', name: 'fall', t: 0, dur: 99, hit: false };
         vic.blocking = false; vic.buf = null;
         vic.stamMax = Math.max(STAM_MAX_FLOOR, vic.stamMax - 6);
@@ -1165,7 +1171,7 @@
         rag.shove(fr.fx, fr.fz, dir === 'back' ? KD_SHOVE : KD_SHOVE * 0.35);
         return;
       }
-      if (!S.grappling) { vic.rocked = Math.max(vic.rocked, 4); vic.act = { type: 'hit', name: 'head', t: 0, dur: 1.0, hit: false }; return; }
+      if (!S.grappling) { vic.rocked = Math.max(vic.rocked, 4 * ROCK_TIME_MULT); vic.act = { type: 'hit', name: 'head', t: 0, dur: 1.0, hit: false }; return; }
       this._enterGround(att, vic, 'kd', 'half');
     }
 
@@ -1173,7 +1179,8 @@
       const S = this.state, o = S.f[1 - f.idx];
       const dist = Math.hypot(o.x - f.x, o.z - f.z);
       if (dist > 1.85) {
-        f.act = { type: 'stumble', name: 'td', t: 0, dur: 0.7, hit: false };
+        f.act = { type: 'stumble', name: 'td', t: 0, dur: 0.7 * TD_FAIL_STUN, hit: false };
+        f.tdCd = TD_FAIL_CD;
         this._emit({ k: 'tdfail', i: f.idx, j: o.idx, air: true });
         return;
       }
@@ -1191,7 +1198,8 @@
         this._emit({ k: 'td', i: f.idx, j: o.idx });
         this._enterGround(f, o, 'td', (o.act.type === 'strike' || o.rocked > 0) && f.stats.wre > 0.7 ? 'half' : 'guard');
       } else {
-        f.act = { type: 'stumble', name: 'td', t: 0, dur: 0.95, hit: false };
+        f.act = { type: 'stumble', name: 'td', t: 0, dur: 0.95 * TD_FAIL_STUN, hit: false };
+        f.tdCd = TD_FAIL_CD;
         f.stam = Math.max(0, f.stam - 6);
         if (o.blocking) o.act = { type: 'sprawl', name: '', t: 0, dur: 0.35, hit: false };
         this._emit({ k: 'tdfail', i: f.idx, j: o.idx, sprawl: o.blocking });

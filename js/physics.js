@@ -234,19 +234,30 @@
         { t: 0.24, pelvisYaw: -22, chest: [-8, -30, 0], head: [8, 10, 0], rUpperArm: [-87, 6, 34], rForearm: [-30, 0, -2] },
         { t: 0.30, pelvisYaw: -22, chest: [-8, -30, 0], head: [8, 10, 0], rUpperArm: [-87, 6, 34], rForearm: [-30, 0, -2] },
         { t: 0.54, pelvisYaw: S, chest: S, head: S, rUpperArm: S, rForearm: S }] },
-    // ---- overhand: the fist loops up over the shoulder and comes down over the top of the guard while the
-    // body drops and turns into it (hips sink 8 cm at impact). Authored by elbow / fist position, see tools/limbsolve.js.
-    rh_overhand: { name: 'overhand right', part: 'head', keys: ['chest', 'head', 'rUpperArm', 'rForearm', 'lUpperArm', 'lForearm', 'rThigh', 'pelvisYaw', 'lift'], weapon: 'rFist', weaponMult: 1.4, active: [0.17, 0.37], cost: 7.5, speed: 1.35, lunge: 1.5,
+    // ---- overhand: a looping punch thrown on a diagonal, not a vertical chop. The fist leaves the cheek and swings OUT
+    // and up beside the rear shoulder (elbow lifting to shoulder height, fist about level with the top of the head),
+    // crests over the top with the elbow high and wide, then comes DOWN and ACROSS onto the jaw from outside-high to
+    // inside-low, the arm still bent with the elbow up near fist height. The hips and shoulders turn into it while the
+    // body dips, and the fist carries on down across the body before coming back up the middle to the chin.
+    // Fist path (fighter frame, x right / y up / z forward): cheek (0.15,0.52,0.14) -> wide (0.44,0.78,0.24) ->
+    // crest (0.24,0.80,0.58) -> impact (-0.06,0.59,0.80) -> through (-0.25,0.52,0.71). Solved with tools/limbsolve.js.
+    // Keep the upper arm's quaternion components below ~0.85 (tools/limbsolve.js + a settle test): past that the
+    // 2*asin motor mapping goes unstable and the fist flaps up and down instead of holding the arc.
+    rh_overhand: { name: 'overhand right', part: 'head', keys: ['chest', 'head', 'rUpperArm', 'rForearm', 'lUpperArm', 'lForearm', 'rThigh', 'pelvisYaw', 'lift'], weapon: 'rFist', weaponMult: 1.4, active: [0.21, 0.37], cost: 7.5, speed: 1.5, lunge: 1.5,
       frames: [
         { t: 0.00, pelvisYaw: S, chest: S, head: S, rUpperArm: S, rForearm: S, lUpperArm: S, lForearm: S, rThigh: S, lift: 0 },
-        // load: slight dip and turn away, the fist drops a little below the jaw
-        { t: 0.11, pelvisYaw: 12, chest: [10, 14, 6], head: [8, -12, 0], rUpperArm: [-22, 44, 31], rForearm: [-150, 0, 0], lUpperArm: [-60, -20, -10], lForearm: [-140, 0, 40], rThigh: [12, 10, 8], lift: -0.03 },
-        // top of the loop: the arm comes up and over the shoulder, hips already turning in
-        { t: 0.20, pelvisYaw: -8, chest: [14, -10, -10], head: [10, 6, 0], rUpperArm: [-52, -54, 150], rForearm: [-55, 0, 0], lUpperArm: [-70, 10, 30], lForearm: [-130, 0, 20], rThigh: [12, -15, 8], lift: 0.0 },
-        // impact: body falls in and to the left, the fist comes down over the top onto the jaw
-        { t: 0.29, pelvisYaw: -30, chest: [24, -35, -16], head: [12, 20, 0], rUpperArm: [-21, -86, 143], rForearm: [-3, 0, 0], lUpperArm: [-86, 48, 40], lForearm: [-145, 0, 0], rThigh: [12, -35, 8], lift: -0.06 },
-        // follow-through: the fist keeps dropping across the body, shoulder rolls over
-        { t: 0.36, pelvisYaw: -36, chest: [30, -42, -16], head: [14, 24, 0], rUpperArm: [-21, -31, 150], rForearm: [-65, 0, 0], lUpperArm: [-86, 48, 40], lForearm: [-145, 0, 0], rThigh: [12, -40, 8], lift: -0.08 },
+        // load: slight dip and turn away, the elbow starts to open out to the side, the fist stays by the jaw
+        { t: 0.11, pelvisYaw: 12, chest: [10, 14, 6], head: [8, -12, 0], rUpperArm: [-27, 40, 35], rForearm: [-150, 0, 0], lUpperArm: [-60, -20, -10], lForearm: [-140, 0, 40], rThigh: [12, 10, 8], lift: -0.02 },
+        // swing out: the elbow lifts wide to shoulder height, the fist rises outside the head, hips start to turn in
+        { t: 0.19, pelvisYaw: 2, chest: [12, -2, -8], head: [10, -2, 0], rUpperArm: [-71, -19, 97], rForearm: [-100, 0, 0], lUpperArm: [-70, 10, 30], lForearm: [-130, 0, 20], rThigh: [12, -10, 8], lift: -0.01 },
+        // over the top: the elbow is up and wide, the fist crests above the opponent's guard and starts to come down
+        { t: 0.245, pelvisYaw: -16, chest: [12, -20, 6], head: [11, 12, 0], rUpperArm: [-39, -7, 110], rForearm: [-69, 0, 0], lUpperArm: [-78, 29, 35], lForearm: [-138, 0, 10], rThigh: [12, -25, 8], lift: -0.03 },
+        // impact: down and across onto the jaw, elbow up and bent, the body dipping in behind it
+        { t: 0.29, pelvisYaw: -30, chest: [12, -30, 0], head: [14, 20, 0], rUpperArm: [-3, -20, 113], rForearm: [-43, 0, 0], lUpperArm: [-86, 48, 40], lForearm: [-145, 0, 0], rThigh: [12, -35, 8], lift: -0.06 },
+        // follow-through: the fist keeps travelling down across the body, the rear shoulder rolls over
+        { t: 0.36, pelvisYaw: -36, chest: [6, -40, 0], head: [16, 24, 0], rUpperArm: [-6, -17, 95], rForearm: [-54, 0, 0], lUpperArm: [-86, 48, 40], lForearm: [-145, 0, 0], rThigh: [12, -40, 8], lift: -0.08 },
+        // recover: the elbow drops in front of the ribs and the fist comes back up the centre line to the chin
+        { t: 0.46, pelvisYaw: -14, chest: [10, -16, -4], head: [12, 4, 0], rUpperArm: [-37, -9, 32], rForearm: [-133, 0, 0], lUpperArm: [-70, 10, 30], lForearm: [-130, 0, 20], rThigh: [12, -15, 8], lift: -0.04 },
         { t: 0.60, pelvisYaw: S, chest: S, head: S, rUpperArm: S, rForearm: S, lUpperArm: S, lForearm: S, rThigh: S, lift: 0 }] },
     // ---- lead-leg low kick: the same turnover kept low, the shin chopping down into the opponent's lead thigh
     ll_lkick: { name: 'lead low kick', part: 'legs', keys: ['chest', 'head', 'lThigh', 'lShin', 'rThigh', 'rShin', 'pelvisYaw', 'pelvisTilt', 'lUpperArm', 'rUpperArm', 'lift', 'lAnkle'], weapon: 'lShin', weaponMult: 1.5, active: [0.21, 0.40], cost: 7, speed: 1.8, lunge: 0.5,
@@ -795,7 +806,8 @@
           if (ml > 1) { mx /= ml; mz /= ml; }
           const lx = mx * ms, lz = mz * ms * (mz < 0 ? 0.8 : 1);
           const c = Math.cos(this.yaw), s = Math.sin(this.yaw);
-          vdx += lx * c + lz * s; vdz += -lx * s + lz * c;
+          // facing is (sin yaw, cos yaw), so the fighter's right is (-cos yaw, sin yaw)
+          vdx += -lx * c + lz * s; vdz += lx * s + lz * c;
         } else if (this.override === 'SHOOT') {
           const c = Math.cos(this.yaw), s = Math.sin(this.yaw);
           vdx = 2.2 * s; vdz = 2.2 * c;
