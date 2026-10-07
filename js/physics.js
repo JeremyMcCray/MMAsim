@@ -38,10 +38,11 @@
   const MOVE_SPEED = 1.9;
   const CAGE_APOTHEM = 4.3;           // physics fence (visual posts sit at r = 4.75)
   const PART_MULT = { head: 1.6, chest: 1.0, pelvis: 0.8, upperArm: 0.35, forearm: 0.3, fist: 0.25, thigh: 0.55, shin: 0.3, foot: 0.2 };
-  const KICK_PART_MULT = { thigh: 1.0, shin: 0.5, pelvis: 1.0 };
+  const KICK_PART_MULT = { thigh: 1.0, shin: 0.5, pelvis: 0.6, chest: 0.6 }; // a shin into the trunk hurts and drains, it isn't a KO weapon (the bar-filling body damage is scaled again by the sim's BODY_TOUGHNESS)
   const BLOCK_MULT = 0.15;            // hit on the arms while actively guarding
   const ARM_MULT = 0.45;              // hit on the arms while not guarding (shoulder roll, stray glove)
   const CHECK_MULT = 0.45;            // low kick into a raised / braced shin while guarding
+  const BODY_BLOCK_MULT = 0.3;        // body shot taken on the dropped elbows / forearms of the low guard
   const REGION = { head: 'head', chest: 'body', pelvis: 'body', upperArm: 'arm', forearm: 'arm', fist: 'arm', thigh: 'legs', shin: 'legs', foot: 'legs' };
 
   // ---------------------------------------------------------------- math (no THREE)
@@ -151,6 +152,11 @@
   // (tools/guard-test.js battery): elbows at chest-local (+-0.18, 0.08, 0.25), gloves at (+-0.15, 0.42, 0.12).
   // The upper arms press into the front corners of the chest box (~3 cm), as a real tucked guard does.
   const GUARD  = { pelvisYaw: 16, chest: [12, 18, 0], head: [16, -16, 0], lUpperArm: [-76, 3, 12], lForearm: [-128, 0, 9], rUpperArm: [-76, -3, -12], rForearm: [-128, 0, -9], lThigh: [-20, 0, -4], lShin: [30, 0, 0], rThigh: [10, 0, 8], rShin: [10, 0, 0] };
+  // low guard (BLOCK + MOD3), Philly shell: bladed hard, lead shoulder rolled up in front of the chin, lead arm
+  // across the belly (elbow at the hip, forearm along the belt line, glove at the far hip), rear glove up at the
+  // cheek. Body kicks, teeps and knees land at belt height, which is what the lead arm covers; the head sits
+  // behind the shoulder and the rear glove but is open to anything that comes around them.
+  const GUARD_LOW = { pelvisYaw: 26, chest: [6, 34, -12], head: [14, -30, 10], lUpperArm: [-30, 22, 2], lForearm: [-57, 0, 52], rUpperArm: [-42, -7, -13], rForearm: [-139, 0, -19], lThigh: [-26, 0, -4], lShin: [34, 0, 0], rThigh: [10, 0, 10], rShin: [12, 0, 0] };
   const LIMP   = { pelvisYaw: 0, chest: [0, 0, 0], head: [0, 0, 0], lUpperArm: [0, 0, 20], lForearm: [-20, 0, 0], rUpperArm: [0, 0, -20], rForearm: [-20, 0, 0], lThigh: [0, 0, 0], lShin: [10, 0, 0], rThigh: [0, 0, 0], rShin: [10, 0, 0] };
   // slip: head off the centre line (outside the lead shoulder), hands up
   const SLIP   = { pelvisYaw: 30, chest: [22, 30, -22], head: [10, -20, -10], lUpperArm: [-70, 10, 28], lForearm: [-125, 0, 14], rUpperArm: [-62, -14, -34], rForearm: [-135, 0, -14], lThigh: [-30, 0, -6], lShin: [40, 0, 0], rThigh: [8, 0, 10], rShin: [14, 0, 0] };
@@ -175,7 +181,7 @@
   const CELEBRATE = { pelvisYaw: 0, chest: [-8, 0, 0], head: [-12, 0, 0], lUpperArm: [-170, 0, 30], lForearm: [-20, 0, 0], rUpperArm: [-170, 0, -30], rForearm: [-20, 0, 0], lThigh: [-5, 0, -8], lShin: [8, 0, 0], rThigh: [-5, 0, 8], rShin: [8, 0, 0] };
   // rocked: chin up, hands low, knees soft
   const WOBBLE = { pelvisYaw: 10, chest: [-6, 10, 0], head: [-10, -8, 0], lUpperArm: [-40, 8, -12], lForearm: [-70, 0, 8], rUpperArm: [-30, -10, 10], rForearm: [-80, 0, -6], lThigh: [-30, 0, -6], lShin: [38, 0, 0], rThigh: [4, 0, 10], rShin: [20, 0, 0] };
-  const POSES = { STANCE, GUARD, LIMP, SLIP, SHOOT, SPRAWL, PUSH, STUMBLE, CELEBRATE, WOBBLE, GETUP, KD_FALL_FWD, KD_TURTLE, KD_FALL_BACK, KD_GUARD };
+  const POSES = { STANCE, GUARD, GUARD_LOW, LIMP, SLIP, SHOOT, SPRAWL, PUSH, STUMBLE, CELEBRATE, WOBBLE, GETUP, KD_FALL_FWD, KD_TURTLE, KD_FALL_BACK, KD_GUARD };
 
   // ---------------------------------------------------------------- strikes
   // keys: joints a strike animates. Every keyframe must give each of those joints (or 'stance').
@@ -398,6 +404,7 @@
       this.move = [0, 0];       // local x (right), z (forward), -1..1
       this.moveSpeed = 1;       // multiplier on MOVE_SPEED
       this.guard = false;
+      this.guardLow = false;    // with guard: cover the body instead of the head
       this.override = null;     // pose name: SLIP | SHOOT | SPRAWL | PUSH | STUMBLE | CELEBRATE | WOBBLE
       this.ko = false;
       this.downT = 0; this.downTotal = 1; this.riseT = 0; this.riseTotal = 1; // knocked down: catching himself, then climbing back up
@@ -567,7 +574,7 @@
       if (this.riseT > 0 && this.riseProgress() < 0.55) return GETUP;
       if (this.override && POSES[this.override]) return POSES[this.override];
       if (this.wobble > 0.3 && !this.strike) return WOBBLE;
-      return this.guard && !this.strike ? GUARD : STANCE;
+      return this.guard && !this.strike ? (this.guardLow ? GUARD_LOW : GUARD) : STANCE;
     }
 
     #computePose(dt) {
@@ -891,12 +898,15 @@
 
   // ---------------------------------------------------------------- damage from an impact (sim units)
   // vn: closing speed along the contact normal; clean: how square (1 = dead on)
-  function impactDamage(def, hit, striker, defenderGuarding) {
+  // defenderGuarding: BLOCK held. defenderGuardLow: BLOCK + MOD3 — the arms are down covering the body, so a shot to the
+  // chest / pelvis is taken on them (and the head is whatever the physics says it is: open).
+  function impactDamage(def, hit, striker, defenderGuarding, defenderGuardLow) {
     const kick = def.isKick;
     let mult = PART_MULT[hit.partName];
     if (kick && KICK_PART_MULT[hit.partName]) mult = KICK_PART_MULT[hit.partName];
     let region = hit.region, blocked = false;
     if (region === 'arm') { blocked = true; region = 'body'; mult = defenderGuarding ? BLOCK_MULT : ARM_MULT; }
+    else if (region === 'body' && defenderGuardLow) { blocked = true; mult = BODY_BLOCK_MULT; }
     else if (region === 'legs' && hit.partName !== 'thigh' && defenderGuarding && kick) { blocked = true; mult = CHECK_MULT; }
     else if (region === 'legs' && !kick) mult *= 0.6; // punching a leg
     const staminaMult = 0.6 + 0.4 * Math.min(1, striker.stam / 30);

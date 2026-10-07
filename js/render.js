@@ -29,6 +29,7 @@
   const POSES = {
     idle: P({}),
     block: P({ lh: [-0.09, 0.68, 0.22], rh: [0.09, 0.66, 0.2], h: HIP_H - 0.05, lean: 0.18, hp: 0.25, elbowOut: 0.25 }),
+    blockLow: P({ yaw: 0.6, lean: 0.12, h: HIP_H - 0.04, lh: [0.08, 0.1, 0.3], rh: [0.14, 0.5, 0.2], hp: 0.2, hy: -0.35, elbowOut: 0.2 }),
     dodge: P({ lean: -0.42, h: HIP_H - 0.08, oz: -0.18, lh: [-0.14, 0.5, 0.3], rh: [0.16, 0.48, 0.22], hp: -0.2 }),
     hitHead: P({ lean: -0.3, hp: -0.55, hy: 0.4, lh: [-0.2, 0.3, 0.25], rh: [0.22, 0.25, 0.1], h: HIP_H - 0.03 }),
     hitBody: P({ lean: 0.5, h: HIP_H - 0.14, hp: 0.4, lh: [-0.1, 0.1, 0.3], rh: [0.15, 0.05, 0.25] }),
@@ -445,7 +446,7 @@
             return lerpPose(POSES.tdShoot, POSES.stumble, smooth(clamp((a.t - 0.32) / 0.4, 0, 1)), out);
           }
           case 'celebrate': pose = POSES.celebrate; break;
-          default: pose = f.blocking ? POSES.block : POSES.idle;
+          default: pose = f.blocking ? ((this.inputHint & IN.MOD3) ? POSES.blockLow : POSES.block) : POSES.idle;
         }
       }
       return copyPose(pose, out);

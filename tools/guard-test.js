@@ -1,6 +1,6 @@
 // Guard test: fighter 1 stands and holds BLOCK, fighter 0 walks into range and throws a strike over and over.
 // Prints, per strike, how many landed clean on the head / body vs were taken on the arms.
-//   node tools/guard-test.js [strikes=lh_straight,rh_straight,rl_hkick,ll_hkick,rh_hook,lh_hook]
+//   node tools/guard-test.js [strikes=lh_straight,...] [low]     ('low': the dummy holds BLOCK + MOD3, the body guard)
 const RAPIER = require('./rapier.js');
 const P = require('../js/physics.js');
 (async () => {
@@ -14,9 +14,10 @@ const P = require('../js/physics.js');
       const sim = new Sim({ seed, players: [{ fighter: 'striker' }, { fighter: 'striker' }] });
       const S = sim.state, f = S.f;
       const dist = () => Math.hypot(f[1].x - f[0].x, f[1].z - f[0].z);
-      const tick = (h0, p0) => { sim.setInput(0, h0, p0); sim.setInput(1, IN.BLOCK, 0); sim.step(1 / 60); };
+      const guardBits = IN.BLOCK | (process.argv[3] === 'low' ? IN.MOD3 : 0);
+      const tick = (h0, p0) => { sim.setInput(0, h0, p0); sim.setInput(1, guardBits, 0); sim.step(1 / 60); };
       while (S.phase !== 'fight') tick(0, 0);
-      const want = st.range - 0.05;
+      const want = st.range - (parseFloat(process.env.CLOSE) || 0.05); // CLOSE=0.2 to have him step in deeper
       for (let n = 0; n < 25 && S.phase === 'fight'; n++) {
         for (let i = 0; i < 180 && Math.abs(dist() - want) > 0.04; i++) tick(dist() > want ? IN.FWD : IN.BACK, 0);
         for (let i = 0; i < 240 && !(f[1].act.type === 'idle' && f[1].blocking && f[0].act.type === 'idle'); i++) tick(0, 0); // let him settle back into the guard

@@ -342,6 +342,7 @@
   }
   const PHYS_PUSH = 0.9; // teep shove (impulse per kg) in the physics model
   const BUFFER_T = 0.3; // seconds a buffered strike press stays valid
+  const BODY_TOUGHNESS = 0.5; // body damage bar fills this much per point of damage (the stamina drain still uses the full hit)
   // push: BLOCK tapped twice in quick succession stiff-arms the opponent off you
   const PUSH_TAP_T = 0.3;   // the second BLOCK tap has to come within this many seconds of the first
   const PUSH_DIST = 1.2;    // arm's length — any further and the push grabs air
@@ -507,7 +508,7 @@
           f.stamMax = Math.min(100, f.stamMax + ROUND_MAX_RECOVERY);
           f.stam = f.stamMax;
           f.dmg.head = Math.max(0, f.dmg.head - 10);
-          f.dmg.body = Math.max(0, f.dmg.body - 6);
+          f.dmg.body = Math.max(0, f.dmg.body - 8);
           f.dmg.legs = Math.max(0, f.dmg.legs - 5);
           f.rocked = 0;
         }
@@ -960,7 +961,7 @@
         if (part === 'legs') dmg *= 0.45; else dmg *= 0.15;
         o.stam = Math.min(o.stamMax, o.stam + st.stam * BLOCK_REWARD);
       }
-      o.dmg[part] = clamp(o.dmg[part] + dmg, 0, 100);
+      o.dmg[part] = clamp(o.dmg[part] + dmg * (part === 'body' ? BODY_TOUGHNESS : 1), 0, 100);
       f.rs.landed++;
       f.rs.sig += dmg;
       if (blocked) {
@@ -994,6 +995,7 @@
       for (let i = 0; i < 2; i++) {
         const f = F[i], rag = W.fighters[i], a = f.act;
         rag.guard = f.blocking && a.type !== 'strike';
+        rag.guardLow = rag.guard && !!(this.inputs[i].held & IN.MOD3);
         // body language from the action
         let ov = null;
         if (a.type === 'dodge') ov = a.t < 0.32 ? 'SLIP' : null;
@@ -1031,7 +1033,7 @@
     _landPhys(f, o, def, h) {
       const PH = root.MMAPhys;
       const rag = this.phys.fighters[o.idx];
-      const res = PH.impactDamage(def, h, f, o.blocking);
+      const res = PH.impactDamage(def, h, f, o.blocking, o.blocking && !!(this.inputs[o.idx].held & IN.MOD3));
       const part = res.region;
       const counter = o.act.type === 'strike' && !o.act.hit;
       let dmg = res.dmg * (0.7 + f.stats.pow * 0.6) * lerp(0.9, 1.1, this.rand());
@@ -1044,7 +1046,7 @@
       if (kickCancel) dmg *= KICK_CANCEL_BONUS;
       const at = [Math.round(h.point.x * 100) / 100, Math.round(h.point.y * 100) / 100, Math.round(h.point.z * 100) / 100];
       const fwd = this._frame(f, o);
-      o.dmg[part] = clamp(o.dmg[part] + dmg, 0, 100);
+      o.dmg[part] = clamp(o.dmg[part] + dmg * (part === 'body' ? BODY_TOUGHNESS : 1), 0, 100);
       f.rs.landed++;
       f.rs.sig += dmg;
       rag.takeHit(h, dmg, res.blocked);
@@ -1104,7 +1106,7 @@
       if (f.rocked > 0) dmg *= 0.7;
       let blocked = false;
       if (this.inputs[o.idx].held & IN.BLOCK) { blocked = true; dmg *= 0.3; o.stam = Math.min(o.stamMax, o.stam + GROUND_BLOCK_REWARD); }
-      o.dmg[st.part] = clamp(o.dmg[st.part] + dmg, 0, 100);
+      o.dmg[st.part] = clamp(o.dmg[st.part] + dmg * (st.part === 'body' ? BODY_TOUGHNESS : 1), 0, 100);
       f.rs.landed++; f.rs.sig += dmg;
       if (blocked) { this._emit({ k: 'block', i: f.idx, j: o.idx, name: st.name, part: st.part }); return; }
       this._cleanRefund(f, f.act);

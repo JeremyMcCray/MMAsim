@@ -430,7 +430,8 @@
   function pct(v) { return Math.max(0, Math.min(100, v)) + '%'; }
   const kn = id => keyName(Controls.binds[id][0]);
   function dmgColor(d) { const h = 120 - d * 1.2; return 'hsla(' + h + ',70%,' + (25 + d * 0.3) + '%,' + (0.35 + d / 150) + ')'; }
-  function updateHUD(S) {
+  function updateHUD(S, inputs) {
+    inputs = inputs || [0, 0];
     for (let i = 0; i < 2; i++) {
       const f = S.f[i], p = $('#fp' + i);
       const hp = 100 - f.dmg.head;
@@ -447,7 +448,7 @@
       else if (f.rocked > 0) { txt = 'ROCKED'; cls += ' rocked'; }
       else if (f.ground === 'top') txt = 'TOP';
       else if (f.ground === 'bottom') txt = 'BOTTOM';
-      else if (f.blocking) txt = 'BLOCK';
+      else if (f.blocking) txt = (inputs[f.idx] & IN.MOD3) ? 'BODY BLOCK' : 'BLOCK';
       else if (f.act.type === 'push') txt = 'PUSH';
       else if (f.stam < 22) txt = 'GASSED';
       st.textContent = txt; st.className = cls;
@@ -574,7 +575,7 @@
     $('#controlsHint').innerHTML =
       '<div class="ctl-row">' + [B('fwd'), B('left'), B('back'), B('right')].join(' ') + ' move / circle (stepping into a shot adds power, backing off takes it away) · ' + B('lh') + ' left hand · ' + B('rh') + ' right hand · ' + B('ll') + ' left leg · ' + B('rl') + ' right leg</div>' +
       '<div class="ctl-row">' + MODS.map(row).join(' · ') + '</div>' +
-      '<div class="ctl-row">' + B('block') + ' hold: block / sprawl, tap twice: push them off · ' + B('grapple') + ' takedown / dive on a downed opponent · ' + B('dodge') + ' slip · knocked down: a direction or ' + B('dodge') + ' gets up, or stay down to recover · ground: hands & legs strike, ' + B('grapple') + ' submission / sweep, ' + B('block') + ' posture / cover, ' + B('dodge') + ' let up · <b>ESC</b> options · <b>H</b> hide this · <b>M</b> mute</div>';
+      '<div class="ctl-row">' + B('block') + ' hold: block / sprawl (+ ' + B('mod3') + ' drops into a shell that covers the body), tap twice: push them off · ' + B('grapple') + ' takedown / dive on a downed opponent · ' + B('dodge') + ' slip · knocked down: a direction or ' + B('dodge') + ' gets up, or stay down to recover · ground: hands & legs strike, ' + B('grapple') + ' submission / sweep, ' + B('block') + ' posture / cover, ' + B('dodge') + ' let up · <b>ESC</b> options · <b>H</b> hide this · <b>M</b> mute</div>';
   }
 
   // ============================================================
@@ -612,7 +613,7 @@
 
     const isHost = App.mode !== 'guest';
     let inputs = [0, 0];
-    if (App.paused && isLocal()) { App.pressed = 0; App.renderer.update(App.state, 0, inputs); updateHUD(App.state); return; }
+    if (App.paused && isLocal()) { App.pressed = 0; App.renderer.update(App.state, 0, inputs); updateHUD(App.state, inputs); return; }
     if (isHost) {
       const sim = App.sim;
       if (App.autoPilot) { const o = App.autoPilot.update(sim.state, dt); const watch = App.mode === 'watch'; sim.setInput(0, watch ? o.held : (o.held | App.held), watch ? o.pressed : (o.pressed | App.pressed)); App.pressed = 0; if (watch) inputs[0] = o.held; }
@@ -645,7 +646,7 @@
       }
     }
     App.renderer.update(App.state, dt, inputs);
-    updateHUD(App.state);
+    updateHUD(App.state, inputs);
   }
   requestAnimationFrame(loop);
 

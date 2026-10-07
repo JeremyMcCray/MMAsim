@@ -92,6 +92,13 @@
         }
       }
       if (tired && r() < 0.7) held |= IN.BLOCK;
+      // which guard: drop it (BLOCK + MOD3) when a body shot is coming or the body is what's being broken down
+      if (held & IN.BLOCK) {
+        const oppSt = oppWinding ? STRIKES[op.act.name] : null;
+        const bodyShot = !!oppSt && oppSt.part === 'body';
+        const bodyHurt = me.dmg.body > me.dmg.head + 15 && me.dmg.body > 30;
+        if ((bodyShot && r() < 0.35 + d * 0.5) || (bodyHurt && !oppWinding && r() < 0.5)) { this.modHeld = IN.MOD3; this.modT = 0.2; }
+      }
 
       // positioning
       if (this.latT <= 0) { this.lateral = r() < 0.4 ? 0 : (r() < 0.5 ? IN.LEFT : IN.RIGHT); this.latT = 0.6 + r() * 1.2; }
