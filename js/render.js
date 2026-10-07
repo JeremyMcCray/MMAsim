@@ -201,171 +201,24 @@
   const THIGH_L = RIG.thigh[0] * 2 + 0.06, SHIN_L = RIG.shin[0] + 0.03 - RIG.footPos[1];     // knee -> foot centre
   const SH_X = RIG.shoulder[0], SH_Y = RIG.chestUp + RIG.shoulder[1], HIP_XX = RIG.hip[0], HIP_Y = RIG.hip[1];
   const _q = new THREE.Quaternion(), _pw = new THREE.Vector3(), _off = new THREE.Vector3();
-  const _qa = new THREE.Quaternion(), _qStack = [new THREE.Quaternion()];
-
-  // ---------- human model assets (Universal Base Characters, glTF) ----------
-  // The visible fighter is a skinned human body (UE-style skeleton: pelvis / spine_01..03 / neck_01 / Head,
-  // clavicle / upperarm / lowerarm / hand, thigh / calf / foot). Its bones are retargeted every frame from the
-  // eleven physics segment frames, so the model follows the ragdoll exactly where the hit detection happens.
-  const CHAR_DIR = 'assets/character/';
-  const CHAR_BODY = 'Superhero_Male_FullBody.gltf';
-  const HAIR_FILES = ['Hair_Buzzed', 'Hair_SimpleParted', 'Hair_Beard'];
-  const HAIR_BY_KEY = { striker: ['Hair_Buzzed'], wrestler: ['Hair_Buzzed', 'Hair_Beard'], grappler: ['Hair_SimpleParted'], balanced: ['Hair_Buzzed'], default: ['Hair_Buzzed'] };
-  const HAIR_TINT = { striker: 0x6a4a30, wrestler: 0x201a16, grappler: 0x2a1e14, balanced: 0x1a1612 };
-  // hand bones: +Y runs along the fingers, +X (left) / -X (right) is the palm side; fingers curl about Z
-  const FINGER_AXIS = new THREE.Vector3(0, 0, 1), FINGER_THUMB_AXIS = new THREE.Vector3(1, 0, 0);
-  // physics leg: hip joint -> sole, used to scale the model so its feet reach the mat the ragdoll stands on
-  const PHYS_LEG = SEGS
-    ? (SEGS.lThigh.anchorSelf[1] - SEGS.lShin.anchorParent[1]) + (SEGS.lShin.anchorSelf[1] - SEGS.lShin.extra.pos[1] + SEGS.lShin.extra.shape[2])
-    : 1.005;
-
-  function analyzeRig(scene) {
-    scene.updateMatrixWorld(true);
-    const bones = {}; scene.traverse((o) => { if (o.isBone) bones[o.name] = o; });
-    const need = ['pelvis', 'spine_01', 'spine_02', 'spine_03', 'neck_01', 'Head', 'upperarm_l', 'upperarm_r', 'lowerarm_l', 'lowerarm_r', 'hand_l', 'hand_r', 'thigh_l', 'thigh_r', 'calf_l', 'calf_r', 'foot_l', 'foot_r'];
-    for (const n of need) if (!bones[n]) throw new Error('character rig is missing bone ' + n);
-    const wp = (n) => bones[n].getWorldPosition(new THREE.Vector3());
-    const wq = (n) => bones[n].getWorldQuaternion(new THREE.Quaternion());
-    // the game's "left" segments sit at -X in the root frame; pick whichever glTF side is there
-    const gl = wp('upperarm_l').x < 0 ? 'l' : 'r', gr = gl === 'l' ? 'r' : 'l';
-    // scale: model hip joint -> sole against the physics leg
-    let minY = Infinity;
-    scene.traverse((o) => { if (o.isMesh && o.geometry.boundingBox === null) o.geometry.computeBoundingBox(); if (o.isMesh) minY = Math.min(minY, o.geometry.boundingBox.min.y); });
-    const hipY = (wp('thigh_l').y + wp('thigh_r').y) / 2;
-    const scale = PHYS_LEG / Math.max(0.3, hipY - (isFinite(minY) ? minY : 0));
-    // rest world rotation of every driven bone in the "frame-identity" pose (standing, arms hanging): the
-    // T-pose arms are swung down about Z first
-    const Z = new THREE.Vector3(0, 0, 1);
-    const armFix = (n) => new THREE.Quaternion().setFromAxisAngle(Z, wp(n).x > 0 ? -Math.PI / 2 : Math.PI / 2);
-    const W = (n, fix) => fix ? fix.clone().multiply(wq(n)) : wq(n);
-    const D = (bone, segA, segB, t, fix) => ({ segA, segB: segB || null, t: t || 0, W: W(bone, fix) });
-    const drivers = {
-      pelvis: D('pelvis', 'pelvis'),
-      spine_01: D('spine_01', 'pelvis', 'chest', 0.25), spine_02: D('spine_02', 'pelvis', 'chest', 0.55), spine_03: D('spine_03', 'chest'),
-      neck_01: D('neck_01', 'chest', 'head', 0.5), Head: D('Head', 'head')
-    };
-    for (const [g, s] of [['l', gl], ['r', gr]]) {
-      const fx = armFix('upperarm_' + s);
-      drivers['clavicle_' + s] = D('clavicle_' + s, 'chest');
-      drivers['upperarm_' + s] = D('upperarm_' + s, g + 'UpperArm', null, 0, fx);
-      drivers['lowerarm_' + s] = D('lowerarm_' + s, g + 'Forearm', null, 0, fx);
-      drivers['hand_' + s] = D('hand_' + s, g + 'Forearm', null, 0, fx);
-      drivers['thigh_' + s] = D('thigh_' + s, g + 'Thigh');
-      drivers['calf_' + s] = D('calf_' + s, g + 'Shin');
-      drivers['foot_' + s] = D('foot_' + s, g + 'Shin');
-    }
-    // pelvis bone offset from the pelvis segment centre (segment frame, scaled metres): the hip joints coincide
-    const hipMid = wp('thigh_l').add(wp('thigh_r')).multiplyScalar(0.5 * scale);
-    const segCentre = hipMid.clone(); segCentre.y -= HIP_Y; // hip anchors sit at HIP_Y (negative) below the centre
-    drivers.pelvis.off = wp('pelvis').multiplyScalar(scale).sub(segCentre);
-    // head bone's model-space matrix, inverted: hair meshes are authored in model space
-    const headInv = bones.Head.matrixWorld.clone().invert();
-    const chestInv = bones.spine_03.matrixWorld.clone().invert();
-    return { scale, drivers, headInv, chestInv, side: { l: gl, r: gr } };
-  }
-
-  const HumanAssets = {
-    assets: null, promise: null,
-    load() {
-      if (this.promise) return this.promise;
-      if (typeof THREE.GLTFLoader === 'undefined' || typeof THREE.SkeletonUtils === 'undefined') return (this.promise = Promise.reject(new Error('GLTFLoader / SkeletonUtils not loaded')));
-      const loader = new THREE.GLTFLoader();
-      const gltf = (file) => new Promise((res, rej) => loader.load(CHAR_DIR + file, res, undefined, rej));
-      const image = (file) => new Promise((res) => new THREE.ImageLoader().load(CHAR_DIR + file, res, undefined, () => res(null)));
-      this.promise = Promise.all([
-        gltf(CHAR_BODY),
-        Promise.all(HAIR_FILES.map((h) => gltf(h + '.gltf').catch(() => null))),
-        image('T_Superhero_Male_Light.png')
-      ]).then(([body, hairs, texLight]) => {
-        if (!texLight) throw new Error('body texture missing');
-        const hair = {}; HAIR_FILES.forEach((h, i) => { if (hairs[i]) hair[h] = hairs[i]; });
-        this.assets = { body, hair, texLight, rig: analyzeRig(body.scene) };
-        return this.assets;
-      });
-      return this.promise;
-    }
-  };
 
   class FighterModel {
-    constructor(scene, color, skin, idx, key) {
-      this.idx = idx; this.key = key || '';
-      this.scene = scene;
+    constructor(scene, color, skin, idx) {
+      this.idx = idx;
       const skinMat = new THREE.MeshStandardMaterial({ color: skin, roughness: 0.75, metalness: 0.0 });
       const shortsMat = new THREE.MeshStandardMaterial({ color, roughness: 0.6 });
       const gloveMat = new THREE.MeshStandardMaterial({ color: idx === 0 ? 0xc62828 : 0x1e5bd6, roughness: 0.4, metalness: 0.05 });
       const darkMat = new THREE.MeshStandardMaterial({ color: 0x1c1c22, roughness: 0.9 });
       const headMat = skinMat.clone(), bodyMat = skinMat.clone(), legMat = skinMat.clone();
-      this.mats = { skinMat, shortsMat, gloveMat, headMat, bodyMat, legMat, darkMat };
+      this.mats = { skinMat, shortsMat, gloveMat, headMat, bodyMat, legMat };
       this.skinBase = new THREE.Color(skin);
 
-      // ---- segment frames (world-space groups), one per physics body. These carry the pose: while the
-      // ragdoll is live they copy its bodies from the snapshot, otherwise they are snapped onto the hidden
-      // IK skeleton below. The visible body is the skinned human model (assets/character), whose bones are
-      // retargeted from these frames every frame; if it cannot be loaded the old procedural
-      // segment model is built into the same groups instead (see _buildProcedural).
+      // ---- visible segments (world-space groups)
+      // Each physics segment is a group holding an anatomical-ish body part built from lathes (smooth, tapered
+      // muscle shapes) plus a few spheres and boxes for landmarks. Everything stays inside / close to the physics
+      // collider of that segment so what you see is what gets hit.
       this.segs = {};
-      for (const name of SEG_ORDER) { const g = new THREE.Group(); scene.add(g); this.segs[name] = g; }
-      const R = RIG;
-      const addMesh = (g, geo, mat, offset, scale) => {
-        const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true;
-        if (offset) m.position.set(...offset); if (scale) m.scale.set(...scale); g.add(m); return m;
-      };
-      // blood: a cut over the eye, a bloody nose/mouth, and a smear on the chest (shown as damage climbs).
-      // Parented to the head / chest frames so they ride along with either body model.
-      const head = this.segs.head, chest = this.segs.chest;
-      const bloodMat = new THREE.MeshStandardMaterial({ color: 0x8a0f12, roughness: 0.35, transparent: true, opacity: 0 });
-      this.bloodMat = bloodMat;
-      const cut = addMesh(head, new THREE.BoxGeometry(0.05, 0.016, 0.02), bloodMat, [0.05, 0.062, R.headR * 0.78]); cut.rotation.z = 0.3; cut.castShadow = false;
-      const nose = addMesh(head, new THREE.BoxGeometry(0.03, 0.06, 0.02), bloodMat, [0, -0.05, R.headR * 0.88]); nose.castShadow = false;
-      const cheek = addMesh(head, new THREE.SphereGeometry(0.03, 8, 6), bloodMat, [-0.075, -0.02, R.headR * 0.7]); cheek.scale.set(1, 1.3, 0.5); cheek.castShadow = false;
-      const smear = addMesh(chest, new THREE.BoxGeometry(0.14, 0.22, 0.01), bloodMat, [0.02, 0.0, R.chest[2] * 1.1 + 0.01]); smear.castShadow = false;
-      this.blood = { cut, nose, cheek, smear };
-
-      // ---- hidden IK skeleton (drives the segments when the ragdoll is parked)
-      this.root = new THREE.Group();
-      this.body = new THREE.Group(); this.root.add(this.body);           // hips; y = hip height
-      this.torso = new THREE.Group(); this.body.add(this.torso);         // pitch / yaw
-      this.neck = new THREE.Group(); this.neck.position.y = RIG.chestUp + RIG.headUp; this.torso.add(this.neck);
-      this.lSh = new THREE.Group(); this.lSh.position.set(-SH_X, SH_Y, 0); this.torso.add(this.lSh);
-      this.rSh = new THREE.Group(); this.rSh.position.set(SH_X, SH_Y, 0); this.torso.add(this.rSh);
-      this.lEl = new THREE.Group(); this.lEl.position.y = -UPPER_L; this.lSh.add(this.lEl);
-      this.rEl = new THREE.Group(); this.rEl.position.y = -UPPER_L; this.rSh.add(this.rEl);
-      this.lHip = new THREE.Group(); this.lHip.position.set(-HIP_XX, HIP_Y, 0); this.body.add(this.lHip);
-      this.rHip = new THREE.Group(); this.rHip.position.set(HIP_XX, HIP_Y, 0); this.body.add(this.rHip);
-      this.lKn = new THREE.Group(); this.lKn.position.y = -THIGH_L; this.lHip.add(this.lKn);
-      this.rKn = new THREE.Group(); this.rKn.position.y = -THIGH_L; this.rHip.add(this.rKn);
-      scene.add(this.root);
-
-      // shadow blob
-      const blob = new THREE.Mesh(new THREE.CircleGeometry(0.42, 20), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false }));
-      blob.rotation.x = -Math.PI / 2; blob.position.y = 0.012; scene.add(blob);
-      this.blob = blob;
-
-      this.pose = copyPose(POSES.idle);
-      this.px = 0; this.pz = 0; this.yaw = 0; this.initialized = false; this.physMode = false;
-      this.flash = 0; this.stepPhase = 0;
-      this._v = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
-      this._pole = new THREE.Vector3();
-      this._tipV = new THREE.Vector3();
-      this._dmgC = new THREE.Color(); this._red = new THREE.Color(0.75, 0.25, 0.22); this._bruise = new THREE.Color(0.38, 0.22, 0.42);
-      this._eul = new THREE.Euler(); this._qHip = new THREE.Quaternion(); this._yAxis = new THREE.Vector3(0, 1, 0);
-      this._tipArr = [0, 0, 0];
-
-      // ---- the human model (async): skinned glTF retargeted onto the segment frames
-      this.human = null; this.disposed = false; this.procedural = false;
-      HumanAssets.load().then(
-        (A) => { if (!this.disposed) this._buildHuman(A); },
-        (err) => { console.warn('Cage Rules: human model unavailable, using the procedural fighter', err); if (!this.disposed) this._buildProcedural(); });
-    }
-
-    // ---- fallback: the old procedural segment model
-    // Each physics segment group gets an anatomical-ish body part built from lathes (smooth, tapered
-    // muscle shapes) plus a few spheres and boxes for landmarks. Everything stays inside / close to the physics
-    // collider of that segment so what you see is what gets hit.
-    _buildProcedural() {
-      this.procedural = true;
-      const { skinMat, shortsMat, gloveMat, darkMat, headMat, bodyMat, legMat } = this.mats;
-      const seg = (name) => this.segs[name];
+      const seg = (name) => { const g = new THREE.Group(); scene.add(g); this.segs[name] = g; return g; };
       const addMesh = (g, geo, mat, offset, scale) => {
         const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true;
         if (offset) m.position.set(...offset); if (scale) m.scale.set(...scale); g.add(m); return m;
@@ -484,154 +337,53 @@
         addMesh(sh, new THREE.SphereGeometry(FW * 0.9, 12, 10), legMat, [fp[0], fp[1], fp[2] - FL * 0.95], [1.0, 0.8, 0.7]);     // heel
         addMesh(sh, new THREE.BoxGeometry(FW * 2.05, 0.008, FL * 2.05), bandMat, [fp[0], fp[1] - FHh, fp[2] - FL * 0.02]);      // sole
       }
-    }
+      // blood: a cut over the eye, a bloody nose/mouth, and a smear on the chest (shown as damage climbs)
+      const bloodMat = new THREE.MeshStandardMaterial({ color: 0x8a0f12, roughness: 0.35, transparent: true, opacity: 0 });
+      this.bloodMat = bloodMat;
+      const cut = addMesh(head, new THREE.BoxGeometry(0.05, 0.016, 0.02), bloodMat, [0.05, 0.062, R.headR * 0.78]); cut.rotation.z = 0.3; cut.castShadow = false;
+      const nose = addMesh(head, new THREE.BoxGeometry(0.03, 0.06, 0.02), bloodMat, [0, -0.05, R.headR * 0.88]); nose.castShadow = false;
+      const cheek = addMesh(head, new THREE.SphereGeometry(0.03, 8, 6), bloodMat, [-0.075, -0.02, R.headR * 0.7]); cheek.scale.set(1, 1.3, 0.5); cheek.castShadow = false;
+      const smear = addMesh(chest, new THREE.BoxGeometry(0.14, 0.22, 0.01), bloodMat, [0.02, 0.0, R.chest[2] * 1.1 + 0.01]); smear.castShadow = false;
+      this.blood = { cut, nose, cheek, smear };
 
-    // ---- the skinned human model
-    _buildHuman(A) {
-      const rig = A.rig;
-      const obj = THREE.SkeletonUtils.clone(A.body.scene);
-      obj.scale.setScalar(rig.scale);
-      obj.updateMatrixWorld(true);
-      const bones = {};
-      obj.traverse((o) => {
-        if (o.isBone) { bones[o.name] = o; o.userData.restQ = o.quaternion.clone(); }
-        if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; o.material = o.material.clone(); }
-      });
-      // body material: the base-colour map is re-tinted per fighter (skin tone + fight shorts)
-      let bodyMesh = null;
-      obj.traverse((o) => { if (o.isMesh && /superhero/i.test(o.material.name || '') && !bodyMesh) bodyMesh = o; });
-      if (!bodyMesh) obj.traverse((o) => { if (o.isSkinnedMesh && !bodyMesh) bodyMesh = o; });
-      this.bodyMat = bodyMesh.material;
-      this.bodyMat.color.set(0xffffff); this.bodyMat.roughness = 0.9; this.bodyMat.metalness = 0;
-      this._retint(A);
-      // bone drivers: the frame(s) each bone follows plus its rest orientation in the frame-identity pose
-      for (const name in rig.drivers) {
-        const b = bones[name]; if (!b) continue;
-        b.userData.drv = rig.drivers[name];
-      }
-      // fingers curled into fists
-      for (const name in bones) {
-        const m = /^(index|middle|ring|pinky|thumb)_0([123])_([lr])$/.exec(name);
-        if (!m) continue;
-        const b = bones[name], thumb = m[1] === 'thumb', j = +m[2];
-        const ang = thumb ? (j === 1 ? 0.25 : 0.55) : (j === 1 ? 1.25 : j === 2 ? 1.5 : 0.9);
-        const sgn = m[3] === 'l' ? -1 : 1;
-        _q.setFromAxisAngle(thumb ? FINGER_THUMB_AXIS : FINGER_AXIS, sgn * ang);
-        b.userData.restQ.multiply(_q);
-      }
-      // gloves on the hand bones (sizes in bone-local metres = physics metres / model scale)
-      const s = 1 / rig.scale, GR = RIG.fistR * s;
-      for (const suf of ['l', 'r']) {
-        const hand = bones['hand_' + suf]; if (!hand) continue;
-        const g = new THREE.Group(); hand.add(g);
-        const sx = suf === 'l' ? 1 : -1;      // palm side in hand-local X
-        const add = (geo, mat, pos, scl) => { const mm = new THREE.Mesh(geo, mat); mm.castShadow = true; mm.receiveShadow = true; mm.position.set(...pos); if (scl) mm.scale.set(...scl); g.add(mm); return mm; };
-        add(new THREE.SphereGeometry(GR, 18, 14), this.mats.gloveMat, [sx * 0.004, 0.105, 0.0], [0.95, 1.05, 0.8]);                 // fist
-        add(new THREE.SphereGeometry(GR * 0.9, 16, 12), this.mats.gloveMat, [sx * -0.01, 0.13, 0.0], [1.0, 0.75, 0.8]);             // knuckle pad
-        add(new THREE.SphereGeometry(GR * 0.45, 10, 8), this.mats.gloveMat, [sx * 0.02, 0.07, 0.035], [0.8, 1.2, 0.8]);             // thumb
-        add(new THREE.CylinderGeometry(0.042 * s, 0.046 * s, 0.06, 16), this.mats.gloveMat, [0, 0.02, 0]);                           // wrist strap
-        add(new THREE.CylinderGeometry(0.045 * s, 0.045 * s, 0.014, 16), this.mats.darkMat, [0, 0.03, 0]);                            // strap seam
-      }
-      // hair, parented to the head bone
-      const head = bones.Head;
-      const styles = HAIR_BY_KEY[this.key] || HAIR_BY_KEY.default;
-      for (const st of styles) {
-        const h = A.hair[st]; if (!h || !head) continue;
-        const hobj = h.scene.clone();
-        hobj.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; o.material = o.material.clone(); o.material.color.setHex(HAIR_TINT[this.key] || 0xffffff); } });
-        rig.headInv.decompose(hobj.position, hobj.quaternion, hobj.scale);
-        head.add(hobj);
-      }
-      // blood decals move from the segment frames onto the model's own head / chest, authored in model space
-      if (head && bones.spine_03) {
-        const bh = new THREE.Group(), bc = new THREE.Group();
-        rig.headInv.decompose(bh.position, bh.quaternion, bh.scale); head.add(bh);
-        rig.chestInv.decompose(bc.position, bc.quaternion, bc.scale); bones.spine_03.add(bc);
-        const B = this.blood;
-        this.bloodMat.polygonOffset = true; this.bloodMat.polygonOffsetFactor = -2; this.bloodMat.polygonOffsetUnits = -2;
-        const place = (m, parent, geo, pos, scl, rz) => { m.geometry.dispose(); m.geometry = geo; parent.add(m); m.position.set(...pos); m.scale.set(...(scl || [1, 1, 1])); m.rotation.set(0, 0, rz || 0); };
-        place(B.cut, bh, new THREE.BoxGeometry(0.03, 0.009, 0.01), [0.034, 1.73, 0.085], null, 0.35);
-        place(B.nose, bh, new THREE.BoxGeometry(0.018, 0.04, 0.012), [0, 1.658, 0.094]);
-        place(B.cheek, bh, new THREE.SphereGeometry(0.016, 8, 6), [-0.042, 1.672, 0.064], [1, 1.3, 0.3]);
-        place(B.smear, bc, new THREE.SphereGeometry(0.06, 10, 8), [0.02, 1.36, 0.1], [0.8, 1.3, 0.25]);
-      }
-      this.scene.add(obj);
-      this.human = { obj, bones, rig, pelvis: bones.pelvis, rootInv: new THREE.Matrix4().copy(bones.pelvis.parent.matrixWorld).invert() };
-      this.human.rootQInv = new THREE.Quaternion(); bones.pelvis.parent.getWorldQuaternion(this.human.rootQInv); this.human.rootQInv.invert();
-      this._driveHuman();
-    }
+      // ---- hidden IK skeleton (drives the segments when the ragdoll is parked)
+      this.root = new THREE.Group();
+      this.body = new THREE.Group(); this.root.add(this.body);           // hips; y = hip height
+      this.torso = new THREE.Group(); this.body.add(this.torso);         // pitch / yaw
+      this.neck = new THREE.Group(); this.neck.position.y = RIG.chestUp + RIG.headUp; this.torso.add(this.neck);
+      this.lSh = new THREE.Group(); this.lSh.position.set(-SH_X, SH_Y, 0); this.torso.add(this.lSh);
+      this.rSh = new THREE.Group(); this.rSh.position.set(SH_X, SH_Y, 0); this.torso.add(this.rSh);
+      this.lEl = new THREE.Group(); this.lEl.position.y = -UPPER_L; this.lSh.add(this.lEl);
+      this.rEl = new THREE.Group(); this.rEl.position.y = -UPPER_L; this.rSh.add(this.rEl);
+      this.lHip = new THREE.Group(); this.lHip.position.set(-HIP_XX, HIP_Y, 0); this.body.add(this.lHip);
+      this.rHip = new THREE.Group(); this.rHip.position.set(HIP_XX, HIP_Y, 0); this.body.add(this.rHip);
+      this.lKn = new THREE.Group(); this.lKn.position.y = -THIGH_L; this.lHip.add(this.lKn);
+      this.rKn = new THREE.Group(); this.rKn.position.y = -THIGH_L; this.rHip.add(this.rKn);
+      scene.add(this.root);
 
-    // per-fighter base-colour map: skin tone matched to the roster colour, grey briefs recoloured as fight shorts
-    _retint(A) {
-      if (!this.bodyMat) return;
-      const skin = this.skinBase, shorts = this.mats.shortsMat.color;
-      const img = A.texLight;
-      const W = img.width, H = img.height;
-      const c = document.createElement('canvas'); c.width = W; c.height = H;
-      const g = c.getContext('2d'); g.drawImage(img, 0, 0, W, H);
-      const id = g.getImageData(0, 0, W, H), d = id.data;
-      const isGrey = (r, gg, b) => { const mx = Math.max(r, gg, b), mn = Math.min(r, gg, b); return mx - mn <= 18 && mx >= 30 && mn <= 245; };
-      // reference colours of the source map (subsampled): mean skin and mean brief grey
-      let sr = 0, sg = 0, sb = 0, n = 0, gm = 0, gn = 0;
-      for (let i = 0; i < d.length; i += 4 * 37) { const r = d[i], gg = d[i + 1], b = d[i + 2]; if (isGrey(r, gg, b)) { gm += (r + gg + b) / 3; gn++; } else { sr += r; sg += gg; sb += b; n++; } }
-      sr /= n || 1; sg /= n || 1; sb /= n || 1; gm = gn ? gm / gn : 156;
-      // darkening uses the full ratio; lightening is softened (the map already carries its own highlights)
-      const K = (t, ref) => { const k = t * 255 / (ref || 1); return k < 1 ? Math.max(0.3, k) : Math.min(1.25, Math.sqrt(k)); };
-      const kr = K(skin.r, sr), kg = K(skin.g, sg), kb = K(skin.b, sb);
-      const cr = shorts.r * 255, cg = shorts.g * 255, cb = shorts.b * 255, gInv = 0.85 / gm;
-      for (let i = 0; i < d.length; i += 4) {
-        const r = d[i], gg = d[i + 1], b = d[i + 2];
-        if (isGrey(r, gg, b)) { const v = (r + gg + b) / 3 * gInv; d[i] = Math.min(255, cr * v); d[i + 1] = Math.min(255, cg * v); d[i + 2] = Math.min(255, cb * v); }
-        else { d[i] = Math.min(255, r * kr); d[i + 1] = Math.min(255, gg * kg); d[i + 2] = Math.min(255, b * kb); }
-      }
-      g.putImageData(id, 0, 0);
-      const tex = new THREE.CanvasTexture(c);
-      tex.flipY = false; tex.encoding = THREE.sRGBEncoding; tex.anisotropy = 4;
-      if (this.bodyMat.map && this.bodyMat.map.isCanvasTexture) this.bodyMat.map.dispose();
-      this.bodyMat.map = tex; this.bodyMat.needsUpdate = true;
-    }
+      // shadow blob
+      const blob = new THREE.Mesh(new THREE.CircleGeometry(0.42, 20), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false }));
+      blob.rotation.x = -Math.PI / 2; blob.position.y = 0.012; scene.add(blob);
+      this.blob = blob;
 
-    // ---- bones <- segment frames. Rotation-only retargeting (plus the pelvis position), walking the
-    // hierarchy so each bone's local rotation is derived from its parent's final world rotation.
-    _driveHuman() {
-      const H = this.human; if (!H) return;
-      const segs = this.segs;
-      // pelvis position
-      const d0 = H.pelvis.userData.drv;
-      _pw.copy(d0.off).applyQuaternion(segs.pelvis.quaternion).add(segs.pelvis.position).applyMatrix4(H.rootInv);
-      H.pelvis.position.copy(_pw);
-      const stack = _qStack;
-      const walk = (bone, depth) => {
-        const parentQ = stack[depth - 1];
-        const drv = bone.userData.drv, wq = stack[depth] || (stack[depth] = new THREE.Quaternion());
-        if (drv) {
-          if (drv.segB) { _qa.copy(segs[drv.segA].quaternion).slerp(segs[drv.segB].quaternion, drv.t); }
-          else _qa.copy(segs[drv.segA].quaternion);
-          wq.copy(_qa).multiply(drv.W);
-          bone.quaternion.copy(parentQ).invert().multiply(wq);
-        } else {
-          bone.quaternion.copy(bone.userData.restQ);
-          wq.copy(parentQ).multiply(bone.quaternion);
-        }
-        const ch = bone.children;
-        for (let i = 0; i < ch.length; i++) if (ch[i].isBone) walk(ch[i], depth + 1);
-      };
-      stack[0].copy(H.rootQInv).invert();
-      walk(H.pelvis, 1);
+      this.scene = scene;
+      this.pose = copyPose(POSES.idle);
+      this.px = 0; this.pz = 0; this.yaw = 0; this.initialized = false; this.physMode = false;
+      this.flash = 0; this.stepPhase = 0;
+      this._v = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+      this._pole = new THREE.Vector3();
+      this._tipV = new THREE.Vector3();
+      this._dmgC = new THREE.Color(); this._red = new THREE.Color(0.75, 0.25, 0.22); this._bruise = new THREE.Color(0.38, 0.22, 0.42);
+      this._eul = new THREE.Euler(); this._qHip = new THREE.Quaternion(); this._yAxis = new THREE.Vector3(0, 1, 0);
+      this._tipArr = [0, 0, 0];
     }
 
     dispose() {
-      this.disposed = true;
       for (const n in this.segs) this.scene.remove(this.segs[n]);
       this.scene.remove(this.root); this.scene.remove(this.blob);
-      if (this.human) { this.scene.remove(this.human.obj); if (this.bodyMat && this.bodyMat.map) this.bodyMat.map.dispose(); }
     }
 
-    setColors(color, skin) {
-      this.mats.shortsMat.color.setHex(color); this.skinBase.setHex(skin);
-      for (const k of ['skinMat', 'headMat', 'bodyMat', 'legMat']) this.mats[k].color.setHex(skin);
-      if (this.human && HumanAssets.assets) this._retint(HumanAssets.assets);
-    }
+    setColors(color, skin) { this.mats.shortsMat.color.setHex(color); this.skinBase.setHex(skin); for (const k of ['skinMat', 'headMat', 'bodyMat', 'legMat']) this.mats[k].color.setHex(skin); }
 
     // bruising + blood per damage region
     updateDamage(f) {
@@ -644,21 +396,12 @@
         mat.color.copy(c);
         mat.emissive.setRGB(fl * 0.6, fl * 0.1, fl * 0.1);
       };
-      if (this.procedural) {
-        tint(this.mats.headMat, f.dmg.head); tint(this.mats.bodyMat, f.dmg.body); tint(this.mats.legMat, f.dmg.legs);
-        this.mats.skinMat.emissive.setRGB(fl * 0.6, fl * 0.1, fl * 0.1);
-      } else if (this.bodyMat) {
-        // one skin for the whole body: a mild overall redden / bruise weighted towards the head, plus the hit flash
-        const dm = f.dmg.head * 0.5 + f.dmg.body * 0.35 + f.dmg.legs * 0.15;
-        const c = this._dmgC.setRGB(1, 1, 1);
-        c.lerp(this._red, Math.min(1, dm / 45) * 0.22); c.lerp(this._bruise, Math.max(0, (dm - 40) / 60) * 0.3);
-        this.bodyMat.color.copy(c);
-        this.bodyMat.emissive.setRGB(fl * 0.6, fl * 0.1, fl * 0.1);
-      }
+      tint(this.mats.headMat, f.dmg.head); tint(this.mats.bodyMat, f.dmg.body); tint(this.mats.legMat, f.dmg.legs);
+      this.mats.skinMat.emissive.setRGB(fl * 0.6, fl * 0.1, fl * 0.1);
       const h = f.dmg.head;
       this.bloodMat.opacity = h > 25 ? Math.min(1, (h - 25) / 30) : 0;
       this.blood.cut.visible = h > 25; this.blood.nose.visible = h > 40; this.blood.cheek.visible = h > 55; this.blood.smear.visible = h > 60;
-      this.blood.smear.scale.y = (this.human ? 1.3 : 1) * (0.4 + Math.min(1, (h - 60) / 40) * 0.8);
+      this.blood.smear.scale.y = 0.4 + Math.min(1, (h - 60) / 40) * 0.8;
     }
 
     // compute target pose from sim state
@@ -795,7 +538,6 @@
         this.blob.material.opacity = 0.35;
         if (this.flash > 0) this.flash -= dt * 4;
         this.updateDamage(f);
-        this._driveHuman();
         return;
       }
       const wasPhys = this.physMode;
@@ -911,7 +653,6 @@
         this._pole.set(p.rPole[0], p.rPole[1] + 0.3, p.rPole[2]); solveIK(v[0], v[1], THIGH_L, SHIN_L, this._pole, this.rHip, this.rKn);
       }
       this._applySkeleton();
-      this._driveHuman();
       this.blob.position.set(this.px, 0.012, this.pz);
       this.blob.material.opacity = p.lie < -0.5 ? 0.15 : 0.35;
 
@@ -1078,7 +819,7 @@
 
     setFighters(S) {
       for (const m of this.models) m.dispose();
-      this.models = S.f.map((f, i) => new FighterModel(this.scene, f.color, f.skin, i, f.key));
+      this.models = S.f.map((f, i) => new FighterModel(this.scene, f.color, f.skin, i));
       this.lastGround = false;
     }
 

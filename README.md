@@ -214,15 +214,12 @@ js/physics.js     MMAPhys: Rapier world, active ragdolls, stance / guard / strik
 js/sim.js         fight simulation (seeded, fixed‑step). Standing = ragdolls, ground = ruleset
 js/ai.js          scripted CPU opponent
 js/brain.js       neural fighter brain (evolved weights from brains/*.json)
-js/render.js      Three.js arena, the skinned human fighters (bones retargeted from the ragdoll
-                  segments when standing, from a two‑bone IK rig posed from POSES on the ground),
-                  camera, FX
-assets/character/ the fighter body: Universal Base Characters "Superhero Male" glTF + textures,
-                  three hairstyles (see "Fighter model" below)
+js/render.js      Three.js arena, segment fighters (follow the ragdoll bones when standing,
+                  a two‑bone IK rig posed from POSES on the ground), camera, FX
 js/net.js         PeerJS rooms (host‑authoritative; bone poses ride in the state snapshot)
 js/audio.js       WebAudio sound effects
 js/main.js        menus, lobby, input, game loop, HUD
-lib/              rapier3d-compat.js (physics), three.min.js, GLTFLoader.js, SkeletonUtils.js, peerjs.min.js
+lib/              rapier3d-compat.js (physics), three.min.js, peerjs.min.js
 brains/           evolved brain checkpoints + index.json (written by the training action)
 .github/workflows train.yml: self-play training on GitHub Actions
 tools/            node scripts: headless.js (CPU vs CPU fights + stats),
@@ -256,33 +253,6 @@ for a dummy holding block). `node tools/headless.js 6` plays six CPU fights
 and prints landed / blocked / whiffed counts, damage per hit, finishes and
 simulation cost. In the browser, `?auto=1` lets the CPU drive your fighter in
 practice mode, and `window.CageRules` exposes the live sim, state and renderer.
-
-## Fighter model
-
-The fighters are the *Superhero Male* body from the Universal Base Characters
-pack (`assets/character/`, glTF, ~1.8 m, UE‑style skeleton). The renderer never
-animates it directly: every frame each bone is retargeted from the eleven
-physics segment frames (pelvis, chest, head, upper arms, forearms, thighs,
-shins) — the spine and neck blend between pelvis / chest / head, the arms are
-swung down from the T‑pose first, and the hands and feet ride their forearm /
-shin — so what you see is exactly the ragdoll the hit detection runs on. The
-model is scaled so its hip‑to‑sole length matches the physics leg
-(`analyzeRig` in `js/render.js`). The hidden IK skeleton still poses the same
-segment frames on the ground and in the menu, so the ground game needs no
-separate animation.
-
-Per fighter, the base‑colour map is re‑tinted on a canvas at fight start: the
-skin is matched to the roster `skin` colour and the grey briefs become fight
-shorts in the roster `color`. MMA gloves (red / blue corner) are simple meshes
-on the hand bones with the fingers curled into fists, and a hairstyle from the
-pack is parented to the head bone (`HAIR_BY_KEY`). Blood decals sit on the head
-and chest bones. The glTF loads asynchronously; if it cannot be fetched (e.g.
-opening `index.html` from `file://`, where browsers block the request) the old
-procedural segment fighter is built instead, so the game still runs.
-
-The source pack (`Universal Base Characters[Standard]/`) is kept for the FBX /
-female / other hairstyle variants; only the files under `assets/character/`
-are loaded by the page (textures were downsized for the web).
 
 The old swept‑tip striking model is still in `js/sim.js` and is used
 automatically if the physics engine fails to load. Its tuning (`KIND_STATS`,

@@ -7,7 +7,7 @@ const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const ROOT = path.resolve(__dirname, '..'); const outdir = process.argv[2] || '/tmp/strikes'; fs.mkdirSync(outdir, { recursive: true });
 const want = (process.argv[3] || 'overhand,hook,hkick,straight,uppercut,bkick,lkick,knee,teep').split(',');
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.gltf': 'model/gltf+json', '.bin': 'application/octet-stream', '.png': 'image/png' };
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
 const server = http.createServer((req, res) => {
   const url = decodeURIComponent(req.url.split('?')[0]); let file = path.join(ROOT, url === '/' ? 'index.html' : url);
   if (!file.startsWith(ROOT) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); res.end(); return; }
@@ -24,8 +24,6 @@ const server = http.createServer((req, res) => {
   const ok = await page.evaluate(() => new Promise((res) => { if (window.MMAPhys && MMAPhys.ready()) return res(true); window.addEventListener('mmaphys', (e) => res(e.detail.ok), { once: true }); setTimeout(() => res(false), 20000); }));
   console.log('physics ready:', ok);
   await page.click('#btnPractice'); await page.waitForTimeout(200); await page.click('#btnReady'); await page.waitForTimeout(300);
-  // the human model loads asynchronously after the fight starts
-  await page.waitForFunction(() => { const R = window.CageRules && window.CageRules.renderer; return R && R.models.length === 2 && R.models.every(m => m.human || m.procedural); }, null, { timeout: 30000 }).catch(() => console.log('warning: fighter models did not finish loading'));
   await page.evaluate(() => {
     const A = window.CageRules; A.brain = null; A.playing = false; A.state = null; // stop the page's own rAF loop from rendering over our cameras
     for (const el of document.querySelectorAll('#hud, #controlsHelp, .overlay, #announce')) if (el) el.style.display = 'none';

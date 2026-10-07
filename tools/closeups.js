@@ -4,7 +4,7 @@
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const ROOT = path.resolve(__dirname, '..'); const outdir = process.argv[2] || '/tmp/shots'; fs.mkdirSync(outdir, { recursive: true });
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.gltf': 'model/gltf+json', '.bin': 'application/octet-stream', '.png': 'image/png' };
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
 const server = http.createServer((req, res) => {
   const url = decodeURIComponent(req.url.split('?')[0]); let file = path.join(ROOT, url === '/' ? 'index.html' : url);
   if (!file.startsWith(ROOT) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); res.end(); return; }
@@ -19,8 +19,6 @@ const server = http.createServer((req, res) => {
   await page.goto(`http://localhost:${port}/index.html`); await page.waitForTimeout(1000);
   await page.evaluate(() => new Promise((res) => { if (window.MMAPhys && MMAPhys.ready()) return res(true); window.addEventListener('mmaphys', (e) => res(e.detail.ok), { once: true }); setTimeout(() => res(false), 20000); }));
   await page.click('#btnPractice'); await page.waitForTimeout(200); await page.click('#btnReady'); await page.waitForTimeout(300);
-  // the human model loads asynchronously after the fight starts
-  await page.waitForFunction(() => { const R = window.CageRules && window.CageRules.renderer; return R && R.models.length === 2 && R.models.every(m => m.human || m.procedural); }, null, { timeout: 30000 }).catch(() => console.log('warning: fighter models did not finish loading'));
   await page.evaluate(() => { const A = window.CageRules; A.brain = null; A.playing = false; A.state = null; document.querySelector('#hud').style.display = 'none'; while (A.sim.state.phase !== 'fight') { A.sim.acc = 0; A.sim.step(1 / 60); } A.sim.drainEvents(); });
   const IN = await page.evaluate(() => window.MMASim.IN);
   const tick = (n, held, pressed) => page.evaluate(([n, held, pressed]) => {
