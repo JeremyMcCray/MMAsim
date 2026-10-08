@@ -7,9 +7,10 @@
 <meta name="description" content="Cage Rules: a 3D one-on-one mixed martial arts simulation you can play online against a friend, right in the browser.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700;900&family=Barlow:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=17">
+<link rel="stylesheet" href="css/style.css?v=21">
 </head>
 <body>
+<canvas id="musicbg" aria-hidden="true" hidden></canvas>
 <canvas id="gl"></canvas>
 
 <!-- ===== HUD ===== -->
@@ -226,6 +227,23 @@
       </label>
       <label class="mute-music"><input type="checkbox" id="muteMusicOpt"> Mute music</label>
     </div>
+    <div class="opt-look">
+      <h3>BACKGROUND</h3>
+      <p class="opt-help">Legacy is the original arena. Any other color is a flat void, light grey by default. Music particles follow the track, and impact particles burst when a strike lands. Both stay off on Legacy.</p>
+      <div class="fx-row">
+        <label class="mute-music"><input type="checkbox" id="bgMusicFx" disabled> Music particles</label>
+        <label class="mute-music"><input type="checkbox" id="bgImpactFx" disabled> Impact particles</label>
+      </div>
+      <div class="bg-menu-wrap">
+        <button type="button" class="bg-menu" id="bgColorBtn" aria-expanded="false" aria-controls="bgColorSub">
+          <span>Colors</span><b id="bgColorName">Legacy</b>
+        </button>
+        <div class="bg-sub hidden" id="bgColorSub">
+          <div class="bg-swatches" id="bgSwatches" role="radiogroup" aria-label="Background color"></div>
+          <div class="bg-preview" id="bgPreview"></div>
+        </div>
+      </div>
+    </div>
     <div class="opt-cols">
       <div class="opt-col">
         <h3>KEY BINDINGS</h3>
@@ -262,11 +280,13 @@
 <script src="js/ai.js?v=12"></script>
 <script src="js/brain.js?v=12"></script>
 <script src="js/career.js?v=17"></script>
-<script src="js/render.js?v=17"></script>
+<script src="js/music-env.js?v=17"></script>
+<script src="js/music-bg.js?v=21"></script>
+<script src="js/render.js?v=21"></script>
 <script src="js/gym.js?v=17"></script>
 <script src="js/net.js?v=12"></script>
-<script src="js/audio.js?v=15"></script>
-<script src="js/main.js?v=17"></script>
+<script src="js/audio.js?v=17"></script>
+<script src="js/main.js?v=21"></script>
 <script src="lib/rapier3d-compat.js?v=12"></script>
 <script>
   // Rapier physics engine (vendored, WASM inlined, plain script so the game also runs from file://).
