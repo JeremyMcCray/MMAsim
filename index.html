@@ -7,7 +7,7 @@
 <meta name="description" content="Cage Rules: a 3D one-on-one mixed martial arts simulation you can play online against a friend, right in the browser.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700;900&family=Barlow:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20">
+<link rel="stylesheet" href="css/style.css?v=22">
 </head>
 <body>
 <canvas id="musicbg" aria-hidden="true" hidden></canvas>
@@ -51,8 +51,9 @@
 
 <!-- ===== MAIN MENU ===== -->
 <div id="menu" class="layer screen">
+  <div id="markSmile" class="mark-smile hidden" aria-hidden="true">☻</div>
   <div class="panel">
-    <h1>CAGE<span>RULES</span></h1>
+    <h1>CA<button type="button" class="letter" id="titleG">G</button>E<span>RULES</span></h1>
     <p class="sub">3D one-on-one mixed martial arts · online</p>
     <div class="menu-btns">
       <button class="big" id="btnHost">CREATE ROOM</button>
@@ -71,6 +72,27 @@
     <div class="credits">
       <div class="credits-title">CREDITS</div>
       <p>Music by <b>MintoDog</b></p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== EXTRA OPTIONS (opened from the G in the title) ===== -->
+<div id="more" class="layer screen hidden">
+  <div class="panel">
+    <h2 class="more-title">More <button type="button" class="letter" id="moreG">G</button>ame</h2>
+    <p class="opt-help">These stay off the main options page.</p>
+    <div class="more-opts">
+      <label class="mute-music"><input type="checkbox" id="optMark"> Mat marks</label>
+      <p class="fine">A hard hit leaves a mark that stays on the mat.</p>
+      <label class="mute-music"><input type="checkbox" id="optEdge"> Lead props</label>
+      <p class="fine">Both fighters hold one in the lead hand. Block raises it. The base lead hand cuts upward, E lunges, a hook sweeps, an overhand chops. A clean hit takes about a fifth of that bar. Crossed ones lock.</p>
+      <div id="optPocketRow" class="hidden">
+        <label class="mute-music"><input type="checkbox" id="optPocket"> Pocket</label>
+        <p class="fine">Press G to draw it into the lead hand. That puts the other one away. The base lead punch sends it straight ahead. A hit takes about half of that bar.</p>
+      </div>
+    </div>
+    <div class="lobby-btns">
+      <button class="big" id="btnMoreClose">DONE</button>
     </div>
   </div>
 </div>
@@ -254,16 +276,18 @@
   if (typeof THREE === 'undefined') document.write('<script src="lib/three.min.js"><\/script>');
   if (typeof Peer === 'undefined') document.write('<script src="lib/peerjs.min.js"><\/script>');
 </script>
-<script src="js/physics.js?v=12"></script>
-<script src="js/sim.js?v=16"></script>
+<script src="js/physics.js?v=15"></script>
+<script src="js/sim.js?v=26"></script>
 <script src="js/ai.js?v=12"></script>
 <script src="js/brain.js?v=12"></script>
 <script src="js/music-env.js?v=17"></script>
 <script src="js/music-bg.js?v=21"></script>
-<script src="js/render.js?v=20"></script>
+<script src="js/render.js?v=26"></script>
 <script src="js/net.js?v=12"></script>
-<script src="js/audio.js?v=17"></script>
-<script src="js/main.js?v=19"></script>
+<script src="js/audio.js?v=18"></script>
+<script src="js/career.js?v=1"></script>
+<script src="js/chat.js?v=1"></script>
+<script src="js/main.js?v=27"></script>
 <script src="lib/rapier3d-compat.js?v=12"></script>
 <script>
   // Rapier physics engine (vendored, WASM inlined, plain script so the game also runs from file://).

@@ -203,6 +203,155 @@
   const SH_X = RIG.shoulder[0], SH_Y = RIG.chestUp + RIG.shoulder[1], HIP_XX = RIG.hip[0], HIP_Y = RIG.hip[1];
   const _q = new THREE.Quaternion(), _pw = new THREE.Vector3(), _off = new THREE.Vector3();
 
+  function makeProp() {
+    const g = new THREE.Group();
+    const steel = new THREE.MeshStandardMaterial({ color: 0xe7edf4, metalness: 0.72, roughness: 0.2 });
+    const goldMat = new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.6, roughness: 0.32 });
+    const gripMat = new THREE.MeshStandardMaterial({ color: 0x4a2c18, roughness: 0.72 });
+    // Built along local -Y. The lead forearm aims that axis forward in the guard.
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.78, 0.014), steel);
+    bar.position.y = -0.52;
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.78, 0.05), steel);
+    edge.position.y = -0.52;
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.02, 0.045), goldMat);
+    guard.position.y = -0.12;
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.02, 0.13, 8), gripMat);
+    grip.position.y = -0.04;
+    const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.028, 8, 6), goldMat);
+    pommel.position.y = 0.04;
+    g.add(bar, edge, guard, grip, pommel);
+    g.visible = false;
+    return g;
+  }
+  function makePop() {
+    const g = new THREE.Group();
+    // Long axis along local -Z, which is the direction Object3D.lookAt aims.
+    const metal = new THREE.MeshStandardMaterial({ color: 0x4a4a52, metalness: 0.72, roughness: 0.28 });
+    const gripMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1c, roughness: 0.8 });
+    const slide = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.075, 0.26), metal);
+    slide.position.z = -0.05;
+    const tube = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.026, 0.12), metal);
+    tube.position.z = -0.22;
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.12, 0.055), gripMat);
+    grip.position.set(0, -0.09, 0.03);
+    grip.rotation.x = -0.22;
+    const sight = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.02, 0.02), new THREE.MeshBasicMaterial({ color: 0xffb24a }));
+    sight.position.set(0, 0.05, -0.26);
+    g.add(slide, tube, grip, sight);
+    g.scale.setScalar(1.28);
+    g.visible = false;
+    return g;
+  }
+  function BloodField(scene) {
+    this.canvas = document.createElement('canvas');
+    this.canvas.width = this.canvas.height = 512;
+    this.g = this.canvas.getContext('2d');
+    this.tex = new THREE.CanvasTexture(this.canvas);
+    this.mesh = new THREE.Mesh(
+      new THREE.CircleGeometry(4.55, 40),
+      new THREE.MeshBasicMaterial({ map: this.tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
+    );
+    this.mesh.rotation.x = -Math.PI / 2;
+    this.mesh.position.y = 0.045;
+    this.mesh.visible = false;
+    this.mesh.renderOrder = 1;
+    scene.add(this.mesh);
+    const geo = new THREE.SphereGeometry(0.04, 6, 5);
+    const mat = new THREE.MeshBasicMaterial({ color: 0x8a1014 });
+    this.drops = [];
+    for (let i = 0; i < 140; i++) {
+      const m = new THREE.Mesh(geo, mat);
+      m.visible = false;
+      m.castShadow = false;
+      scene.add(m);
+      this.drops.push({ m, v: new THREE.Vector3(), life: 0 });
+    }
+    this.on = false;
+  }
+  BloodField.prototype.stamp = function (x, z, size) {
+    const u = (x / 9.1 + 0.5) * 512;
+    const v = (z / 9.1 + 0.5) * 512;
+    const rad = 8 + size * 16;
+    const g = this.g;
+    const grd = g.createRadialGradient(u, v, 0, u, v, rad);
+    grd.addColorStop(0, 'rgba(110, 6, 10, 0.9)');
+    grd.addColorStop(0.55, 'rgba(80, 4, 8, 0.5)');
+    grd.addColorStop(1, 'rgba(80, 4, 8, 0)');
+    g.fillStyle = grd;
+    g.beginPath();
+    g.arc(u, v, rad, 0, Math.PI * 2);
+    g.fill();
+    this.tex.needsUpdate = true;
+    this.mesh.visible = true;
+  };
+  BloodField.prototype.explode = function (origin) {
+    if (!origin) return;
+    this.mesh.visible = true;
+    this.stamp(origin.x, origin.z, 6);
+    for (let i = 0; i < 28; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const rad = 0.15 + Math.random() * 1.8;
+      this.stamp(origin.x + Math.cos(ang) * rad, origin.z + Math.sin(ang) * rad, 1.4 + Math.random() * 2.2);
+    }
+    for (let i = 0; i < this.drops.length; i++) {
+      const d = this.drops[i];
+      d.life = 0.7 + Math.random() * 0.8;
+      d.m.visible = true;
+      d.m.position.copy(origin);
+      const sc = 1.6 + Math.random() * 3.4;
+      d.m.scale.setScalar(sc);
+      const ang = Math.random() * Math.PI * 2;
+      const sp = 2.4 + Math.random() * 7;
+      d.v.set(Math.cos(ang) * sp, 2.2 + Math.random() * 6.5, Math.sin(ang) * sp);
+    }
+  };
+  BloodField.prototype.burst = function (origin, power) {
+    if (!this.on || !origin) return;
+    const pwr = power < 0.3 ? 0.3 : power > 1.4 ? 1.4 : power;
+    const n = 12 + Math.round(pwr * 20);
+    let spawned = 0;
+    for (let i = 0; i < this.drops.length && spawned < n; i++) {
+      const d = this.drops[i];
+      if (d.life > 0) continue;
+      d.life = 0.55 + Math.random() * 0.55;
+      d.m.visible = true;
+      d.m.scale.setScalar(1);
+      d.m.position.copy(origin);
+      const ang = Math.random() * Math.PI * 2;
+      const sp = 1.1 + pwr * 3.2 * Math.random();
+      d.v.set(Math.cos(ang) * sp, 1.5 + Math.random() * 2.6 * pwr, Math.sin(ang) * sp);
+      spawned++;
+    }
+    const stains = 5 + Math.round(pwr * 8);
+    for (let i = 0; i < stains; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const rad = Math.random() * (0.45 + pwr);
+      this.stamp(origin.x + Math.cos(ang) * rad, origin.z + Math.sin(ang) * rad, 0.45 + Math.random() * pwr);
+    }
+  };
+  BloodField.prototype.step = function (dt) {
+    for (let i = 0; i < this.drops.length; i++) {
+      const d = this.drops[i];
+      if (d.life <= 0) continue;
+      d.life -= dt;
+      d.v.y -= 10 * dt;
+      d.m.position.x += d.v.x * dt;
+      d.m.position.y += d.v.y * dt;
+      d.m.position.z += d.v.z * dt;
+      if (d.m.position.y <= 0.05 || d.life <= 0) {
+        if (d.m.position.y <= 0.35) this.stamp(d.m.position.x, d.m.position.z, 0.55 + Math.random() * 0.7);
+        d.life = 0;
+        d.m.visible = false;
+      }
+    }
+  };
+  BloodField.prototype.clear = function () {
+    this.g.clearRect(0, 0, 512, 512);
+    this.tex.needsUpdate = true;
+    this.mesh.visible = false;
+    for (let i = 0; i < this.drops.length; i++) { this.drops[i].life = 0; this.drops[i].m.visible = false; }
+  };
+
   class FighterModel {
     constructor(scene, color, skin, idx) {
       this.idx = idx;
@@ -341,7 +490,7 @@
         addMesh(foot, new THREE.SphereGeometry(FW * 0.9, 12, 10), legMat, fo(fp[0], fp[1], fp[2] - FL * 0.95), [1.0, 0.8, 0.7]);     // heel
         addMesh(foot, new THREE.BoxGeometry(FW * 2.05, 0.008, FL * 2.05), bandMat, fo(fp[0], fp[1] - FHh, fp[2] - FL * 0.02));      // sole
       }
-      // blood: a cut over the eye, a bloody nose/mouth, and a smear on the chest (shown as damage climbs)
+      // a cut over the eye, a marked nose and mouth, and a smear on the chest (shown as damage climbs)
       const bloodMat = new THREE.MeshStandardMaterial({ color: 0x8a0f12, roughness: 0.35, transparent: true, opacity: 0 });
       this.bloodMat = bloodMat;
       const cut = addMesh(head, new THREE.BoxGeometry(0.05, 0.016, 0.02), bloodMat, [0.05, 0.062, R.headR * 0.78]); cut.rotation.z = 0.3; cut.castShadow = false;
@@ -380,9 +529,28 @@
       this._dmgC = new THREE.Color(); this._red = new THREE.Color(0.75, 0.25, 0.22); this._bruise = new THREE.Color(0.38, 0.22, 0.42);
       this._eul = new THREE.Euler(); this._qHip = new THREE.Quaternion(); this._yAxis = new THREE.Vector3(0, 1, 0);
       this._tipArr = [0, 0, 0];
+      this.prop = makeProp();
+      // Lead hand. The long axis is the one that points forward in the orthodox guard.
+      this.prop.position.set(0, RIG.fistY, 0);
+      this.prop.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), new THREE.Vector3(-0.091, -0.597, -0.797).normalize());
+      this.segs.lForearm.add(this.prop);
+      this.pop = makePop();
+      // It runs out past the fist (forearm -Y), so a lead punch points it forward.
+      this.pop.position.set(0.045, RIG.fistY - 0.02, 0.02);
+      this.pop.rotation.x = -Math.PI / 2;
+      this.segs.lForearm.add(this.pop);
+      this.pocket = false;
+    }
+
+    carry(f) {
+      const pocket = !!(f && f.pocket);
+      const edge = !!(f && f.edge) && !pocket;
+      if (this.pop) this.pop.visible = pocket;
+      if (this.prop) this.prop.visible = edge;
     }
 
     dispose() {
+      if (this.pop && this.pop.parent) this.pop.parent.remove(this.pop);
       for (const n in this.segs) this.scene.remove(this.segs[n]);
       this.scene.remove(this.root); this.scene.remove(this.blob);
     }
@@ -790,6 +958,16 @@
       this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
       this.renderer.toneMappingExposure = 1.05;
       this.scene = new THREE.Scene();
+      this.blood = new BloodField(this.scene);
+      this.stain = false;
+      this.tracer = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 1), new THREE.MeshBasicMaterial({ color: 0xffe28a }));
+      this.tracer.visible = false;
+      this.tracer.frustumCulled = false;
+      this.scene.add(this.tracer);
+      this.spark = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), new THREE.MeshBasicMaterial({ color: 0xfff1c4 }));
+      this.spark.visible = false;
+      this.scene.add(this.spark);
+      this._line = null;
       this.legacy = true;
       this._legacyColor = new THREE.Color(0x07070a);
       this._legacyFog = new THREE.Fog(0x07070a, 18, 42);
@@ -848,6 +1026,29 @@
       for (const m of this.models) m.dispose();
       this.models = S.f.map((f, i) => new FighterModel(this.scene, f.color, f.skin, i));
       this.lastGround = false;
+      if (this.blood) this.blood.clear();
+    }
+
+    setMarks(on) {
+      this.stain = !!on;
+      if (this.blood) {
+        this.blood.on = this.stain;
+        if (!this.stain) this.blood.clear();
+      }
+    }
+
+    showPop(i, from, to) {
+      const m = this.models[i];
+      if (!m || !m.pop) return;
+      if (m.prop) m.prop.visible = false;
+      if (m.pop) m.pop.visible = true;
+      if (!from || !to) return;
+      m.segs.lForearm.updateMatrixWorld(true);
+      const origin = from ? new THREE.Vector3(from[0], from[1], from[2]) : m.pop.localToWorld(new THREE.Vector3(0, 0.02, -0.42));
+      const end = to ? new THREE.Vector3(to[0], to[1], to[2]) : origin.clone().add(new THREE.Vector3(0, 0, 1));
+      this._line = { from: origin, to: end, t: 0, dur: 0.18 };
+      this.spark.position.copy(origin);
+      this.spark.visible = true;
     }
 
     impact(pos, big, color) {
@@ -872,17 +1073,24 @@
         const victim = this.models[ev.j];
         const p = ev.at ? new THREE.Vector3(ev.at[0], ev.at[1], ev.at[2])
           : ev.part === 'head' ? victim.headWorld(this._tmp.clone()) : ev.part === 'legs' ? new THREE.Vector3(victim.px, 0.5, victim.pz) : victim.torsoWorld(this._tmp.clone());
-        this.impact(p, ev.big || ev.rocked, ev.rocked ? 0xff5533 : ev.jammed ? 0xaaaaaa : ev.momentum ? 0xffb347 : 0xffe9b0);
+        this.impact(p, ev.big || ev.rocked, ev.edge ? 0xf4f7ff : ev.rocked ? 0xff5533 : ev.jammed ? 0xaaaaaa : ev.momentum ? 0xffb347 : 0xffe9b0);
         victim.flash = ev.rocked ? 1 : 0.5;
+        if (ev.pop && this.blood) this.blood.explode(p);
+        else if (this.stain && this.blood && (ev.big || ev.rocked)) {
+          const power = Math.max(0.45, Math.min(1.35, (ev.dmg || 4) / 7));
+          this.blood.burst(p, power);
+        }
         let power = clamp((ev.dmg || (ev.big ? 4 : 1.6)) / 7.5, 0.28, 1);
         if (ev.rocked) power = Math.max(power, 0.92);
         else if (ev.big) power = Math.max(power, 0.62);
         if (ev.jammed) power *= 0.4;
         this._voidImpact(p, power);
+      } else if (ev.k === 'line') {
+        this.showPop(ev.i, ev.from, ev.to);
       } else if (ev.k === 'block') {
         const victim = this.models[ev.j];
         const p = ev.at ? new THREE.Vector3(ev.at[0], ev.at[1], ev.at[2]) : victim.headWorld(this._tmp.clone()).add(new THREE.Vector3(0, -0.1, 0));
-        this.impact(p, false, 0x88aaff);
+        this.impact(p, !!ev.parry, ev.parry ? 0xf0d060 : 0x88aaff);
         this._voidImpact(p, 0.22);
       } else if (ev.k === 'kd' || ev.k === 'td' || ev.k === 'sweep') {
         this.shake = 1;
@@ -899,6 +1107,20 @@
     update(S, dt, inputs) {
       if (this.musicBg) this.musicBg.step();
       this.time += dt;
+      if (this.blood) this.blood.step(dt);
+      if (this._line) {
+        this._line.t += dt;
+        const u = this._line.t / this._line.dur;
+        if (u >= 1) { this.tracer.visible = false; this.spark.visible = false; this._line = null; }
+        else {
+          const a = this._line.from, b = this._line.to;
+          this.tracer.visible = true;
+          this.tracer.position.copy(a).lerp(b, 0.5);
+          this.tracer.lookAt(b);
+          this.tracer.scale.set(1, 1, Math.max(0.2, a.distanceTo(b)));
+          this.spark.visible = u < 0.4;
+        }
+      }
       if (!this.models.length) return;
       const F = S.f;
       // ground axis: freeze the facing when ground fight starts
@@ -909,7 +1131,11 @@
         this.groundAxis.set(Math.sin(mt.yaw), 0, Math.cos(mt.yaw)).normalize();
       }
       this.lastGround = !!S.ground;
-      for (let i = 0; i < 2; i++) { this.models[i].inputHint = inputs ? inputs[i] : 0; this.models[i].update(F[i], S, F[1 - i], dt, this.time, this.groundAxis, this.posLerp); }
+      for (let i = 0; i < 2; i++) {
+        this.models[i].inputHint = inputs ? inputs[i] : 0;
+        this.models[i].update(F[i], S, F[1 - i], dt, this.time, this.groundAxis, this.posLerp);
+        this.models[i].carry(F[i]);
+      }
 
       // fx
       for (let i = this.fx.length - 1; i >= 0; i--) {
