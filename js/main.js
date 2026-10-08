@@ -5,7 +5,6 @@
   'use strict';
   const { IN, Sim, ROSTER, describe, LIMBS, LIMB_NAME, MODS, HAND_KINDS, LEG_KINDS, KIND_LABEL, DEFAULT_MOVESET, normalizeMoveset, POS_NAME, MOVES, SUBS_BY, BOTTOM_CAN_STRIKE, KD } = window.MMASim;
   const { CpuBrain } = window.MMAAI;
-  const NeuralBrain = window.MMABrain && window.MMABrain.NeuralBrain;
   const { Renderer } = window.MMARender;
   const { Net } = window.MMANet;
   const { Audio } = window.MMAAudio;
@@ -70,50 +69,15 @@
   const App = {
     mode: null, net: null, sim: null, renderer: null, audio: new Audio(), brain: null,
     myIdx: 0, held: 0, pressed: 0, remote: { h: 0, p: 0 },
-    lobby: { picks: ['striker', 'wrestler'], names: ['', ''], ready: [false, false], settings: { rounds: 3, len: 180, diff: 0.6 }, cpuPick: 'random', movesets: [null, null], brains: ['cpu', 'cpu'] },
+    lobby: { picks: ['striker', 'wrestler'], names: ['', ''], ready: [false, false], settings: { rounds: 3, len: 180, diff: 0.6 }, cpuPick: 'random', movesets: [null, null] },
     optionsOpen: false, paused: false,
     state: null, playing: false, lastSnap: 0, lastInputSend: 0, evQueue: [], rematch: [false, false],
     feedLines: [], hintsHidden: false
   };
 
-  // practice (you vs a brain) and watch (brain vs brain) both run the sim locally with no network
+  // practice (you vs the CPU) and watch (CPU vs CPU) both run the sim locally with no network
   const isLocal = () => App.mode === 'practice' || App.mode === 'watch' || App.mode === 'career';
 
-  // ============================================================
-  //  Brains: the scripted CPU (js/ai.js) or an evolved neural brain (js/brain.js) from brains/index.json
-  // ============================================================
-  const Brains = { index: null, genomes: {}, loading: null };
-  function loadBrainIndex() {
-    if (Brains.loading) return Brains.loading;
-    Brains.loading = fetch('brains/index.json', { cache: 'no-cache' })
-      .then(r => r.ok ? r.json() : { brains: [] }).catch(() => ({ brains: [] }))
-      .then(ix => { Brains.index = (ix && ix.brains || []).slice().sort((a, b) => a.gen - b.gen); if (isLocal()) refreshLobby(); return Brains.index; });
-    return Brains.loading;
-  }
-  const brainEntry = (id) => (Brains.index || []).find(b => b.file === id);
-  function brainLabel(id) {
-    if (id === 'cpu') return 'Scripted CPU';
-    const e = brainEntry(id); return e ? e.name + ' \u00b7 ' + Math.round(e.winRate * 100) + '% vs CPU' : id;
-  }
-  function brainShort(id) { if (id === 'cpu') return 'CPU'; const e = brainEntry(id); return e ? e.name.toUpperCase() : 'AI'; }
-  function ensureGenome(id) {
-    if (id === 'cpu' || !NeuralBrain) return Promise.resolve(null);
-    if (Brains.genomes[id]) return Promise.resolve(Brains.genomes[id]);
-    return fetch('brains/' + id, { cache: 'no-cache' }).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-      .then(g => (Brains.genomes[id] = g))
-      .catch(e => { toast('Could not load ' + brainLabel(id) + ' — using the scripted CPU.', 5000); console.error(e); return null; });
-  }
-  function makeBrain(idx, id, diff) {
-    if (id !== 'cpu' && NeuralBrain && Brains.genomes[id]) return new NeuralBrain(idx, Brains.genomes[id]);
-    return new CpuBrain(idx, diff);
-  }
-  function brainSelect(id, sel) {
-    const list = Brains.index || [];
-    let h = '<select id="' + id + '"><option value="cpu"' + (sel === 'cpu' ? ' selected' : '') + '>Scripted CPU</option>';
-    for (const b of list) h += '<option value="' + b.file + '"' + (sel === b.file ? ' selected' : '') + '>' + brainLabel(b.file) + '</option>';
-    if (!list.length) h += '<option disabled>' + (Brains.index ? 'no evolved brains yet (run the training action)' : 'loading evolved brains\u2026') + '</option>';
-    return h + '</select>';
-  }
   function fighterSelect(id, sel, random) {
     return '<select id="' + id + '">' + (random ? '<option value="random"' + (sel === 'random' ? ' selected' : '') + '>Random</option>' : '') +
       Object.keys(ROSTER).map(k => '<option value="' + k + '"' + (sel === k ? ' selected' : '') + '>' + ROSTER[k].name + ' (' + ROSTER[k].style + ')</option>').join('') + '</select>';
@@ -171,7 +135,7 @@
     const st = $('#lobbyStatus');
     const rules = L.settings.grappling === false ? ' · STRIKING ONLY' : '';
     if (App.mode === 'practice') { st.textContent = 'Pick your fighter, then hit READY.' + rules; }
-    else if (App.mode === 'watch') { st.textContent = 'Pick the red corner\'s fighter above, choose a brain for each corner, then hit READY to watch.' + rules; }
+    else if (App.mode === 'watch') { st.textContent = 'Pick the red corner\'s fighter above and the blue corner\'s below, then hit READY to watch.' + rules; }
     else if (App.mode === 'host') {
       st.textContent = (App.net && App.net.connected ? (L.ready[opp] ? 'Opponent is READY.' : 'Opponent connected — picking a fighter...') : 'Share the room code. Waiting for an opponent to join...') + rules;
     } else {
@@ -179,18 +143,15 @@
     }
     const op = $('#oppPick');
     if (isLocal()) {
-      const bp = (i) => { const el = $('#brainPick' + i); if (el) el.onchange = (e) => { L.brains[i] = e.target.value; ensureGenome(e.target.value); refreshLobby(); }; };
       if (App.mode === 'practice') {
-        op.innerHTML = '<div class="pick-row">CPU opponent: ' + fighterSelect('cpuPick', L.cpuPick, true) + ' brain: ' + brainSelect('brainPick1', L.brains[1]) + '</div>' +
-          '<div class="pick-note">' + (L.brains[1] === 'cpu' ? 'The scripted CPU plays at the CPU level set above.' : 'An evolved brain plays the way self-play taught it; the CPU level does not apply.') + '</div>';
+        op.innerHTML = '<div class="pick-row">CPU opponent: ' + fighterSelect('cpuPick', L.cpuPick, true) + '</div>' +
+          '<div class="pick-note">The CPU plays at the CPU level set above.</div>';
       } else {
-        op.innerHTML = '<div class="pick-row"><span class="corner red">RED</span> ' + ROSTER[L.picks[0]].name + ' brain: ' + brainSelect('brainPick0', L.brains[0]) + '</div>' +
-          '<div class="pick-row"><span class="corner blue">BLUE</span> ' + fighterSelect('cpuPick', L.cpuPick, true) + ' brain: ' + brainSelect('brainPick1', L.brains[1]) + '</div>' +
-          '<div class="pick-note">Scripted CPU plays at the CPU level above. Evolved brains are checkpoints from self-play training (win rate is against the scripted CPU).</div>';
-        bp(0);
+        op.innerHTML = '<div class="pick-row"><span class="corner red">RED</span> ' + ROSTER[L.picks[0]].name + '</div>' +
+          '<div class="pick-row"><span class="corner blue">BLUE</span> ' + fighterSelect('cpuPick', L.cpuPick, true) + '</div>' +
+          '<div class="pick-note">Both corners are the CPU, playing at the CPU level above.</div>';
       }
       $('#cpuPick').onchange = (e) => { App.lobby.cpuPick = e.target.value; };
-      bp(1);
     } else {
       const on = L.names[opp] || (opp === 0 ? 'Host' : 'Guest');
       op.textContent = App.net && App.net.connected ? on + ' picked ' + ROSTER[L.picks[opp]].name + (L.ready[opp] ? ' ✓' : '') : '';
@@ -221,7 +182,6 @@
     App.mode = mode; App.myIdx = mode === 'guest' ? 1 : 0;
     App.lobby.ready = [false, false]; App.rematch = [false, false];
     buildRoster(); screen('lobby'); refreshLobby();
-    if (isLocal()) loadBrainIndex();
   }
 
   function startHost() {
@@ -296,16 +256,14 @@
     const L = App.lobby;
     let p1 = L.picks[1];
     if (isLocal()) { p1 = L.cpuPick === 'random' ? Object.keys(ROSTER)[Math.floor(Math.random() * 4)] : L.cpuPick; }
-    const tag = (i) => ' (' + (L.brains[i] === 'cpu' ? 'CPU' : brainEntry(L.brains[i]) ? brainEntry(L.brains[i]).name : 'AI') + ')';
     const players = [
-      { fighter: L.picks[0], name: App.mode === 'watch' ? ROSTER[L.picks[0]].name + tag(0) : (L.names[0] || myName() || ROSTER[L.picks[0]].name), moveset: App.mode === 'watch' ? DEFAULT_MOVESET : Controls.moveset },
-      { fighter: p1, name: isLocal() ? ROSTER[p1].name + tag(1) : (L.names[1] || ROSTER[p1].name), moveset: isLocal() ? DEFAULT_MOVESET : (L.movesets[1] || DEFAULT_MOVESET) }
+      { fighter: L.picks[0], name: App.mode === 'watch' ? ROSTER[L.picks[0]].name + ' (CPU)' : (L.names[0] || myName() || ROSTER[L.picks[0]].name), moveset: App.mode === 'watch' ? DEFAULT_MOVESET : Controls.moveset },
+      { fighter: p1, name: isLocal() ? ROSTER[p1].name + ' (CPU)' : (L.names[1] || ROSTER[p1].name), moveset: isLocal() ? DEFAULT_MOVESET : (L.movesets[1] || DEFAULT_MOVESET) }
     ];
     // same archetype -> alternate shorts colour so they're distinguishable
     if (players[0].fighter === players[1].fighter) players[1].color = 0x8e44ad;
     const msg = { t: 'start', seed: (Math.random() * 1e9) | 0, players, settings: { rounds: L.settings.rounds, len: L.settings.len, grappling: L.settings.grappling !== false } };
     if (App.mode === 'host') App.net.send(msg);
-    if (isLocal()) { Promise.all([ensureGenome(L.brains[0]), ensureGenome(L.brains[1])]).then(() => beginFight(msg)); return; }
     beginFight(msg);
   }
 
@@ -334,9 +292,9 @@
       App.sim = new Sim({ seed: msg.seed, rounds: msg.settings.rounds, roundLen: msg.settings.len, players: msg.players, grappling: msg.settings.grappling !== false });
       App.state = App.sim.state;
       const diff = App.lobby.settings.diff;
-      App.brain = isLocal() ? makeBrain(1, App.lobby.brains[1], diff) : null;
-      // watch mode: a brain drives the red corner too. ?auto=1 : let the CPU drive your fighter in practice (handy for tuning)
-      App.autoPilot = App.mode === 'watch' ? makeBrain(0, App.lobby.brains[0], diff)
+      App.brain = isLocal() ? new CpuBrain(1, diff) : null;
+      // watch mode: the CPU drives the red corner too. ?auto=1 : let the CPU drive your fighter in practice (handy for tuning)
+      App.autoPilot = App.mode === 'watch' ? new CpuBrain(0, diff)
         : App.mode === 'practice' && /[?&]auto=1/.test(location.search) ? new CpuBrain(0, diff) : null;
     } else {
       // placeholder state until the first snapshot arrives
@@ -348,8 +306,8 @@
     R.posLerp = isHost ? 18 : 10;
     App.feedLines = []; $('#feed').innerHTML = '';
     $('#fp0 .nm').textContent = App.state.f[0].name; $('#fp1 .nm').textContent = App.state.f[1].name;
-    $('#fp0 .tag').textContent = App.mode === 'watch' ? brainShort(App.lobby.brains[0]) : App.myIdx === 0 ? 'YOU' : 'P1';
-    $('#fp1 .tag').textContent = App.myIdx === 1 ? 'YOU' : App.mode === 'career' ? 'OPP' : (isLocal() ? brainShort(App.lobby.brains[1]) : 'P2');
+    $('#fp0 .tag').textContent = App.mode === 'watch' ? 'CPU' : App.myIdx === 0 ? 'YOU' : 'P1';
+    $('#fp1 .tag').textContent = App.myIdx === 1 ? 'YOU' : App.mode === 'career' ? 'OPP' : (isLocal() ? 'CPU' : 'P2');
     screen(null);
     $('#controlsHint').style.display = App.mode === 'watch' || App.hintsHidden ? 'none' : '';
     App.playing = true;
@@ -963,7 +921,7 @@
     App.audio.init();
     const setup = Career.fightSetup(C);
     App.mode = 'career'; App.myIdx = 0;
-    App.lobby.settings.diff = setup.diff; App.lobby.brains = ['cpu', 'cpu']; App.lobby.ready = [false, false];
+    App.lobby.settings.diff = setup.diff; App.lobby.ready = [false, false];
     setup.players[0].moveset = Controls.moveset; setup.players[1].moveset = DEFAULT_MOVESET;
     App.careerApplied = false;
     beginFight({ t: 'start', seed: setup.seed, players: setup.players, settings: setup.settings });

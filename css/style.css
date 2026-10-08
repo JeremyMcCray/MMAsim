@@ -200,7 +200,7 @@ table td:first-child, table th:first-child { text-align: left; color: var(--mute
 .seq-row.flash-ok .seq-keys span { border-color: #52d273; }
 .seq-row.flash-bad .seq-keys span { border-color: var(--red); background: rgba(226,59,59,.3); }
 
-/* lobby: brain / opponent pickers (practice and AI vs AI) */
+/* lobby: opponent pickers (practice and AI vs AI) */
 .opp-pick .pick-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
 .opp-pick .pick-row select { max-width: 260px; }
 .opp-pick .pick-note { font-size: 12px; opacity: .7; margin-top: 6px; }
