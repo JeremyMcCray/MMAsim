@@ -307,7 +307,7 @@
   //  Fight lifecycle
   // ============================================================
   function ensureRenderer() {
-    if (!App.renderer) App.renderer = new Renderer($('#gl'));
+    if (!App.renderer) App.renderer = new Renderer($('#gl'), App.audio);
     return App.renderer;
   }
 
@@ -575,7 +575,11 @@
   }
   function resetControls() {
     Controls.binds = defaultBinds(); Controls.moveset = normalizeMoveset(DEFAULT_MOVESET);
-    saveControls(); buildOptions(); updateHint(); toast('Controls reset to defaults', 1500);
+    saveControls();
+    if (App.setMusicParticles) App.setMusicParticles(true);
+    if (App.setImpactParticles) App.setImpactParticles(true);
+    if (App.setBackground) App.setBackground('legacy');
+    buildOptions(); updateHint(); toast('Options reset to defaults', 1500);
   }
   function updateHint() {
     const B = id => '<b>' + keyName(Controls.binds[id][0]) + '</b>';
@@ -909,6 +913,79 @@
     const syncMute = () => { for (const box of boxes) box.checked = App.audio.musicMuted; };
     syncMute();
     for (const box of boxes) box.addEventListener('change', () => { App.audio.setMusicMuted(box.checked); syncMute(); });
+  })();
+  (function bindBackground() {
+    const bg = window.MMAMusicBg;
+    const box = $('#bgSwatches');
+    const preview = $('#bgPreview');
+    const menuBtn = $('#bgColorBtn');
+    const menuSub = $('#bgColorSub');
+    const menuName = $('#bgColorName');
+    const musicBox = $('#bgMusicFx');
+    const impactBox = $('#bgImpactFx');
+    if (!bg || !box) return;
+    box.innerHTML = bg.PRESETS.map(p =>
+      '<button type="button" class="bg-swatch" role="radio" data-id="' + p.id + '" style="--swatch:' + p.color + '" aria-checked="false"><i></i>' + p.name + '</button>'
+    ).join('');
+    const chip = (color, label) => '<span><i style="background:' + bg.cssColor(color) + '"></i>' + label + '</span>';
+    let currentId = bg.DEFAULT_PRESET;
+    function syncParticleControls() {
+      const legacy = currentId === 'legacy';
+      if (musicBox) {
+        musicBox.disabled = legacy;
+        musicBox.checked = legacy ? false : bg.loadParticles();
+      }
+      if (impactBox) {
+        impactBox.disabled = legacy;
+        impactBox.checked = legacy ? false : bg.loadImpact();
+      }
+    }
+    function applyBackground(id) {
+      const p = bg.PRESETS.find(x => x.id === id) || bg.PRESETS.find(x => x.id === bg.DEFAULT_PRESET) || bg.PRESETS[0];
+      currentId = p.id;
+      if (App.renderer) App.renderer.setBackdrop(p.id);
+      else {
+        bg.savePresetId(p.id);
+        document.documentElement.style.setProperty('--bg', p.id === 'legacy' ? bg.LEGACY_COLOR : p.color);
+      }
+      if (preview) {
+        if (p.id === 'legacy') preview.innerHTML = '<span>Original arena</span>';
+        else {
+          const pal = bg.paletteFrom(p.color);
+          preview.innerHTML = chip(pal.bg, 'Base') + chip(pal.neon, 'Bass') + chip(pal.gold, 'Mids') + chip(pal.silk, 'Highs');
+        }
+      }
+      if (menuName) menuName.textContent = p.name;
+      box.querySelectorAll('.bg-swatch').forEach(btn => {
+        const on = btn.dataset.id === p.id;
+        btn.classList.toggle('on', on);
+        btn.setAttribute('aria-checked', on ? 'true' : 'false');
+      });
+      syncParticleControls();
+    }
+    box.querySelectorAll('.bg-swatch').forEach(btn => { btn.onclick = () => applyBackground(btn.dataset.id); });
+    if (menuBtn && menuSub) {
+      menuBtn.onclick = () => {
+        const open = !menuSub.classList.toggle('hidden');
+        menuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      };
+    }
+    function applyMusicParticles(on) {
+      if (App.renderer && App.renderer.musicBg) App.renderer.musicBg.setMusicParticles(on);
+      else bg.saveParticles(on);
+      syncParticleControls();
+    }
+    function applyImpactParticles(on) {
+      if (App.renderer && App.renderer.musicBg) App.renderer.musicBg.setImpactParticles(on);
+      else bg.saveImpact(on);
+      syncParticleControls();
+    }
+    if (musicBox) musicBox.addEventListener('change', () => { if (!musicBox.disabled) applyMusicParticles(musicBox.checked); });
+    if (impactBox) impactBox.addEventListener('change', () => { if (!impactBox.disabled) applyImpactParticles(impactBox.checked); });
+    App.setBackground = applyBackground;
+    App.setMusicParticles = applyMusicParticles;
+    App.setImpactParticles = applyImpactParticles;
+    applyBackground(bg.loadPresetId());
   })();
   updateHint();
   $('#btnBack').onclick = () => { if (App.net) { App.net.destroy(); App.net = null; } App.mode = null; screen('menu'); };
