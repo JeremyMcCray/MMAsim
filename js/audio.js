@@ -70,10 +70,22 @@
       try { localStorage.setItem('cr_music', String(this.musicVol)); } catch (_) {}
     }
     play(which) {
+      if (!which || which === 'menu') { this.stop(); return; }
       this.wanted = which;
       this.init();
       this._ensureTracks();
       this._startWanted();
+    }
+    stop() {
+      this.wanted = null;
+      if (!this.tracks) return;
+      for (const name in this.tracks) {
+        const el = this.tracks[name];
+        if (!el) continue;
+        el.pause();
+        try { el.currentTime = 0; } catch (_) {}
+      }
+      this.current = null;
     }
     // Band levels in 0..1, synced to the playing element. The shipped envelope
     // follows currentTime, so a page opened from disk still reacts. Live FFT
