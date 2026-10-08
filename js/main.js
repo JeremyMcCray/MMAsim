@@ -30,8 +30,10 @@
     { id: 'mod3', label: 'Modifier 3 (hold)', bit: IN.MOD3, def: ['KeyR', ''] },
     { id: 'block', label: 'Block / sprawl / cover (hold) · push (tap twice)', bit: IN.BLOCK, def: ['KeyL', 'Semicolon'] },
     { id: 'grapple', label: 'Takedown / submission / sweep', bit: IN.GRAPPLE, def: ['Space', ''] },
-    { id: 'dodge', label: 'Slip / stand up', bit: IN.DODGE, def: ['ShiftLeft', 'ShiftRight'] }
+    { id: 'dodge', label: 'Slip / stand up', bit: IN.DODGE, def: ['ShiftLeft', 'ShiftRight'] },
+    { id: 'interact', label: 'Use (gym: computer, whiteboard, desk)', bit: 1 << 14, def: ['Enter', 'KeyF'] }
   ];
+  const IN_INTERACT = 1 << 14, SIM_MASK = 0x3fff; // the interact bit is ours; the simulation only ever sees the bits in IN
   const Controls = { binds: {}, moveset: null, keyMap: {} };
   const KEY_NAMES = { ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Space: 'SPACE', ShiftLeft: 'L-SHIFT', ShiftRight: 'R-SHIFT', ControlLeft: 'L-CTRL', ControlRight: 'R-CTRL', AltLeft: 'L-ALT', AltRight: 'R-ALT', Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/', BracketLeft: '[', BracketRight: ']', Backslash: '\\', Minus: '-', Equal: '=', Enter: 'ENTER', Tab: 'TAB', Backspace: 'BKSP', CapsLock: 'CAPS', Backquote: '`', NumpadEnter: 'NUM ENTER', NumpadAdd: 'NUM +', NumpadSubtract: 'NUM -', NumpadMultiply: 'NUM *', NumpadDivide: 'NUM /', NumpadDecimal: 'NUM .' };
   function keyName(code) {
@@ -125,6 +127,9 @@
     clearTimeout(toastT); toastT = setTimeout(() => hide(t), ms || 3500);
   }
   function screen(name) {
+    // leaving the walkable gym for anything but one of its own station panels tears the room down
+    if (App.gym && App.gym.active && name !== 'career') exitGym(name === null); // screen(null) = a fight is taking the scene
+    hide($('#gymHud'));
     for (const id of ['menu', 'lobby', 'end', 'career', 'careerNew']) { const el = $('#' + id); if (id === name) show(el); else hide(el); }
     if (App.optionsOpen) closeOptions();
     if (name) hide($('#hud')); else show($('#hud'));
@@ -565,7 +570,7 @@
   function openOptions() {
     App.optionsOpen = true; App.held = 0; App.pressed = 0;
     if (App.playing && isLocal()) App.paused = true;
-    $('#btnOptQuit').style.display = $('#menu').classList.contains('hidden') && $('#career').classList.contains('hidden') && $('#careerNew').classList.contains('hidden') ? '' : 'none'; // nothing to quit from on the menus
+    $('#btnOptQuit').style.display = ($('#menu').classList.contains('hidden') && $('#career').classList.contains('hidden') && $('#careerNew').classList.contains('hidden')) || (App.gym && App.gym.active) ? '' : 'none'; // nothing to quit from on the menus
     buildOptions(); show($('#options'));
   }
   function closeOptions() {
@@ -619,6 +624,13 @@
     requestAnimationFrame(loop);
     let dt = (now - last) / 1000; last = now;
     if (dt > 0.1) dt = 0.1;
+    if (App.gym && App.gym.active) {
+      // the career gym: walk, hit the bag, use the stations. Nothing moves while the options panel is up.
+      const live = !App.optionsOpen;
+      App.gym.update(dt, live ? App.held : 0, live ? App.pressed : 0, IN_INTERACT); App.pressed = 0;
+      updateGymHUD();
+      return;
+    }
     if (!App.playing || !App.state) { if (App.renderer && App.state) App.renderer.update(App.state, dt, null); return; }
 
     const isHost = App.mode !== 'guest';
@@ -626,11 +638,11 @@
     if (App.paused && isLocal()) { App.pressed = 0; App.renderer.update(App.state, 0, inputs); updateHUD(App.state, inputs); return; }
     if (isHost) {
       const sim = App.sim;
-      if (App.autoPilot) { const o = App.autoPilot.update(sim.state, dt); const watch = App.mode === 'watch'; sim.setInput(0, watch ? o.held : (o.held | App.held), watch ? o.pressed : (o.pressed | App.pressed)); App.pressed = 0; if (watch) inputs[0] = o.held; }
-      else { sim.setInput(0, App.held, App.pressed); App.pressed = 0; }
+      if (App.autoPilot) { const o = App.autoPilot.update(sim.state, dt); const watch = App.mode === 'watch'; sim.setInput(0, watch ? o.held : (o.held | (App.held & SIM_MASK)), watch ? o.pressed : (o.pressed | (App.pressed & SIM_MASK))); App.pressed = 0; if (watch) inputs[0] = o.held; }
+      else { sim.setInput(0, App.held & SIM_MASK, App.pressed & SIM_MASK); App.pressed = 0; }
       if (App.brain) { const o = App.brain.update(sim.state, dt); sim.setInput(1, o.held, o.pressed); inputs[1] = o.held; }
       else { sim.setInput(1, App.remote.h, App.remote.p); App.remote.p = 0; inputs[1] = App.remote.h; }
-      if (App.mode !== 'watch') inputs[0] = App.held;
+      if (App.mode !== 'watch') inputs[0] = App.held & SIM_MASK;
       sim.step(dt);
       const evs = sim.drainEvents();
       if (evs.length) processEvents(evs, sim.state);
@@ -646,9 +658,9 @@
       // guest: send inputs, extrapolate a little between snapshots
       if (App.net && now - App.lastInputSend >= 33) {
         App.lastInputSend = now;
-        App.net.send({ t: 'in', h: App.held, p: App.pressed }); App.pressed = 0;
+        App.net.send({ t: 'in', h: App.held & SIM_MASK, p: App.pressed & SIM_MASK }); App.pressed = 0;
       }
-      inputs[1] = App.held;
+      inputs[1] = App.held & SIM_MASK;
       const S = App.state;
       if (S.phase === 'fight') {
         S.clock = Math.max(0, S.clock - dt);
@@ -700,16 +712,102 @@
     const P = CareerUI.pick;
     CareerUI.C = Career.newCareer({ name, nick: $('#careerNick').value, base: P.base, color: P.color, skin: P.skin });
     careerSave(); CareerUI.justFought = false; CareerUI.lastTrain = null;
-    openCareer('offers');
+    openCareer();
   }
 
-  // ---- hub ----
+  // ---- hub: the gym is a room you walk around (js/gym.js); the stations in it open the panels below ----
+  const STATION_TITLE = { computer: 'THE COMPUTER · FIGHT OFFERS', computerBooked: 'THE COMPUTER · YOUR NEXT FIGHT', board: 'THE WHITEBOARD · THIS WEEK', desk: 'FRONT DESK · UPGRADES', fame: 'WALL OF FAME · HISTORY' };
   function openCareer(tab) {
     const C = careerLoad(); if (!C) { openCareerNew(); return; }
-    App.mode = null;
-    CareerUI.tab = tab || (C.booked ? 'camp' : 'offers');
     CareerUI.confirmDel = 0; $('#btnCareerDelete').textContent = 'RETIRE (DELETE SAVE)';
-    screen('career'); renderCareer();
+    enterGym();
+    if (tab) openStation(tab, { offers: 'computer', camp: 'board', gym: 'desk', history: 'fame' }[tab]);
+  }
+  function enterGym() {
+    const C = CareerUI.C; if (!C) return;
+    if (App.optionsOpen) closeOptions();
+    App.mode = 'gym'; App.held = 0; App.pressed = 0;
+    for (const id of ['menu', 'lobby', 'end', 'career', 'careerNew']) hide($('#' + id));
+    hide($('#hud'));
+    const R = ensureRenderer();
+    if (!App.gym) { App.gym = new window.MMAGym.Gym(R, App.audio); App.gym.onStation = (tab, id) => openStation(tab, id); }
+    const first = !App.gym.active;
+    if (first) R.setFighters({ f: [] }); // the menu's demo fighters leave the scene
+    App.gym.enter(C, Controls.moveset);
+    App.audio.play('menu'); App.audio.setCrowd(0);
+    refreshGymHUD(); show($('#gymHud'));
+    if (first && !C.history.length && !C._gymHint) { C._gymHint = true; toast('Walk with ' + keyName(Controls.binds.fwd[0]) + keyName(Controls.binds.left[0]) + keyName(Controls.binds.back[0]) + keyName(Controls.binds.right[0]) + '. Hit the bag with your strike keys. The computer has your fight offers.', 7000); }
+  }
+  // keepScene: a fight is about to take the scene over; otherwise put the menu's demo arena back
+  function exitGym(keepScene) {
+    if (!App.gym || !App.gym.active) return;
+    App.gym.leave(); hide($('#gymHud'));
+    if (App.mode === 'gym') App.mode = null;
+    if (!keepScene) menuScene();
+  }
+  function openStation(tab, id) {
+    const C = CareerUI.C; if (!C || !App.gym || !App.gym.active) return;
+    // once a fight is booked the computer shows the fight card (and the FIGHT button on fight week)
+    if (id === 'computer' && C.booked) { tab = 'camp'; id = 'computerBooked'; }
+    CareerUI.tab = tab; CareerUI.station = id || tab;
+    App.gym.paused = true; App.held = 0; App.pressed = 0;
+    hide($('#gymHud'));
+    renderCareer(); show($('#career'));
+    $('#career .panel').scrollTop = 0;
+  }
+  function closeStation() {
+    hide($('#career')); CareerUI.station = false;
+    if (!App.gym || !App.gym.active) return;
+    const C = CareerUI.C, before = App.gym.sig;
+    App.gym.refresh(C);
+    if (App.gym.sig !== before) toast('The gym got an upgrade — take a look around.', 3000);
+    App.gym.paused = false; App.held = 0; App.pressed = 0;
+    refreshGymHUD(); show($('#gymHud'));
+  }
+  // the gym's overlay: name / record / bank / week / popularity, the station prompt, the bag readout
+  const GymHUD = { prompt: '', bag: '', help: '' };
+  function refreshGymHUD() {
+    const C = CareerUI.C, G = App.gym; if (!C || !G) return;
+    $('#gName').innerHTML = esc(C.name) + (C.nick ? ' <span>"' + esc(C.nick) + '"</span>' : '') + (C.champion ? '<span class="belt">' + esc(Career.TOP.name) + ' CHAMPION</span>' : '');
+    $('#gSub').textContent = G.tierName(C) + ' · ' + G.totalLevel(C) + ' / ' + (Career.FACILITIES.length * Career.FACILITY_MAX) + ' upgrades · ' + Career.TIER_NAME[Career.tierFor(C.pop)] + ' level';
+    const r = C.record;
+    $('#gKpis').innerHTML = '<div class="kpi"><span>RECORD</span><b>' + r.w + '-' + r.l + (r.d ? '-' + r.d : '') + '</b></div><div class="kpi"><span>BANK</span><b>' + Career.fmtMoney(C.money) + '</b></div><div class="kpi"><span>DATE</span><b>' + Career.weekLabel(C.week) + '</b></div><div class="kpi"><span>POPULARITY</span><b>' + Math.round(C.pop) + '</b><small>' + Career.popLabel(C.pop) + '</small></div>' +
+      (C.booked ? '<div class="kpi fight"><span>' + (Career.fightReady(C) ? 'FIGHT WEEK' : 'NEXT FIGHT') + '</span><b>' + esc(C.booked.offer.opp.name) + '</b><small>' + (Career.fightReady(C) ? 'go to the computer' : C.booked.weeksLeft + ' weeks · ' + esc(C.booked.offer.orgName)) + '</small></div>' : '<div class="kpi"><span>OFFERS</span><b>' + C.offers.length + '</b><small>on the computer</small></div>');
+    const rb = $('#gResult');
+    if (CareerUI.justFought && C.lastFight) {
+      const h = C.lastFight;
+      rb.classList.remove('hidden'); rb.classList.toggle('lost', !h.won && !h.draw);
+      rb.innerHTML = '<div class="rh">' + resultWord(h) + '<small>' + esc(h.method) + (/KO|Sub/i.test(h.method) ? ' · R' + h.round + ' ' + esc(h.time) : '') + '</small></div>' +
+        '<div class="rl">vs <b>' + esc(h.opp) + '</b> at <b>' + esc(h.org) + '</b>' + (h.titleNote ? ' · <b style="color:var(--gold)">' + esc(h.titleNote) + '</b>' : '') + '<br>Paid <b>' + Career.fmtMoney(h.pay) + '</b> · popularity <b>' + (h.dPop >= 0 ? '+' : '') + h.dPop + '</b> → ' + Math.round(h.pop) + ' · took <b>' + (h.inj.head + h.inj.body + h.inj.legs) + '</b> damage into camp</div>' +
+        '<button class="ghost" id="btnGymResultOk">OK</button>';
+      $('#btnGymResultOk').onclick = () => { CareerUI.justFought = false; rb.classList.add('hidden'); };
+    } else rb.classList.add('hidden');
+    const B = id => '<b>' + keyName(Controls.binds[id][0]) + '</b>';
+    const help = B('fwd') + B('left') + B('back') + B('right') + ' walk · ' + B('lh') + ' ' + B('rh') + ' hands · ' + B('ll') + ' ' + B('rl') + ' legs (hold ' + B('mod1') + ' / ' + B('mod2') + ' / ' + B('mod3') + ' for the other strikes) · ' + B('block') + ' guard · ' + B('interact') + ' use · <b>ESC</b> options';
+    if (help !== GymHUD.help) { GymHUD.help = help; $('#gHelp').innerHTML = help; }
+  }
+  function updateGymHUD() {
+    const G = App.gym; if (!G || G.paused) return;
+    const st = G.station;
+    let prompt = '';
+    if (st && st.tab) prompt = '<b>' + keyName(Controls.binds.interact[0]) + '</b> ' + esc(G.prompt);
+    else if (st && st.id === 'bag') prompt = '<span class="muted">HEAVY BAG</span> throw strikes · hold ' + keyName(Controls.binds.block[0]) + ' to guard';
+    if (prompt !== GymHUD.prompt) { GymHUD.prompt = prompt; const el = $('#gPrompt'); el.innerHTML = prompt; el.classList.toggle('show', !!prompt); }
+    const S = G.session;
+    let bag = '';
+    if (S.hits && (st && st.id === 'bag' || G.time - (S.lastStamp || -9) < 4)) {
+      const L = S.last;
+      bag = (L ? '<div class="last' + (L.big ? ' big' : '') + '">' + esc(L.name) + ' <b>' + L.speed.toFixed(1) + ' m/s</b> <i>' + L.label + '</i></div>' : '') +
+        '<div class="tot">' + S.hits + ' hit' + (S.hits === 1 ? '' : 's') + (S.combo > 1 ? ' · <b>' + S.combo + ' combo</b>' : '') + ' · best combo ' + S.bestCombo + ' · hardest ' + S.hardest.toFixed(1) + '</div>';
+    }
+    if (bag !== GymHUD.bag) { GymHUD.bag = bag; const el = $('#gBag'); el.innerHTML = bag; el.classList.toggle('show', !!bag); }
+  }
+  function menuScene() {
+    try {
+      const R = ensureRenderer();
+      const demo = new Sim({ seed: 1, players: [{ fighter: 'striker' }, { fighter: 'wrestler' }], physics: false });
+      App.state = demo.state; R.setFighters(demo.state);
+    } catch (e) { console.error(e); }
   }
   const dangerTag = (d) => d <= -8 ? '<span class="dang easy">FAVOURED</span>' : d <= 6 ? '<span class="dang even">EVEN</span>' : d <= 16 ? '<span class="dang hard">UNDERDOG</span>' : '<span class="dang brutal">LONG SHOT</span>';
   const resultWord = (h) => h.draw ? 'DRAW' : h.won ? 'WIN' : 'LOSS';
@@ -759,6 +857,10 @@
       if (b.dataset.tab === 'camp') b.innerHTML = C.booked ? (Career.fightReady(C) ? 'FIGHT WEEK<span class="badge">!</span>' : 'CAMP') : 'TRAINING';
     });
     for (const t of ['camp', 'offers', 'gym', 'history']) $('#tab' + t[0].toUpperCase() + t.slice(1)).classList.toggle('hidden', CareerUI.tab !== t);
+    const station = !!CareerUI.station;
+    $('#cTabs').classList.toggle('hidden', station);
+    $('#cStation').classList.toggle('hidden', !station); $('#cStation').textContent = STATION_TITLE[CareerUI.station] || '';
+    $('#btnCareerGym').classList.toggle('hidden', !station);
     renderCamp(C); renderOffers(C); renderGym(C); renderHistory(C);
   }
   function trainGrid(C) {
@@ -875,6 +977,9 @@
   $('#btnCareerStart').onclick = () => startCareer();
   $('#careerName').addEventListener('keydown', (e) => { if (e.key === 'Enter') startCareer(); });
   $('#btnCareerMenu').onclick = () => { careerSave(); screen('menu'); };
+  $('#btnCareerGym').onclick = () => { careerSave(); closeStation(); };
+  $('#btnGymMenu').onclick = () => { careerSave(); screen('menu'); };
+  $('#btnGymOptions').onclick = () => openOptions();
   $('#btnCareerOptions').onclick = () => openOptions();
   $('#btnCareerDelete').onclick = () => {
     if (CareerUI.confirmDel++ < 1) { $('#btnCareerDelete').textContent = 'CLICK AGAIN TO DELETE'; setTimeout(() => { CareerUI.confirmDel = 0; $('#btnCareerDelete').textContent = 'RETIRE (DELETE SAVE)'; }, 4000); return; }
@@ -920,7 +1025,7 @@
   $('#nameInput').addEventListener('change', () => { App.lobby.names[App.myIdx] = myName(); sendPick(); refreshLobby(); });
   for (const id of ['selRounds', 'selLen', 'selGrapple']) $('#' + id).addEventListener('change', () => { readSettings(); sendPick(); refreshLobby(); });
   $('#btnMenu').onclick = () => { if (App.mode === 'career') settleCareerFight(); stopFight(); if (App.net) { App.net.destroy(); App.net = null; } App.mode = null; screen('menu'); };
-  $('#btnOptQuit').onclick = () => { closeOptions(); if (App.mode === 'career') { leaveCareerFight(); return; } stopFight(); if (App.net) { App.net.destroy(); App.net = null; } App.mode = null; screen('menu'); };
+  $('#btnOptQuit').onclick = () => { closeOptions(); if (App.mode === 'career') { leaveCareerFight(); return; } if (App.mode === 'gym') { careerSave(); screen('menu'); return; } stopFight(); if (App.net) { App.net.destroy(); App.net = null; } App.mode = null; screen('menu'); };
   $('#btnRematch').onclick = () => {
     if (App.mode === 'career') { leaveCareerFight(); return; }
     if (App.mode === 'guest') { App.net.send({ t: 'rematch' }); $('#btnRematch').textContent = 'WAITING FOR HOST…'; $('#btnRematch').disabled = true; return; }
@@ -935,11 +1040,13 @@
   window.addEventListener('mmaphys', (e) => { if (!e.detail.ok) { App.physFailed = true; toast('Physics engine failed to load: ' + (e.detail.error && e.detail.error.message), 8000); } });
 
   window.CageRules = App; // dev hook: window.CageRules.sim / .state / .renderer
+  // dev hook: advance the career gym by n 60 Hz frames with these inputs (tools/gym-test.js)
+  App.gymTick = (n, held, pressed) => { if (!App.gym || !App.gym.active) return; for (let k = 0; k < n; k++) { App.gym.update(1 / 60, held | 0, k === 0 ? (pressed | 0) : 0, IN_INTERACT); } };
   // dev hook: advance a practice fight by n sim ticks regardless of frame rate (used by tools/browser-test.js)
   App.tick = (n) => {
     const sim = App.sim; if (!sim) return;
     for (let k = 0; k < n; k++) {
-      if (App.autoPilot) { const o = App.autoPilot.update(sim.state, 1 / 60); sim.setInput(0, o.held, o.pressed); } else sim.setInput(0, App.held, App.pressed);
+      if (App.autoPilot) { const o = App.autoPilot.update(sim.state, 1 / 60); sim.setInput(0, o.held, o.pressed); } else sim.setInput(0, App.held & SIM_MASK, App.pressed & SIM_MASK);
       if (App.brain) { const o = App.brain.update(sim.state, 1 / 60); sim.setInput(1, o.held, o.pressed); }
       sim.acc = 0; sim.step(1 / 60);
       const evs = sim.drainEvents(); if (evs.length) processEvents(evs, sim.state);
@@ -948,15 +1055,11 @@
 
   // Build the arena right away so the menu has a live 3D background
   window.addEventListener('load', () => {
-    try {
-      const R = ensureRenderer();
-      const demo = new Sim({ seed: 1, players: [{ fighter: 'striker' }, { fighter: 'wrestler' }], physics: false });
-      App.state = demo.state; R.setFighters(demo.state);
-    } catch (e) { console.error(e); toast('WebGL failed to start: ' + e.message, 8000); }
+    try { menuScene(); } catch (e) { console.error(e); toast('WebGL failed to start: ' + e.message, 8000); }
   });
   // Browsers block audio until a gesture, and a rejected play() must be retried on the next one.
   function unlockMusic() {
-    const onMenu = !$('#menu').classList.contains('hidden') || !$('#lobby').classList.contains('hidden');
+    const onMenu = !$('#menu').classList.contains('hidden') || !$('#lobby').classList.contains('hidden') || (App.gym && App.gym.active);
     App.audio.play(onMenu ? 'menu' : 'fight');
   }
   window.addEventListener('pointerdown', unlockMusic);

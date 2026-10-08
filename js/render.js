@@ -797,7 +797,7 @@
       this.shake = 0;
 
       // lights
-      this.scene.add(new THREE.HemisphereLight(0x8899bb, 0x201a14, 0.55));
+      const hemi = new THREE.HemisphereLight(0x8899bb, 0x201a14, 0.55); this.scene.add(hemi);
       const key = new THREE.SpotLight(0xfff2dd, 1.6, 40, 0.55, 0.5, 1.2);
       key.position.set(4, 9, 5); key.castShadow = true; key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -0.0005; key.shadow.radius = 3;
       key.target.position.set(0, 0, 0); this.scene.add(key); this.scene.add(key.target);
@@ -809,6 +809,7 @@
       // overhead rig glow
       const rig = new THREE.Mesh(new THREE.TorusGeometry(5.2, 0.12, 8, 48), new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0xfff0d0, emissiveIntensity: 0.9 }));
       rig.rotation.x = Math.PI / 2; rig.position.y = 7.5; this.scene.add(rig);
+      this.arenaLights = [hemi, key, fill, rim, rim2, rig];
 
       this.arena = buildArena(this.scene);
       this.models = [];
@@ -825,6 +826,12 @@
       const w = this.canvas.clientWidth || window.innerWidth, h = this.canvas.clientHeight || window.innerHeight;
       this.renderer.setSize(w, h, false);
       this.camera.aspect = w / h; this.camera.updateProjectionMatrix();
+    }
+
+    // the career gym (js/gym.js) borrows the scene: hide the cage, crowd and arena lighting while it is up
+    setArenaVisible(v) {
+      this.arena.visible = v;
+      for (const l of this.arenaLights) l.visible = v;
     }
 
     setFighters(S) {

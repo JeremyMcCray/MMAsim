@@ -292,3 +292,42 @@ table.hist td.w { color: #52d273; font-family: var(--font-head); font-weight: 70
 .news { font-size: 12px; color: var(--muted); line-height: 1.5; margin-top: 10px; max-height: 180px; overflow: auto; }
 .news b { color: var(--gold); font-family: var(--font-head); letter-spacing: .1em; margin-right: 6px; }
 @media (max-width: 860px) { .career-body { grid-template-columns: 1fr; } .train-grid { grid-template-columns: 1fr 1fr; } .fight-card { grid-template-columns: 1fr; } .fight-card .side.r { text-align: left; } }
+
+/* ---------- the gym (walkable career hub) ---------- */
+#gymHud { pointer-events: none; z-index: 10; }
+#gymHud button { pointer-events: auto; font-size: 14px; padding: 7px 12px; }
+.gym-top { position: absolute; top: 14px; left: 14px; right: 14px; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.gym-id { background: rgba(8,8,12,.6); border: 1px solid rgba(255,255,255,.08); border-radius: 8px; padding: 8px 14px; }
+.gym-name { font-family: var(--font-head); font-weight: 900; font-size: 30px; letter-spacing: .06em; line-height: 1; }
+.gym-name span { color: var(--gold); font-size: 18px; font-weight: 700; }
+.gym-name .belt { display: inline-block; vertical-align: middle; font-size: 11px; letter-spacing: .2em; background: var(--gold); color: #141408; border-radius: 4px; padding: 3px 8px; margin-left: 10px; }
+.gym-sub { color: var(--muted); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; margin-top: 4px; }
+.gym-kpis { display: flex; gap: 10px; flex-wrap: wrap; }
+.gym-kpis .kpi { background: rgba(8,8,12,.6); min-width: 96px; padding: 6px 12px; }
+.gym-kpis .kpi b { font-size: 20px; }
+.gym-kpis .kpi small { display: block; color: var(--gold); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; margin-top: 1px; }
+.gym-kpis .kpi.fight { border-color: rgba(226,59,59,.6); }
+.gym-btns { display: flex; gap: 8px; }
+.gym-prompt { position: absolute; left: 50%; bottom: 120px; transform: translateX(-50%); background: rgba(8,8,12,.7); border: 1px solid rgba(224,178,58,.5); border-radius: 8px; padding: 8px 16px; font-size: 15px; color: var(--text); opacity: 0; transition: opacity .15s; white-space: nowrap; }
+.gym-prompt.show { opacity: 1; }
+.gym-prompt b { display: inline-block; font-family: var(--font-head); font-size: 14px; letter-spacing: .1em; background: var(--gold); color: #141408; border-radius: 4px; padding: 2px 8px; margin-right: 8px; }
+.gym-prompt .muted { color: var(--gold); font-family: var(--font-head); letter-spacing: .15em; font-size: 13px; margin-right: 8px; }
+.gym-bag { position: absolute; left: 14px; bottom: 56px; background: rgba(8,8,12,.6); border: 1px solid rgba(255,255,255,.08); border-radius: 8px; padding: 8px 14px; display: none; min-width: 260px; }
+.gym-bag.show { display: block; }
+.gym-bag .last { font-family: var(--font-head); font-size: 22px; font-weight: 700; letter-spacing: .04em; }
+.gym-bag .last b { color: var(--gold); margin: 0 6px; }
+.gym-bag .last i { font-style: normal; font-size: 12px; letter-spacing: .2em; color: var(--muted); }
+.gym-bag .last.big i { color: #ff5533; }
+.gym-bag .tot { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.gym-bag .tot b { color: #fff; }
+.gym-help { position: absolute; right: 14px; bottom: 12px; font-size: 12px; color: var(--muted); background: rgba(8,8,12,.55); padding: 6px 10px; border-radius: 6px; max-width: 640px; text-align: right; }
+.gym-help b { color: #fff; font-family: var(--font-head); font-size: 13px; letter-spacing: .05em; }
+.gym-result { position: absolute; left: 50%; top: 170px; transform: translateX(-50%); width: min(560px, 92vw); background: rgba(8,8,12,.82); border: 1px solid rgba(224,178,58,.5); border-radius: 10px; padding: 14px 18px; display: grid; grid-template-columns: auto 1fr auto; gap: 6px 18px; align-items: center; pointer-events: auto; }
+.gym-result.lost { border-color: rgba(226,59,59,.5); }
+.gym-result .rh { font-family: var(--font-head); font-size: 34px; font-weight: 900; letter-spacing: .05em; }
+.gym-result .rh small { display: block; font-size: 12px; color: var(--muted); letter-spacing: .15em; font-weight: 700; }
+.gym-result .rl { font-size: 13px; color: var(--muted); line-height: 1.5; }
+.gym-result .rl b { color: #fff; }
+.station-title { font-family: var(--font-head); font-weight: 700; font-size: 16px; letter-spacing: .2em; color: var(--gold); border-bottom: 1px solid rgba(255,255,255,.1); padding-bottom: 8px; margin-bottom: 12px; }
+#career.over-gym .panel { background: rgba(14,14,20,.92); }
+@media (max-width: 760px) { .gym-help { display: none; } .gym-kpis .kpi { min-width: 70px; } }

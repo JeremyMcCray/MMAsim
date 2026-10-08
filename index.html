@@ -7,7 +7,7 @@
 <meta name="description" content="Cage Rules: a 3D one-on-one mixed martial arts simulation you can play online against a friend, right in the browser.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700;900&family=Barlow:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=16">
+<link rel="stylesheet" href="css/style.css?v=17">
 </head>
 <body>
 <canvas id="gl"></canvas>
@@ -158,6 +158,7 @@
           <button data-tab="gym" class="tab">GYM</button>
           <button data-tab="history" class="tab">HISTORY</button>
         </div>
+        <div class="station-title hidden" id="cStation"></div>
         <div class="tabpage" id="tabCamp"></div>
         <div class="tabpage hidden" id="tabOffers"></div>
         <div class="tabpage hidden" id="tabGym"></div>
@@ -165,11 +166,31 @@
       </section>
     </div>
     <div class="lobby-btns">
+      <button class="big gold hidden" id="btnCareerGym">BACK TO THE GYM</button>
       <button class="ghost" id="btnCareerMenu">MAIN MENU</button>
       <button class="ghost" id="btnCareerOptions">OPTIONS</button>
       <button class="ghost danger" id="btnCareerDelete">RETIRE (DELETE SAVE)</button>
     </div>
   </div>
+</div>
+
+<!-- ===== CAREER: THE GYM (3D, walkable — js/gym.js) ===== -->
+<div id="gymHud" class="layer hidden">
+  <div class="gym-top">
+    <div class="gym-id">
+      <div class="gym-name" id="gName">—</div>
+      <div class="gym-sub" id="gSub"></div>
+    </div>
+    <div class="gym-kpis" id="gKpis"></div>
+    <div class="gym-btns">
+      <button class="ghost" id="btnGymOptions">OPTIONS</button>
+      <button class="ghost" id="btnGymMenu">MAIN MENU</button>
+    </div>
+  </div>
+  <div class="gym-result hidden" id="gResult"></div>
+  <div class="gym-prompt" id="gPrompt"></div>
+  <div class="gym-bag" id="gBag"></div>
+  <div class="gym-help" id="gHelp"></div>
 </div>
 
 <!-- ===== END ===== -->
@@ -240,11 +261,12 @@
 <script src="js/sim.js?v=16"></script>
 <script src="js/ai.js?v=12"></script>
 <script src="js/brain.js?v=12"></script>
-<script src="js/career.js?v=16"></script>
-<script src="js/render.js?v=12"></script>
+<script src="js/career.js?v=17"></script>
+<script src="js/render.js?v=17"></script>
+<script src="js/gym.js?v=17"></script>
 <script src="js/net.js?v=12"></script>
 <script src="js/audio.js?v=15"></script>
-<script src="js/main.js?v=16"></script>
+<script src="js/main.js?v=17"></script>
 <script src="lib/rapier3d-compat.js?v=12"></script>
 <script>
   // Rapier physics engine (vendored, WASM inlined, plain script so the game also runs from file://).
