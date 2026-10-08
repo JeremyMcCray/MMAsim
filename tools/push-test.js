@@ -1,12 +1,12 @@
 // Regression check for the double-tap-BLOCK push: single tap must not push, double tap shoves the opponent
-// off (physics and legacy models), and a push from range whiffs.   node tools/push-test.js
+// off, and a push from range whiffs.   node tools/push-test.js
 const RAPIER = require('./rapier.js');
 const P = require('../js/physics.js');
 (async () => {
   await P.init(RAPIER);
   const { Sim, describe, IN } = require('../js/sim.js');
-  for (const phys of [true, false]) {
-    const sim = new Sim({ seed: 7, players: [{ fighter: 'striker' }, { fighter: 'wrestler' }], physics: phys });
+  for (const phys of [true]) {
+    const sim = new Sim({ seed: 7, players: [{ fighter: 'striker' }, { fighter: 'wrestler' }] });
     const S = sim.state, f = S.f;
     const dist = () => Math.hypot(f[1].x - f[0].x, f[1].z - f[0].z);
     let t = 0; const tick = (h0, p0, h1 = 0) => { sim.setInput(0, h0, p0); sim.setInput(1, h1, 0); sim.step(1/60); t++; };

@@ -185,9 +185,38 @@ the browser (`localStorage`) after every action.
   **Health**, **Strike speed**, **Strike power**, **BJJ** or **Wrestling**
   (the game's `car / chin / spd / pow / bjj / wre` stats), or **rest**. Gains
   are bigger on low stats and grind past ~85.
+* **The gym is a place.** The career hub is a 3D room you walk around
+  (`js/gym.js`): **WASD** walks (relative to the camera), the strike keys and
+  modifiers work exactly as in a fight, **L** raises your guard, **Enter** (or
+  **F**) uses whatever you are standing at. A **heavy bag** hangs in the middle
+  of the room — step up to it and throw anything: it swings on its chain, and
+  the readout in the corner tells you what you threw, how fast the hand or foot
+  was travelling and how hard it hit (light / solid / heavy / monster), with a
+  combo counter and your hardest shot of the session. Bag work is practice —
+  stats only move through the weekly training choice. Around the room:
+  * **The computer** (office corner) — your fight offers; once a fight is
+    booked it shows the fight card and, on fight week, the **FIGHT** button.
+  * **The whiteboard** (back wall) — pick this week's training; it shows the
+    date, the camp plan so far and how banged up you are.
+  * **The front desk** (by the door) — buy gym upgrades.
+  * **The wall of fame** (right wall) — record, history and news; a framed
+    photo goes up for every fight (green for wins, red for losses, gold frames
+    for title fights).
 * **Gym** — winnings buy upgrades: one facility per stat (each level makes a
   week of that training worth 30 % more), a recovery suite (injuries heal
   faster) and a head coach (+12 % to all training per level), five levels each.
+  Every upgrade is visible on the floor: bikes, a treadmill and a rower for the
+  cardio room; a squat rack, plates, a sled, a bench and dumbbells for strength
+  & conditioning; a speed bag, a double‑end bag and eventually a full ring for
+  the boxing ring; extra heavy bags, pads and a glove wall for the heavy bag
+  room; a mat area that grows, a grappling dummy and wall pads for the mat
+  room; cage‑wall panels and standing dummies for wrestling; an ice bath,
+  massage table, light‑therapy panel and sauna for recovery; and the head coach
+  himself, standing by the ring. The room itself changes with the total number
+  of upgrades: a cinder‑block **garage** with one hanging bulb and a taped‑up
+  bag (0–2), a **neighbourhood gym** with rubber floors and tube lights (3–9),
+  a **fight gym** with your name on a banner (10–23) and an **elite facility**
+  with a lit logo, accent lighting and a trophy case (24+).
 * **Injuries** — about half the damage you take in a fight comes into the next
   camp with you. It heals every week (faster when resting or with a better
   recovery suite), makes training less effective while it lasts, and if you
@@ -199,7 +228,10 @@ the browser (`localStorage`) after every action.
   popularity takes a hit.
 
 `js/career.js` is the whole model (no DOM; it also loads in Node, so balance
-can be simulated headless); the screens live in `js/main.js`.
+can be simulated headless); the room is `js/gym.js` and the station panels live
+in `js/main.js`. `node tools/gym-test.js` walks the gym in headless Chromium
+(bag hits with every strike, every station, every upgrade tier, a full fight)
+and screenshots it.
 
 ## Evolved brains (machine learning)
 
@@ -256,6 +288,7 @@ js/sim.js         fight simulation (seeded, fixed‑step). Standing = ragdolls, 
 js/ai.js          scripted CPU opponent
 js/brain.js       neural fighter brain (evolved weights from brains/*.json)
 js/career.js      career mode model: offers, orgs, popularity, camps, gym, injuries, save
+js/gym.js         the career gym as a walkable 3D room: heavy bag, stations, furniture per upgrade
 js/render.js      Three.js arena, segment fighters (follow the ragdoll bones when standing,
                   a two‑bone IK rig posed from POSES on the ground), camera, FX
 js/net.js         PeerJS rooms (host‑authoritative; bone poses ride in the state snapshot)
@@ -269,7 +302,7 @@ tools/            node scripts: headless.js (CPU vs CPU fights + stats),
                   versus.js (brain vs brain record), brain-test.js (AI vs AI in headless Chromium),
                   probe.js (throw every strike at a dummy over a range of distances),
                   posecheck.js (does a stance / guard pose clip the arms through the chest?),
-                  browser-test.js (run the page in headless Chromium)
+                  browser-test.js (run the page in headless Chromium), gym-test.js (the career gym)
 ```
 
 ### Tuning the physics
@@ -296,6 +329,6 @@ and prints landed / blocked / whiffed counts, damage per hit, finishes and
 simulation cost. In the browser, `?auto=1` lets the CPU drive your fighter in
 practice mode, and `window.CageRules` exposes the live sim, state and renderer.
 
-The old swept‑tip striking model is still in `js/sim.js` and is used
-automatically if the physics engine fails to load. Its tuning (`KIND_STATS`,
-`handPath` / `legPath`) only matters in that fallback.
+The physics engine is required for fights: there is no classic striking model any
+more. `KIND_STATS` still supplies strike names and ground-strike data, and the
+`handPath` / `legPath` tip paths are only used by the gym bag and the renderer.
