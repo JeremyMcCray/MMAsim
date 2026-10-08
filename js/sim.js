@@ -629,6 +629,7 @@
         a.t += dt;
         if (a.type === 'strike') {
           const st = STRIKES[a.name];
+          const tf = a.tf;
           if (st.ground) {
             if (!a.hit && a.t >= st.w * tf) { a.hit = true; this._resolveGroundStrike(f, st); }
           } else if (a.phys) {
@@ -879,6 +880,88 @@
       f.rs.thrown++;
       // a kick's foot is not back under him the moment the strike ends: no second kick until it has planted
       if (!st.ground && (st.limb === 'll' || st.limb === 'rl')) f.kickReady = this.state.t + f.act.dur + (st.push ? TEEP_PLANT_T : KICK_PLANT_T);
+    }
+
+    _hitboxes(o, f) {
+      const fr = this._frame(o, f); // o's frame, facing f
+      const W = (p) => [o.x + fr.fx * p[0] + fr.lx * p[1], p[2], o.z + fr.fz * p[0] + fr.lz * p[1]];
+      let head = [0.06, 0, 1.52 + Y_SHIFT], torsoA = [0.0, 0, 0.95 + Y_SHIFT], torsoB = [0.03, 0, 1.2 + Y_SHIFT];
+      const a = o.act;
+      if (a.type === 'dodge' && a.t < 0.32) { head = [-0.08, 0.34, 1.36 + Y_SHIFT]; torsoB = [-0.02, 0.12, 1.16 + Y_SHIFT]; }
+      else if (a.type === 'hit') {
+        if (a.name === 'head') head = [-0.14, 0, 1.5 + Y_SHIFT];
+        else if (a.name === 'body') { head = [0.2, 0, 1.3 + Y_SHIFT]; torsoB = [0.15, 0, 1.12 + Y_SHIFT]; }
+        else head = [0.06, 0.1, 1.42 + Y_SHIFT];
+      } else if (a.type === 'stumble' || a.type === 'takedown') { head = [0.32, 0, 1.2 + Y_SHIFT]; torsoB = [0.25, 0, 1.1 + Y_SHIFT]; }
+      else if (o.blocking) head = [0.0, 0, 1.46 + Y_SHIFT];
+      if (o.rocked > 0 && a.type !== 'hit') head[2] -= 0.05;
+      const hw = W(head);
+      return [
+        { part: 'head', a: hw, b: hw, r: PART_R.head },
+        { part: 'body', a: W(torsoA), b: W(torsoB), r: PART_R.body },
+        { part: 'legs', a: W([0, 0, 0.1]), b: W([0, 0, 0.82 + Y_SHIFT]), r: PART_R.legs }
+      ];
+    }
+
+    // sweep the striking tip against the opponent this tick. The sweep is split at the path's
+    // keyframes so the limb's peak extension is never skipped between two 60 Hz samples.
+    _traceStrike(f, st, dt) {
+      const S = this.state, o = S.f[1 - f.idx], a = f.act;
+      const fr = this._frame(f, o);
+      const world = (t, out) => {
+        const tip = strikeTip(st, t, a.tf, out);
+        const fwd = tip[0], side = tip[1];
+        tip[0] = f.x + fr.fx * fwd + fr.lx * side; tip[1] = tip[2]; tip[2] = f.z + fr.fz * fwd + fr.lz * side;
+        return tip;
+      };
+      const tNow = a.t, tPrev = a.tipT;
+      a.tipT = tNow;
+      if (tPrev == null) { a.tip = world(tNow); return; }
+      if (o.act.type === 'dodge' && o.act.t < 0.32) a.slipped = true;
+      if (o.act.type === 'down') return;
+      // sample times: previous tick, any keyframe crossed since, this tick
+      const times = [tPrev];
+      for (const k of st.path) { const kt = k[0] * a.tf; if (kt > tPrev && kt < tNow) times.push(kt); }
+      times.push(tNow);
+      const hb = this._hitboxes(o, f);
+      const tipR = TIP_R[st.tip];
+      let prev = a.tip, cur = null, best = null, bestR = null, segDt = dt; // a.tip = last tick's world position, so the attacker's own motion counts
+      for (let i = 1; i < times.length && !best; i++) {
+        cur = world(times[i]);
+        let bestD = 1e9;
+        for (const h of hb) {
+          const r = segSegClosest(prev[0], prev[1], prev[2], cur[0], cur[1], cur[2], h.a[0], h.a[1], h.a[2], h.b[0], h.b[1], h.b[2]);
+          if (r[0] > tipR + h.r) continue;
+          const score = r[0] - (h.part === st.part ? 0.1 : 0); // prefer the region the strike is aimed at when boxes overlap
+          if (score < bestD) { best = h; bestR = r; bestD = score; }
+        }
+        segDt = Math.max(1e-4, times[i] - times[i - 1]);
+        if (!best) prev = cur;
+      }
+      if (!best) { a.tip = cur; return; }
+      a.tip = world(tNow);
+      a.hit = true;
+      // entry point: back up from the closest approach along the sweep until the tip just touches the box
+      const dx = cur[0] - prev[0], dy = cur[1] - prev[1], dz = cur[2] - prev[2];
+      const len = Math.hypot(dx, dy, dz) || 1e-6, R = tipR + best.r;
+      const back = Math.sqrt(Math.max(0, R * R - bestR[0] * bestR[0])) / len;
+      const sE = clamp(bestR[1] - back, 0, 1);
+      const wx = prev[0] + dx * sE, wy = prev[1] + dy * sE, wz = prev[2] + dz * sE;
+      // closing speed between the tip and the target along the line of impact
+      const vtx = dx / segDt, vty = dy / segDt, vtz = dz / segDt;
+      const ax = best.b[0] - best.a[0], ay = best.b[1] - best.a[1], az = best.b[2] - best.a[2];
+      const al = ax * ax + ay * ay + az * az;
+      const tq = al > 1e-9 ? clamp(((wx - best.a[0]) * ax + (wy - best.a[1]) * ay + (wz - best.a[2]) * az) / al, 0, 1) : 0;
+      let nx = best.a[0] + ax * tq - wx, ny = best.a[1] + ay * tq - wy, nz = best.a[2] + az * tq - wz;
+      const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+      const impact = (vtx - o.vx) * nx + vty * ny + (vtz - o.vz) * nz;
+      const speedF = clamp(impact * a.tf / st.refSpeed, 0, 1.6); // ref is at tempo 1: a fighter's own speed is already in the stamina/speed factors
+      // extension: how far the limb got from its pivot compared to a clean impact (jammed strikes land short)
+      const pv = st.pivot;
+      const px = f.x + fr.fx * pv[0] + fr.lx * pv[1], pz = f.z + fr.fz * pv[0] + fr.lz * pv[1];
+      const ext = Math.hypot(wx - px, wy - pv[2], wz - pz) / st.expExt;
+      const jamF = ext < 0.7 ? Math.pow(clamp(ext / 0.7, 0, 1), 2.5) : 1;
+      this._landStrike(f, o, st, best.part, speedF, jamF, [wx, wy, wz], fr);
     }
 
     // a strike that finds nothing costs extra; one that lands clean gives some of its cost back

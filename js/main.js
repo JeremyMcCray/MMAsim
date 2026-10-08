@@ -128,6 +128,9 @@
     clearTimeout(toastT); toastT = setTimeout(() => hide(t), ms || 3500);
   }
   function screen(name) {
+    // leaving the walkable gym for anything but one of its own station panels tears the room down
+    if (App.gym && App.gym.active && name !== 'career') exitGym(name === null); // screen(null) = a fight is taking the scene
+    hide($('#gymHud'));
     for (const id of ['menu', 'lobby', 'end', 'career', 'careerNew', 'more']) { const el = $('#' + id); if (el && id === name) show(el); else if (el) hide(el); }
     if (App.optionsOpen) closeOptions();
     if (name) hide($('#hud')); else show($('#hud'));
@@ -623,8 +626,10 @@
       const shown = box && box.width > 0 && box.height > 0;
       if (shown && (tag === 'BUTTON' || tag === 'A')) return;
       const moreOpen = $('#more') && !$('#more').classList.contains('hidden');
-      if (!App.optionsOpen && !capture && !moreOpen && App.talk) { e.preventDefault(); App.talk.open(); }
-      return;
+      // Enter opens chat in a fight. In the career gym it is the "use" key, so it has to reach the bind.
+      const inGym = App.gym && App.gym.active;
+      if (!inGym && !App.optionsOpen && !capture && !moreOpen && App.talk) { e.preventDefault(); App.talk.open(); }
+      if (!inGym) return;
     }
     if (capture) {
       e.preventDefault();
@@ -661,6 +666,13 @@
     requestAnimationFrame(loop);
     let dt = (now - last) / 1000; last = now;
     if (dt > 0.1) dt = 0.1;
+    if (App.gym && App.gym.active) {
+      // the career gym: walk, hit the bag, use the stations. Nothing moves while the options panel is up.
+      const live = !App.optionsOpen;
+      App.gym.update(dt, live ? App.held : 0, live ? App.pressed : 0, IN_INTERACT, IN_LOCK); App.pressed = 0;
+      updateGymHUD();
+      return;
+    }
     if (!App.playing || !App.state) { if (App.renderer && App.state) App.renderer.update(App.state, dt, null); tickTalk(dt); return; }
 
     const isHost = App.mode !== 'guest';
@@ -672,7 +684,7 @@
       else { sim.setInput(0, App.held & SIM_MASK, App.pressed & SIM_MASK); App.pressed = 0; }
       if (App.brain) { const o = App.brain.update(sim.state, dt); sim.setInput(1, o.held, o.pressed); inputs[1] = o.held; }
       else { sim.setInput(1, App.remote.h, App.remote.p); App.remote.p = 0; inputs[1] = App.remote.h; }
-      if (App.mode !== 'watch') inputs[0] = App.held;
+      if (App.mode !== 'watch') inputs[0] = App.held & SIM_MASK;
       applyExtras(sim);
       sim.step(dt);
       const evs = sim.drainEvents();
@@ -1274,16 +1286,12 @@
 
   // Build the arena right away so the menu has a live 3D background
   window.addEventListener('load', () => {
-    try {
-      const R = ensureRenderer();
-      const demo = new Sim({ seed: 1, players: [{ fighter: 'striker' }, { fighter: 'wrestler' }], physics: false });
-      App.state = demo.state; R.setFighters(demo.state);
-      syncExtras();
-    } catch (e) { console.error(e); toast('WebGL failed to start: ' + e.message, 8000); }
+    try { menuScene(); syncExtras(); } catch (e) { console.error(e); toast('WebGL failed to start: ' + e.message, 8000); }
   });
   // Browsers block audio until a gesture, and a rejected play() must be retried on the next one.
   function unlockMusic() {
     if (App.playing || !$('#end').classList.contains('hidden')) App.audio.play('fight');
+    else if (App.gym && App.gym.active) App.audio.play('menu');
   }
   window.addEventListener('pointerdown', unlockMusic);
   window.addEventListener('keydown', unlockMusic);
