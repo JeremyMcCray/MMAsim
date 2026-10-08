@@ -173,11 +173,11 @@
   }
 
   // ---------- fighter model ----------
-  // The visible fighter is one skinned body bound to eleven segment frames (the same rig the physics
-  // uses: box pelvis and chest, ball head, capsule limbs, ball gloves, box feet). While the ragdoll is
-  // live the segments copy its bodies one-to-one from the pose snapshot in the sim state. On the ground (and in the
-  // menu / without physics) a hidden two-bone IK skeleton is posed from POSES and the segments are
-  // snapped onto its bones, so the look never changes.
+  // The visible fighter is one skinned body bound to eleven segment frames (the same rig as js/physics.js:
+  // box pelvis and chest, ball head, capsule limbs, ball gloves, box feet). While the ragdoll is live the
+  // segments copy its bodies one-to-one from the sim's pose snapshot. On the ground (and in the menu /
+  // without physics) a hidden two-bone IK skeleton is posed from POSES and the segments are snapped onto
+  // its bones, so both paths drive the same mesh.
   const SEGS = (root.MMAPhys && root.MMAPhys.SEGS) || null;
   const SEG_ORDER = ['pelvis', 'chest', 'head', 'lUpperArm', 'lForearm', 'rUpperArm', 'rForearm', 'lThigh', 'lShin', 'rThigh', 'rShin'];
   const ANKLE_PIVOT = [0, -0.215, -0.02]; // where the foot hinges on the shin — mirrors js/physics.js
@@ -204,10 +204,9 @@
   const _q = new THREE.Quaternion(), _pw = new THREE.Vector3(), _off = new THREE.Vector3();
 
   // ---------- procedural skinned body ----------
-  // The visible body is one continuous skinned mesh: tubes lofted through cross-section rings (ellipses with
-  // separate front / back fullness, an optional squareness and radial grooves) and weighted to the physics
-  // segments, so shoulders, elbows, the waist, the neck and the knees bend as skin instead of showing seams
-  // between rigid parts. Bones are the eleven segments followed by the two ankle-hinged feet.
+  // Tubes lofted through cross-section rings (ellipses with separate front / back fullness, optional
+  // squareness and radial grooves), with vertices blended across adjacent segments so joints bend as skin.
+  // Bone order: the eleven SEG_ORDER segments, then the two ankle-hinged feet.
   const BONES = SEG_ORDER.concat(['lFoot', 'rFoot']);
   const BI = {}; BONES.forEach((n, i) => { BI[n] = i; });
   const TAU = Math.PI * 2;
@@ -291,7 +290,7 @@
     const steel = new THREE.MeshStandardMaterial({ color: 0xe7edf4, metalness: 0.72, roughness: 0.2 });
     const goldMat = new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.6, roughness: 0.32 });
     const gripMat = new THREE.MeshStandardMaterial({ color: 0x4a2c18, roughness: 0.72 });
-    // Built along local -Y. The lead forearm aims that axis forward in the guard.
+    // Blade runs along local -Y (the forearm's down axis).
     const bar = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.78, 0.014), steel);
     bar.position.y = -0.52;
     const edge = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.78, 0.05), steel);
@@ -674,12 +673,12 @@
       this._eul = new THREE.Euler(); this._qHip = new THREE.Quaternion(); this._yAxis = new THREE.Vector3(0, 1, 0);
       this._tipArr = [0, 0, 0];
       this.prop = makeProp();
-      // Lead hand. The long axis is the one that points forward in the orthodox guard.
+      // Lead hand; the quaternion tilts the blade so it points forward in the orthodox guard.
       this.prop.position.set(0, RIG.fistY, 0);
       this.prop.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), new THREE.Vector3(-0.091, -0.597, -0.797).normalize());
       this.segs.lForearm.add(this.prop);
       this.pop = makePop();
-      // It runs out past the fist (forearm -Y), so a lead punch points it forward.
+      // Barrel runs out past the fist (forearm -Y), so a lead punch points it forward.
       this.pop.position.set(0.045, RIG.fistY - 0.02, 0.02);
       this.pop.rotation.x = -Math.PI / 2;
       this.segs.lForearm.add(this.pop);
@@ -849,7 +848,7 @@
     }
 
     update(f, S, opp, dt, time, groundAxis, posLerp) {
-      // ---- live ragdoll: the sim publishes every bone, nothing to pose
+      // ---- live ragdoll: copy every segment straight from the sim snapshot
       if (f.pose && f.pose.length >= SEG_ORDER.length * 7 && !f.ground) {
         this._applySnapshot(f.pose, dt, posLerp && posLerp < 15 ? 14 : 40); // guests smooth between snapshots
         const pv = this.segs.pelvis.position;
@@ -953,7 +952,7 @@
 
       // ---- IK legs (body frame) ----
       if (p.lie > -0.5) {
-        // standing: feet on ground in root frame -> body frame (body has only translation + small lie)
+        // standing: foot targets are in the root frame; undo the body offset and hip yaw to get body frame
         let lfx = p.lf[0], lfz = p.lf[1], rfx = p.rf[0], rfz = p.rf[1];
         let lfy = p.lfy, rfy = p.rfy;
         if (moving) {
@@ -969,8 +968,8 @@
         toBody(rfx - p.ox, rfz - p.oz, v[1]); v[1].y = rfy - (p.h + bob) + 0.05;
         v[0].set(HIP_XX, HIP_Y, 0); this._pole.fromArray(p.rPole); solveIK(v[0], v[1], THIGH_L, SHIN_L, this._pole, this.rHip, this.rKn);
       } else {
-        // lying on back: body frame rotated; targets given directly in body frame. The pose's knee poles are
-        // [across, towards the head, up] (default: knees up and a little towards the head)
+        // lying on back: targets are given directly in the body frame (layout documented above POSES.bottomGuard);
+        // the +0.3 pole bias tips the knees a little towards the head
         v[0].set(-HIP_XX, HIP_Y, 0); v[1].set(p.lf[0], p.lfy, p.lf[1]);
         this._pole.set(p.lPole[0], p.lPole[1] + 0.3, p.lPole[2]); solveIK(v[0], v[1], THIGH_L, SHIN_L, this._pole, this.lHip, this.lKn);
         v[0].set(HIP_XX, HIP_Y, 0); v[1].set(p.rf[0], p.rfy, p.rf[1]);
@@ -1023,10 +1022,8 @@
   function buildArena(scene) {
     const R = 4.75, N = 8, H = 1.85;
     const g = new THREE.Group();
-    // platform
     const plat = new THREE.Mesh(new THREE.CylinderGeometry(R + 0.5, R + 0.9, 0.7, N), new THREE.MeshStandardMaterial({ color: 0x15151a, roughness: 0.9 }));
     plat.position.y = -0.37; plat.receiveShadow = true; plat.rotation.y = Math.PI / N; g.add(plat); // top face at -0.02: just under the mat so the two never share a plane
-    // mat
     const mat = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 0.06, N), new THREE.MeshStandardMaterial({ map: matTexture(), roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
     mat.position.y = -0.03; mat.receiveShadow = true; mat.rotation.y = Math.PI / N; g.add(mat);
     // fence + posts
@@ -1045,7 +1042,6 @@
       post.position.set(x0, H / 2, z0); post.castShadow = true; g.add(post);
       const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, H - 0.3, 10), dM);
       pad.position.set(x0, H / 2 + 0.05, z0); g.add(pad);
-      // panel
       const len = Math.hypot(x1 - x0, z1 - z0);
       const panel = new THREE.Mesh(new THREE.PlaneGeometry(len, H - 0.25), fM);
       panel.position.set((x0 + x1) / 2, (H - 0.25) / 2 + 0.05, (z0 + z1) / 2);
@@ -1276,11 +1272,11 @@
       }
       if (!this.models.length) return;
       const F = S.f;
-      // ground axis: freeze the facing when ground fight starts
+      // ground axis: frozen to the top fighter's facing when the ground phase starts.
+      // +axis runs from the bottom fighter's feet towards their head (see GROUND_OFF).
       if (S.ground && !this.lastGround) {
         const top = F[S.ground.top], bot = F[S.ground.bottom];
         const mt = this.models[top.idx];
-        // axis = direction from the top's side towards the bottom's feet (i.e. top keeps facing)
         this.groundAxis.set(Math.sin(mt.yaw), 0, Math.cos(mt.yaw)).normalize();
       }
       this.lastGround = !!S.ground;

@@ -18,7 +18,7 @@
       const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
       this.ctx = new AC();
       this.master = this.ctx.createGain(); this.master.gain.value = this.muted ? 0 : 0.8; this.master.connect(this.ctx.destination);
-      // noise buffer
+      // 2 s of white noise, shared by the crowd bed and the SFX bursts
       const len = this.ctx.sampleRate * 2; const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
       const d = buf.getChannelData(0); for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
       this.noise = buf;
@@ -87,9 +87,6 @@
       }
       this.current = null;
     }
-    // Band levels in 0..1, synced to the playing element. The shipped envelope
-    // follows currentTime, so a page opened from disk still reacts. Live FFT
-    // is only a fallback when that envelope is missing.
     _audible() {
       const tracks = this.tracks;
       if (!tracks) return null;
@@ -101,6 +98,9 @@
       }
       return null;
     }
+    // Band levels in 0..1 for the playing track. Prefers the precomputed envelope
+    // in music-env.js (indexed by currentTime, works from file://); live FFT is
+    // the fallback when a track has no envelope.
     sampleBands() {
       const playing = this._audible();
       if (!playing) return null;
@@ -144,8 +144,8 @@
       }
       return out;
     }
-    // Live FFT of the playing track. captureStream leaves the <audio> element
-    // audible; createMediaElementSource is silent for file:// media in Chrome.
+    // Live FFT of the playing track via captureStream, which keeps the <audio>
+    // element audible (see _track for why MediaElementSource is avoided).
     sampleSpectrum() {
       if (!this.ctx) return null;
       if (this.ctx.state === 'suspended') this.ctx.resume();

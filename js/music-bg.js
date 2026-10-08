@@ -12,7 +12,6 @@
   const MUSIC_KEY = 'cr_bg_fx';
   const IMPACT_KEY = 'cr_bg_hit';
   const DEFAULT_PRESET = 'legacy';
-  const DEFAULT_COLOR = 'grey';
   const LEGACY_COLOR = '#07070a';
 
   const CIRCUIT = 'circuit';
@@ -22,7 +21,7 @@
   const CONSTELLATION = 'constellation';
 
   // Resting void colors. Accents (bass / mids / highs) are derived in paletteFrom.
-  // Light grey is the default void. Legacy stays the arena default.
+  // 'legacy' (the default) hides the canvas and shows the flat LEGACY_COLOR.
   const PRESETS = [
     { id: 'legacy', name: 'Legacy', color: LEGACY_COLOR },
     { id: 'grey', name: 'Light grey', color: '#d0d0d4' },
@@ -160,7 +159,8 @@
   function loadPresetId() {
     try {
       let id = localStorage.getItem(STORAGE_KEY);
-      // Ink, Off-white, and Violet were written automatically as defaults. Those become Legacy.
+      // One-time migration keyed on STORAGE_VER: ids older builds auto-saved as
+      // defaults (ink, offwhite, violet) reset to Legacy. Bump the version to reset again.
       if (localStorage.getItem(STORAGE_VER) !== '4') {
         localStorage.setItem(STORAGE_VER, '4');
         if (!id || id === 'ink' || id === 'offwhite' || id === 'violet') id = DEFAULT_PRESET;
@@ -814,5 +814,5 @@
     }
   }
 
-  root.MMAMusicBg = { MusicBackground, PRESETS, paletteFrom, cssColor: css, loadPresetId, savePresetId, loadParticles, saveParticles, loadImpact, saveImpact, DEFAULT_PRESET, DEFAULT_COLOR, LEGACY_COLOR };
+  root.MMAMusicBg = { MusicBackground, PRESETS, paletteFrom, cssColor: css, loadPresetId, savePresetId, loadParticles, saveParticles, loadImpact, saveImpact, DEFAULT_PRESET, LEGACY_COLOR };
 })(typeof window !== 'undefined' ? window : globalThis);

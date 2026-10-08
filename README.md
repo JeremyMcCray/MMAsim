@@ -1,16 +1,13 @@
 # Cage Rules — 1v1 MMA in the browser
 
 A 3D one‑on‑one mixed martial arts simulation. Play online against a friend
-(peer‑to‑peer, no server to run) or practice against the CPU. Pure static
-files — made for GitHub Pages.
+(peer‑to‑peer) or practice against the CPU. It runs as static files on
+GitHub Pages.
 
 The standing game is **physics based**: both fighters are active ragdolls
 (eleven rigid bodies each, joint motors chasing stance / guard / strike
-poses, simulated with [Rapier](https://rapier.rs) at 240 Hz). A punch is a
-real fist being thrown at the opponent — it only does damage if it actually
-arrives, with speed, square to the target — and a guard works because the
-forearms are physically in the way. Everything else (ground game, takedowns,
-submissions, stamina, judging, netcode) is the regular Cage Rules ruleset.
+poses, simulated with [Rapier](https://rapier.rs) at 240 Hz), so every strike
+and block is decided by real contact (see [Fight model](#fight-model)).
 
 ## Host on GitHub Pages
 
@@ -27,23 +24,17 @@ Three.js and PeerJS load from cdnjs; copies of `three.min.js` (r128) and
 them automatically if the CDN is unreachable.
 
 ## Online play
-
-* One player clicks **Create room** and shares the 5‑letter code.
-* The other clicks **Join room**, enters the code, and connects.
+* One player creates a room and shares its 5‑letter code; the other joins with it.
 * Both pick a fighter and hit **Ready**. The host's browser runs the fight;
   the guest sends inputs and receives state ~20 times a second.
 
 Matchmaking uses the free public PeerJS signaling server (`0.peerjs.com`).
-Once connected, traffic is direct WebRTC between the two browsers. If a
-strict NAT blocks the direct link the connection may fail — try again or
-have the other player host. To use your own PeerJS server, set
-`window.PEER_SERVER = { host: '...', port: 443, secure: true }` before
-`js/net.js` loads.
+Once connected, traffic is direct WebRTC between the two browsers.
 
 ## Controls (keyboard)
 
 Every key can be rebound and every strike remapped from **OPTIONS** (main menu,
-lobby, or **Esc** during a fight — practice pauses). Settings are saved in the
+lobby, or **Esc** during a fight). Settings are saved in the
 browser. Defaults:
 
 | Key | Standing | On top (ground) | On bottom (ground) |
@@ -58,7 +49,7 @@ browser. Defaults:
 | **E** (hold) | hands → straights, legs → head kicks | hands → hammer fists | — |
 | **R** (hold) | hands → overhands, legs → low kicks | hands → body shots | — |
 | *(no modifier)* | hands → uppercuts, lead leg → teep, rear leg → knee | | |
-| **L** (hold, or tap twice to push) | high guard / sprawl vs takedowns; **L + R** drops into a Philly shell — lead arm across the body, rear glove at the cheek — that covers the body (kicks, knees, teeps) and the rear-hand side, but is open to lead hooks; tap twice to shove them off you when they're too close | posture up (kills escape progress) | cover up vs strikes |
+| **L** (hold) | high guard / sprawl vs takedowns; **L + R** drops into a Philly shell — lead arm across the body, rear glove at the cheek — that covers the body (kicks, knees, teeps) and the rear-hand side, but is open to lead hooks; double‑tap to shove a crowding opponent off you | posture up (kills escape progress) | cover up vs strikes |
 | **Space** | takedown / dive on a knocked‑down opponent | submission attempt | sweep / reversal |
 | **Shift** | slip (dodge) / get up when knocked down (any direction works too) | stand up and let them up | — |
 | **Esc** / **H** / **M** | options / hide controls / mute | | |
@@ -76,12 +67,11 @@ works from any camera angle.
   leg and can also end the fight.
 * **Stamina** governs strike speed, power, movement and grappling. Cardio
   stat sets regen. Blocking regenerates slowly, moving less. Every strike
-  is paid for up front: a clean landing (not blocked) gives a third of it
-  back, a whiff costs 30 % extra, a blocked one is simply spent.
+  is paid for up front: a clean landing gives a third of it back, a whiff
+  costs 30 % extra, a blocked one is simply spent.
 * **Max stamina** — the translucent part of the stamina bar is the ceiling
   you can regenerate to. Head damage shrinks it a little, body damage a
-  lot, and swinging on an empty tank (pressing a strike with nothing
-  left, or overdrawing one) wears it down too. In the corner you get 20 %
+  lot, and throwing strikes you can't afford wears it down too. In the corner you get 20 %
   of it back and start the next round with a full tank.
 * **Striking is physical.** Each strike is a limb (U/I/J/K) plus a kind
   chosen by the modifier you hold. The strike is a keyframed pose that the
@@ -92,20 +82,18 @@ works from any camera angle.
   normal) and how **clean** the hit is. Below 2.2 m/s or less than 35 %
   square it is a **glancing** blow and does nothing; otherwise damage grows
   with `(vn − 2.2)^1.3`, so stepping into a shot or catching someone walking
-  in hurts a lot more, and a punch thrown from the clinch has no room to
-  build speed. Whatever is physically in the way takes the hit: a head kick
+  in hurts a lot more, and punches from the clinch stay weak. Whatever is in
+  the way takes the hit: a head kick
   into a raised arm is a block, a low kick into a braced shin is **checked**,
   a jab that lands on the gloves is picked off. Short weapons (uppercuts,
   hooks, knees) are for the pocket; straights, teeps and kicks need room.
-  Hard shots physically stagger the ragdoll (gains drop, the body gets
-  shoved); a KO drops the fighter where he stands.
+  Hard shots stagger the ragdoll (gains drop, the body gets shoved).
 * **Combos flow.** As soon as a strike has landed (or whiffed) you can throw
   the next one straight out of the recovery, and a press made while a strike
   is still in the air is buffered and fires the instant it can. Chained
-  strikes come out a little quicker (up to three in a rhythm); doubling up
-  on the same limb doesn't get the bonus. A strike that gets slipped has to
-  be ridden out. Hits landed on an already‑stunned opponent stun for less,
-  so a combination can't lock someone up forever.
+  strikes come out a little quicker (up to three in a rhythm) when you
+  switch limbs. A strike that gets slipped has to be ridden out. Hits on an
+  already‑stunned opponent stun for less, so stun‑locks wear off.
 * Landing on an opponent mid‑windup is a **counter** (+35 %). A hard punch
   that catches someone mid‑kick cancels the kick, hits harder still
   (+30 %), stuns them longer and charges them for the wasted kick. Slipping
@@ -113,16 +101,16 @@ works from any camera angle.
   whiff and the attacker over‑commits, but body and leg strikes still land.
   Holding block raises a tight guard: hits on the forearms do 15 % (45 %
   for a checked low kick) and a clean block gives the blocker a sliver of
-  stamina back (8 % of what the strike cost the attacker); a stray arm that
-  happens to be in the way (not blocking) still soaks about half, for nothing. Teeps
-  shove the opponent back.
+  stamina back (8 % of what the strike cost the attacker); a stray arm in
+  the way soaks about half, with no stamina refund. Teeps shove the
+  opponent back.
 * **Wrestling** — takedown success depends on both wrestling stats,
   whether the defender is sprawling (holding block), caught mid‑strike,
   rocked or tired. Failed shots leave you stumbling. A takedown lands in
   closed guard (half guard if the shooter is a strong wrestler who caught
   you swinging).
 * **Knockdowns** are physical: the hurt fighter drops where he stands and
-  can't be hit while he is down. Once he has landed it is his call — press a
+  is safe from strikes while down. Once he has landed it is his call — press a
   direction (or the slip key) to **get up now**, coming up still rocked, or
   **stay down** to clear his head (rocked wears off 2.5× faster on the mat;
   the referee waves him up after four seconds). While he is down the other
@@ -138,7 +126,7 @@ works from any camera angle.
   can see coming and deny by holding block (basing / framing), which costs
   them stamina; a failed attempt leaves you exposed, and some failures are
   punished with a worse position (a failed stand‑up from side control gives
-  up your back). Attempts have a short cooldown — no mashing. Strikes hit
+  up your back). Attempts have a short cooldown. Strikes hit
   hardest from mount; the bottom fighter can only strike from guard.
 * **Submissions** — available from the right positions for both fighters
   (bottom: triangle, armbar, guillotine from guard, kimura from half guard;
@@ -192,17 +180,17 @@ the browser (`localStorage`) after every action.
   of the room — step up to it and throw anything: it swings on its chain, and
   the readout in the corner tells you what you threw, how fast the hand or foot
   was travelling and how hard it hit (light / solid / heavy / monster), with a
-  combo counter and your hardest shot of the session. Bag work is practice —
-  stats only move through the weekly training choice. Around the room:
+  combo counter and your hardest shot of the session. Bag work is practice;
+  stats move through the weekly training choice. Around the room:
   * **The computer** (office corner) — your fight offers; once a fight is
     booked it shows the fight card and, on fight week, the **FIGHT** button.
   * **The whiteboard** (back wall) — pick this week's training; it shows the
     date, the camp plan so far and how banged up you are.
-  * **The front desk** (by the door) — buy gym upgrades.
+  * **The front desk** (by the door) — buy upgrades (below).
   * **The wall of fame** (right wall) — record, history and news; a framed
     photo goes up for every fight (green for wins, red for losses, gold frames
     for title fights).
-* **Gym** — winnings buy upgrades: one facility per stat (each level makes a
+* **Upgrades** — winnings buy one facility per stat (each level makes a
   week of that training worth 30 % more), a recovery suite (injuries heal
   faster) and a head coach (+12 % to all training per level), five levels each.
   Every upgrade is visible on the floor: bikes, a treadmill and a rower for the
@@ -222,7 +210,7 @@ the browser (`localStorage`) after every action.
   recovery suite), makes training less effective while it lasts, and if you
   fight before it is gone you start the fight with that damage on your meters.
 * **Opponents** are generated per org: the scripted CPU drives them at a level
-  that rises with the org, and their stat sheet is theirs, not a roster card.
+  that rises with the org, each with their own generated stat sheet.
   The fight itself is a normal 3‑round (5 for titles) fight with full rules.
   Quitting a career fight mid‑way counts as pulling out: no purse, and your
   popularity takes a hit.
@@ -239,7 +227,7 @@ and screenshots it.
 index.html        page + HUD + menus (+ loads the physics engine in the background)
 css/style.css
 js/physics.js     MMAPhys: Rapier world, active ragdolls, stance / guard / strike poses,
-                  contact → damage. No Three.js, runs in Node too.
+                  contact → damage. Headless; runs in Node too.
 js/sim.js         fight simulation (seeded, fixed‑step). Standing = ragdolls, ground = ruleset
 js/ai.js          scripted CPU opponent
 js/career.js      career mode model: offers, orgs, popularity, camps, gym, injuries, save
@@ -281,6 +269,6 @@ and prints landed / blocked / whiffed counts, damage per hit, finishes and
 simulation cost. In the browser, `?auto=1` lets the CPU drive your fighter in
 practice mode, and `window.CageRules` exposes the live sim, state and renderer.
 
-The physics engine is required for fights: there is no classic striking model any
-more. `KIND_STATS` still supplies strike names and ground-strike data, and the
-`handPath` / `legPath` tip paths are only used by the gym bag and the renderer.
+All standing strikes go through the physics engine. `KIND_STATS` supplies strike
+names and ground-strike data; the `handPath` / `legPath` tip paths serve the gym
+bag and the renderer.

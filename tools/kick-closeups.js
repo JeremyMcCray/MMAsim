@@ -1,5 +1,5 @@
 // Big close-ups of one kick frozen at a few sim times, from three cameras (side, 3/4 front, behind the kicker),
-// to check the arms, the knee turnover and the foot against reference photos.
+// to check the arms, the knee turnover and the foot.
 //   node tools/kick-closeups.js [outdir=/tmp/kickshots] [strike=hkick] [t,t,t...]
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');

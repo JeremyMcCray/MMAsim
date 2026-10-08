@@ -382,8 +382,8 @@ export class Fighter {
     }
 
     // --- joint motors: every segment is driven toward its target rotation relative to its parent.
-    // Acceleration-based motors: stiffness = w0^2, damping = 2*zeta*w0 (inertia-independent), and
-    // the motor pushes back on the parent, so a punch loads the shoulder, spine and hips like a body.
+    // Force-based: stiffness = I*w0^2*g, damping = 2*zeta*I*w0 (I = jointInertia, g = gainMult).
+    // The motor pushes back on the parent, so a punch loads the shoulder, spine and hips.
     for (const name of SEG_ORDER) {
       if (name === 'pelvis') continue;
       const seg = SEGS[name];

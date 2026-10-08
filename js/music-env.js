@@ -1,6 +1,6 @@
-/* Band envelopes for the menu and fight tracks, sampled at 30 Hz.
-   Synced to the playing track's current time, so the void follows the music
-   when the page is opened from disk as well as from a server. */
+/* Precomputed band envelopes for the menu and fight tracks: `hz` frames per
+   second, `bands` bytes (0..255) per frame, frame-major. audio.js sampleBands
+   indexes them by the element's currentTime, so it works from file:// too. */
 (function (root) {
   'use strict';
   function unpack(b64) {

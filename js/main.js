@@ -3,7 +3,7 @@
    ============================================================ */
 (function () {
   'use strict';
-  const { IN, Sim, ROSTER, describe, LIMBS, LIMB_NAME, MODS, HAND_KINDS, LEG_KINDS, KIND_LABEL, DEFAULT_MOVESET, normalizeMoveset, POS_NAME, MOVES, SUBS_BY, BOTTOM_CAN_STRIKE, KD } = window.MMASim;
+  const { IN, Sim, ROSTER, describe, LIMBS, LIMB_NAME, MODS, HAND_KINDS, LEG_KINDS, KIND_LABEL, DEFAULT_MOVESET, normalizeMoveset, POS_NAME, MOVES, SUBS_BY, BOTTOM_CAN_STRIKE, KD, BREAK_T } = window.MMASim;
   const { CpuBrain } = window.MMAAI;
   const { Renderer } = window.MMARender;
   const { Net } = window.MMANet;
@@ -33,7 +33,7 @@
     { id: 'interact', label: 'Use (gym: computer, whiteboard, desk)', bit: 1 << 14, def: ['Enter', 'KeyF'] },
     { id: 'lock', label: 'Lock on to the heavy bag (gym)', bit: 1 << 15, def: ['KeyT', ''] }
   ];
-  const IN_INTERACT = 1 << 14, IN_LOCK = 1 << 15, SIM_MASK = 0x3fff; // the interact bit is ours; the simulation only ever sees the bits in IN
+  const IN_INTERACT = 1 << 14, IN_LOCK = 1 << 15, SIM_MASK = 0x3fff; // interact/lock are app-only bits; mask with SIM_MASK before input reaches the sim
   const Controls = { binds: {}, moveset: null, keyMap: {} };
   const KEY_NAMES = { ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Space: 'SPACE', ShiftLeft: 'L-SHIFT', ShiftRight: 'R-SHIFT', ControlLeft: 'L-CTRL', ControlRight: 'R-CTRL', AltLeft: 'L-ALT', AltRight: 'R-ALT', Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/', BracketLeft: '[', BracketRight: ']', Backslash: '\\', Minus: '-', Equal: '=', Enter: 'ENTER', Tab: 'TAB', Backspace: 'BKSP', CapsLock: 'CAPS', Backquote: '`', NumpadEnter: 'NUM ENTER', NumpadAdd: 'NUM +', NumpadSubtract: 'NUM -', NumpadMultiply: 'NUM *', NumpadDivide: 'NUM /', NumpadDecimal: 'NUM .' };
   function keyName(code) {
@@ -75,7 +75,7 @@
     feedLines: [], hintsHidden: false
   };
 
-  // practice (you vs the CPU) and watch (CPU vs CPU) both run the sim locally with no network
+  // practice (you vs CPU), watch (CPU vs CPU) and career run the sim locally with no network
   const isLocal = () => App.mode === 'practice' || App.mode === 'watch' || App.mode === 'career';
 
   function fighterSelect(id, sel, random) {
@@ -298,7 +298,7 @@
       window.addEventListener('mmaphys', () => beginFight(msg), { once: true });
       return;
     }
-    if (isHost && App.physFailed) return; // already toasted; there is no fight without the engine
+    if (isHost && App.physFailed) return; // the host needs physics to run a fight; the failure toast was already shown
     if (App.sim) App.sim.destroy();
     App.sim = null; App.state = null; App.evQueue = []; App.remote = { h: 0, p: 0 }; App.rematch = [false, false];
     App.lobby.ready = [false, false];
@@ -307,7 +307,7 @@
       App.state = App.sim.state;
       const diff = App.lobby.settings.diff;
       App.brain = isLocal() ? new CpuBrain(1, diff) : null;
-      // watch mode: the CPU drives the red corner too. ?auto=1 : let the CPU drive your fighter in practice (handy for tuning)
+      // watch mode: the CPU drives the red corner too. ?auto=1 in practice: the CPU also drives your fighter (testing aid)
       App.autoPilot = App.mode === 'watch' ? new CpuBrain(0, diff)
         : App.mode === 'practice' && /[?&]auto=1/.test(location.search) ? new CpuBrain(0, diff) : null;
     } else {
@@ -345,8 +345,7 @@
       h += '<tr><td>Judge ' + (j + 1) + '</td>' + S.cards.map(c => { a += c.j[j][0]; b += c.j[j][1]; return '<td>' + c.j[j][0] + '–' + c.j[j][1] + '</td>'; }).join('') + '<td><b>' + a + '–' + b + '</b></td></tr>';
     }
     $('#cards').innerHTML = h;
-    const t = S.f.map(f => { const o = Object.assign({}, f.ts); for (const k in f.rs) o[k] += f.rs[k]; return o; });
-    // (if the fight ended by stoppage, the last round stats were folded into ts already; avoid double count)
+    // totals use ts alone: after a stoppage the last round's rs is already folded into ts, so adding rs double-counts
     const ts = S.f.map(f => f.ts);
     const row = (lbl, fn) => '<tr><td>' + lbl + '</td><td>' + fn(ts[0]) + '</td><td>' + fn(ts[1]) + '</td></tr>';
     $('#totals').innerHTML = '<tr><th></th><th>' + S.f[0].name + '</th><th>' + S.f[1].name + '</th></tr>' +
@@ -441,7 +440,7 @@
       else if (f.stam < 22) txt = 'GASSED';
       st.textContent = txt; st.className = cls;
     }
-    $('#roundLbl').textContent = App.paused ? 'PAUSED' : S.phase === 'break' ? 'BREAK ' + Math.ceil(10 - S.phaseT) : 'ROUND ' + S.round + '/' + S.rounds;
+    $('#roundLbl').textContent = App.paused ? 'PAUSED' : S.phase === 'break' ? 'BREAK ' + Math.ceil(BREAK_T - S.phaseT) : 'ROUND ' + S.round + '/' + S.rounds;
     const c = Math.max(0, S.clock); $('#clock').textContent = Math.floor(c / 60) + ':' + String(Math.floor(c % 60)).padStart(2, '0');
     $('#pingLbl').textContent = App.net && App.net.connected ? App.net.ping + ' ms' : App.mode === 'practice' ? 'CPU' : App.mode === 'watch' ? 'AI vs AI' : '';
     // knockdown prompt: the downed fighter chooses when to get up; the other may dive on him
@@ -535,7 +534,7 @@
     const { act, slot } = capture;
     if (code === 'Backspace' || code === 'Delete') { Controls.binds[act][slot] = ''; }
     else {
-      for (const a of ACTIONS) for (let i = 0; i < 2; i++) if (Controls.binds[a.id][i] === code) Controls.binds[a.id][i] = ''; // a key can only do one thing
+      for (const a of ACTIONS) for (let i = 0; i < 2; i++) if (Controls.binds[a.id][i] === code) Controls.binds[a.id][i] = ''; // one action per key: unbind it everywhere else first
       Controls.binds[act][slot] = code;
     }
     capture = null;
@@ -544,7 +543,7 @@
   function openOptions() {
     App.optionsOpen = true; App.held = 0; App.pressed = 0;
     if (App.playing && isLocal()) App.paused = true;
-    $('#btnOptQuit').style.display = ($('#menu').classList.contains('hidden') && $('#career').classList.contains('hidden') && $('#careerNew').classList.contains('hidden')) || (App.gym && App.gym.active) ? '' : 'none'; // nothing to quit from on the menus
+    $('#btnOptQuit').style.display = ($('#menu').classList.contains('hidden') && $('#career').classList.contains('hidden') && $('#careerNew').classList.contains('hidden')) || (App.gym && App.gym.active) ? '' : 'none'; // QUIT shows only in a fight/lobby or the gym, hidden on the menus
     buildOptions(); show($('#options'));
   }
   function closeOptions() {
@@ -625,7 +624,7 @@
     let dt = (now - last) / 1000; last = now;
     if (dt > 0.1) dt = 0.1;
     if (App.gym && App.gym.active) {
-      // the career gym: walk, hit the bag, use the stations. Nothing moves while the options panel is up.
+      // the career gym: walk, hit the bag, use the stations. Input is zeroed while the options panel is open.
       const live = !App.optionsOpen;
       App.gym.update(dt, live ? App.held : 0, live ? App.pressed : 0, IN_INTERACT, IN_LOCK); App.pressed = 0;
       updateGymHUD();
@@ -1117,7 +1116,7 @@
 
   window.addEventListener('mmaphys', (e) => { if (!e.detail.ok) { App.physFailed = true; toast('Physics engine failed to load: ' + (e.detail.error && e.detail.error.message), 8000); } });
 
-  // Extra options, opened from the G in the title. The pocket row stays concealed until that title's G is double-clicked.
+  // Hidden extras: clicking the title's G (#titleG) opens the 'more' screen; double-clicking its G (#moreG) reveals the pocket row.
   const Extras = { mark: false, edge: false, pocket: false };
   function loadExtras() {
     try {

@@ -4,16 +4,15 @@
    Runs on the host (or locally in practice mode); clients only
    receive snapshots of `sim.state`.
 
-   Striking model (v3, physics): every strike is a limb (left/right
-   hand or leg) + a kind chosen by the fighter's moveset and the
-   modifier being held. When js/physics.js (MMAPhys, Rapier) is
-   loaded (it is required), the standing game runs on active ragdolls: strikes are
-   keyframed poses the joint motors chase, and a strike only scores
-   when its fist / shin / foot collider actually arrives on the
-   opponent with speed, square to the target. Guarding puts the
-   forearms physically in the way. The ground game (takedowns,
-   positions, submissions) is unchanged and runs with the ragdolls
-   parked.
+   Striking: every strike is a limb (left/right hand or leg) + a
+   kind chosen by the fighter's moveset and the modifier being held.
+   The standing game requires js/physics.js (MMAPhys, Rapier) and
+   runs on active ragdolls: strikes are keyframed poses the joint
+   motors chase, and a strike scores only when its fist / shin /
+   foot collider arrives on the opponent with speed, square to the
+   target. Guarding puts the forearms physically in the way. The
+   ground game (takedowns, positions, submissions) is abstract and
+   runs with the ragdolls parked.
    ============================================================ */
 (function (root) {
   'use strict';
@@ -82,7 +81,7 @@
   const FOOT_STANCE = { ll: [0.2, 0.16, 0], rl: [-0.24, -0.2, 0] };
   const TIP_R = { hand: 0.09, foot: 0.1, knee: 0.1 };
   const ARM_REACH = 0.71, LEG_REACH = 1.04, KNEE_REACH = 0.54;
-  // rig proportions: limbs ~7% longer than the original rig, hips 6 cm higher
+  // rig proportions applied to the authored paths: forward-reach scale, and height offset (m) for hips / hands
   const REACH_SCALE = 1.06, Y_SHIFT = 0.06;
 
   // [windup, active, recover, damage, stamina] for lead (left) and rear (right) limbs
@@ -175,7 +174,7 @@
           reach: hand ? ARM_REACH : kind === 'knee' ? KNEE_REACH : LEG_REACH
         };
         st.path = hand ? handPath(limb, kind, st.w, st.a, st.r) : legPath(limb, kind, st.w, st.a, st.r);
-        // stretch the authored paths to the longer rig: more forward reach, hands carried higher, kicks a touch taller
+        // scale the authored paths to the rig: forward reach, hands raised by Y_SHIFT, leg heights scaled by (1 + Y_SHIFT)
         for (const k of st.path) { if (k[1] > 0) k[1] *= REACH_SCALE; k[3] = hand ? k[3] + Y_SHIFT : k[3] * (1 + Y_SHIFT); }
         // impact keyframe: furthest-forward keyframe inside the active window
         let imp = null, best = -1e9, prev = null;
@@ -256,10 +255,10 @@
   // ground tuning
   const DENY_PENALTY = 0.08;    // odds lost when the other fighter is basing / framing during your attempt
   const PUNISH_CHANCE = 0.35;   // a denied failure gets pushed into mv.failTo this often
-  const SUB_ATTEMPT_STAM = 5;   // it costs something to hunt for a hold
-  const SUB_FAIL_CD = 2.0;
-  const TD_FAIL_STUN = 0.25;     // a failed shot's stumble is cut to a quarter of its old length...
-  const TD_FAIL_CD = 3.0;       // ...but the shooter can't shoot again for this many seconds      // attacker's cooldown after a stuffed, lost or escaped submission
+  const SUB_ATTEMPT_STAM = 5;   // stamina cost of a submission attempt
+  const SUB_FAIL_CD = 2.0;      // attacker's cooldown (s) after a stuffed, lost or escaped submission
+  const TD_FAIL_STUN = 0.25;     // multiplier on a failed takedown's stumble duration
+  const TD_FAIL_CD = 3.0;       // seconds before the shooter may shoot again after a failed takedown
   const SUB_DECAY = 8;          // hold progress lost per second while not squeezing
   function dirOf(held) { for (const k in DIR_KEYS) if (held & DIR_KEYS[k]) return k; return null; }
 
@@ -317,7 +316,7 @@
       moveset: normalizeMoveset(moveset),
       x: idx === 0 ? -1.3 : 1.3, z: 0,
       vx: 0, vz: 0,
-      dmg: { head: clamp(extra.dmg && extra.dmg.head || 0, 0, 60), body: clamp(extra.dmg && extra.dmg.body || 0, 0, 60), legs: clamp(extra.dmg && extra.dmg.legs || 0, 0, 60) }, // career mode: fighting hurt
+      dmg: { head: clamp(extra.dmg && extra.dmg.head || 0, 0, 60), body: clamp(extra.dmg && extra.dmg.body || 0, 0, 60), legs: clamp(extra.dmg && extra.dmg.legs || 0, 0, 60) }, // starting damage carried in (career mode)
       stam: 100,
       stamMax: 100,       // ceiling stamina regens to; eroded by head/body damage and by swinging on empty
       act: { type: 'idle', name: '', t: 0, dur: 0, hit: false },
@@ -331,8 +330,8 @@
       blockTap: -9,       // sim time of the last BLOCK press (double tap = push)
       kickReady: -9,      // sim time the kicking foot is back on the mat: no kick can start before it
       restT: 0,           // seconds since he last blocked or threw: stamina regen ramps up the longer this runs
-      rocked: 0,
-      tdCd: 0,            // seconds until he may shoot again after a failed takedown          // seconds remaining rocked
+      rocked: 0,          // seconds remaining rocked
+      tdCd: 0,            // seconds until he may shoot again after a failed takedown
       wobble: 0,          // visual wobble intensity
       kdCount: 0,
       ground: null,       // null | 'top' | 'bottom'
@@ -344,16 +343,16 @@
     };
   }
   const idleAct = () => ({ type: 'idle', name: '', t: 0, dur: 0, hit: false });
-  // A strike whose active window has passed can be cancelled into the next action (combo flow),
-  // unless it was slipped — an over-committed whiff has to be ridden out.
-  // a kick whose foot is still in the air (the strike is live, including its recovery, where the leg re-chambers)
+  // true while a kick's foot is off the mat: during the strike (including recovery) and until f.kickReady
   function kickInFlight(f, now) {
-    if (now != null && now < f.kickReady) return true; // the last kick's foot is still on its way back down
+    if (now != null && now < f.kickReady) return true;
     if (f.act.type !== 'strike') return false;
     const st = STRIKES[f.act.name];
     return !!st && !st.ground && (st.limb === 'll' || st.limb === 'rl');
   }
   function isKickKey(key) { return key.startsWith('ll_') || key.startsWith('rl_'); }
+  // A strike past its active window can be cancelled into the next action (combo flow),
+  // except a slipped one: an over-committed whiff has to be ridden out.
   function recovering(f) {
     const a = f.act;
     if (a.type !== 'strike') return false;
@@ -369,49 +368,50 @@
   const EDGE_DIR = [-0.091, -0.597, -0.797];
   const EDGE_HILT = [EDGE_DIR[0] * 0.08, -0.18 + EDGE_DIR[1] * 0.08, EDGE_DIR[2] * 0.08];
   const EDGE_TIP = [EDGE_DIR[0] * 0.86, -0.18 + EDGE_DIR[1] * 0.86, EDGE_DIR[2] * 0.86];
-  const EDGE_PARRY = 0.18; // props within this of each other lock
+  const EDGE_PARRY = 0.18; // props closer than this (m) to each other lock
   const EDGE_HEAD_R = 0.20;
-  const EDGE_HIT = 20;     // a clean hit fills about a fifth of that bar
-  const POP_HIT = 50;       // a hit fills about half of that bar
+  const EDGE_HIT = 20;     // damage per clean cut (damage bars run 0..100)
+  const POP_HIT = 50;       // damage per pocket-shot hit (0..100 bar)
   const EDGE_BODY_R = 0.30;
   // push: BLOCK tapped twice in quick succession stiff-arms the opponent off you
   const PUSH_TAP_T = 0.3;   // the second BLOCK tap has to come within this many seconds of the first
   const PUSH_DIST = 1.0;    // arm's length — any further and the push grabs air
   const PUSH_COST = 4;      // stamina
-  const PUSH_SHOVE = 2.8;   // impulse per kg given to the opponent (a teep is 0.9)
+  const PUSH_SHOVE = 2.8;   // impulse per kg given to the opponent (cf. PHYS_PUSH for a teep)
   const PUSH_DUR = 0.38;    // seconds the pusher is committed
-  const PUSH_STUN_DIST = PUSH_DIST * 0.5; // the stumble / stagger only lands inside half of max range: a push at arm's length just shoves
+  const PUSH_STUN_DIST = PUSH_DIST * 0.5; // stumble / stagger applies only inside this range; beyond it the push just shoves
   // stamina economy
   const MISS_PENALTY = 0.30;   // a whiffed strike costs this much extra (fraction of its cost)
   const CLEAN_REFUND = 0.33;   // an unblocked landing gives this much of its cost back
-  const BLOCK_REWARD = 0.08;   // a strike taken on a raised guard gives the BLOCKER this much of its cost (reading a shot pays)
+  const BLOCK_REWARD = 0.08;   // a strike taken on a raised guard gives the BLOCKER this much of its cost
   const GROUND_BLOCK_REWARD = 0.4; // stamina for covering a ground strike
-  const STAM_MAX_FLOOR = 30;   // max stamina can never erode below this
+  const STAM_MAX_FLOOR = 30;   // lower bound for max-stamina erosion
   const EMPTY_SWING_COST = 1.5; // max stamina lost per strike press made with an empty tank
   const OVERDRAW_COST = 0.5;   // max stamina lost per point a strike overdraws the tank
   const ROUND_MAX_RECOVERY = 20; // max stamina regained in the corner
+  const BREAK_T = 5;            // seconds between rounds
   // rest ramp: regen doubles every REST_DOUBLE_T seconds spent neither blocking nor striking, up to REST_MAX x.
-  // Blocking or throwing anything resets it, so the rhythm is get in, rip a combo, get out and breathe, go again.
+  // Blocking or throwing anything resets it (f.restT).
   const REST_DOUBLE_T = 1.2;
   const REST_MAX = 4;
-  const KICK_CANCEL_DMG = 2.8; // a hand strike this hard lands on a kicker mid-kick: cancels the kick
-  const KICK_CANCEL_BONUS = 1.3;
+  const KICK_CANCEL_DMG = 2.8; // min damage of a clean hand strike that cancels the opponent's kick in flight
+  const KICK_CANCEL_BONUS = 1.3; // damage multiplier for that kick-cancelling strike
   const KICK_CANCEL_STUN = 0.3; // extra seconds of hit-stun for being caught on one leg
   const KICK_PLANT_T = 0.2;     // seconds after a kick ends before the foot is planted enough to kick again
-  const TEEP_PLANT_T = 0.2;     // a teep takes longer to pull back and re-set the stance (no teep spam)
+  const TEEP_PLANT_T = 0.2;     // same, after a teep
   // rocked / knockdown tuning
-  const ROCK_TIME_MULT = 0.35;  // rocked stun timers cut by 65%
-  const ROCK_T0 = 1.3, ROCK_PER_DMG = 0.05; // seconds rocked = ROCK_T0 + dmg * ROCK_PER_DMG (was 2.2 + 0.06/dmg)
+  const ROCK_TIME_MULT = 0.35;  // scales every rocked duration
+  const ROCK_T0 = 1.3, ROCK_PER_DMG = 0.05; // seconds rocked = (ROCK_T0 + dmg * ROCK_PER_DMG) * ROCK_TIME_MULT
   const KD_THR_MIN = 3.4;       // weakest head shot that drops an already-rocked fighter
   const KD_THR_FRAC = 0.62;     // ...or this fraction of his rock threshold, whichever is higher
   const KD_FLASH_FRAC = 1.9;    // a shot this many times the rock threshold drops him outright
   const KD_FALL = 1.0;          // seconds a knocked-down fighter is falling / limp before he can do anything
   const KD_STAY = 4.0;          // longest he may stay down before the referee waves him up
   const KD_RISE = 1.0;          // seconds it takes him to climb back to his feet
-  const KD_ROCKED = 3.2;        // rocked time set by a knockdown (recovers 2.5x faster while he stays down)
-  const KD_DOWN_RECOVER = 2.5;
+  const KD_ROCKED = 3.2;        // rocked time set by a knockdown (before ROCK_TIME_MULT)
+  const KD_DOWN_RECOVER = 2.5;  // rocked timer drains this many times faster while he stays down
   const KD_FOLLOW_DIST = 2.3;   // the attacker can dive on him from this far (takedown key)
-  const KD_SHOVE = 0.5;         // impulse per kg the knockdown blow gives the falling body (was 1.4: he flew)
+  const KD_SHOVE = 0.5;         // impulse per kg the knockdown blow gives the falling body
   const KD_RISE_KEYS = DIR_BITS | IN.DODGE; // a direction or the stand-up key gets a downed fighter up
 
   class Sim {
@@ -493,7 +493,7 @@
           this._fightTick(dt);
           break;
         case 'break':
-          if (S.phaseT >= 10) this._startRound();
+          if (S.phaseT >= BREAK_T) this._startRound();
           break;
         case 'over':
           this._cooldown(dt);
@@ -645,7 +645,6 @@
               if (!a.hit && a.t >= t1) { a.hit = true; this._whiff(f, st); }
             }
           }
-          // standing strikes: contacts are resolved in _physTick after the world steps
           if (a.t >= a.dur && f.act === a) f.act = idleAct();
         } else if (a.type === 'takedown') {
           if (!a.hit && a.t >= 0.32) { a.hit = true; this._resolveTakedown(f); }
@@ -773,9 +772,8 @@
       }
     }
 
-    // stiff-arm: both hands into his chest and drive. Lands inside arm's length — harder the closer he is — and
-    // breaks whatever he was doing (a strike in flight is cancelled, its stamina already spent). Nothing a fighter
-    // who is already down / falling can be pushed off of.
+    // stiff-arm: lands inside PUSH_DIST, harder the closer he is, and interrupts his action (a strike in flight is
+    // cancelled; its stamina stays spent). Has no effect on a knocked-down fighter.
     _push(f, o, dist, fx, fz) {
       const S = this.state;
       f.stam = Math.max(0, f.stam - PUSH_COST);
@@ -787,7 +785,7 @@
       if (ok) {
         const w = 0.6 + 0.4 * clamp(1 - (dist - MIN_DIST) / (PUSH_DIST - MIN_DIST), 0, 1); // closer = more of the push lands
         const ot = o.act.type;
-        const stuns = dist <= PUSH_STUN_DIST; // spamming push from max range does not stun
+        const stuns = dist <= PUSH_STUN_DIST;
         if (stuns && (ot === 'idle' || ot === 'move' || ot === 'strike' || ot === 'dodge' || ot === 'sprawl')) {
           o.act = { type: 'stumble', name: 'push', t: 0, dur: (0.45 * w + 0.1) * 0.5, hit: false };
           o.blocking = false; o.buf = null;
@@ -878,7 +876,7 @@
       }
       f.blocking = false; f.restT = 0;
       f.rs.thrown++;
-      // a kick's foot is not back under him the moment the strike ends: no second kick until it has planted
+      // the next kick waits until this one's foot has planted (see kickInFlight)
       if (!st.ground && (st.limb === 'll' || st.limb === 'rl')) f.kickReady = this.state.t + f.act.dur + (st.push ? TEEP_PLANT_T : KICK_PLANT_T);
     }
 
@@ -1197,7 +1195,7 @@
       o.hitChain = (o.act.type === 'hit' && this.state.t - (o.lastHitT || -9) < 0.7) ? (o.hitChain || 0) + 1 : 0;
       o.lastHitT = this.state.t;
       const stun = (0.2 + dmg * 0.025) * 0.6 * Math.pow(0.6, o.hitChain) + (kickCancel ? KICK_CANCEL_STUN : 0);
-      if (def.name !== 'jab') { // the jab carries no hitstun: it scores damage but doesn't interrupt the target
+      if (def.name !== 'jab') { // the jab scores damage without hitstun
         o.act = { type: 'hit', name: part, t: 0, dur: stun, hit: false };
         o.blocking = false;
       }
@@ -1396,9 +1394,7 @@
       if (vic.dmg.head >= 84) { this._emit({ k: 'kd', i: att.idx, j: vic.idx, standing: !S.grappling }); vic.dmg.head = 100; return; } // flash KO, caught by stoppage check
       this._emit({ k: 'kd', i: att.idx, j: vic.idx });
       if (this.phys) {
-        // he drops where he stands. Once he has landed it is his call: get up straight away (a direction / the
-        // stand-up key) and come up rocked, or stay down a few seconds and recover while the attacker may dive on him
-        // (takedown key) — the referee waves him up after KD_STAY seconds. See _kdTick.
+        // he drops where he stands; the fall / down / rise phases run in _kdTick
         vic.rocked = Math.max(vic.rocked, KD_ROCKED * ROCK_TIME_MULT);
         vic.act = { type: 'kd', name: 'fall', t: 0, dur: 99, hit: false };
         vic.blocking = false; vic.buf = null;
@@ -1496,7 +1492,7 @@
     // ---------------------------------------------------------
     //  GROUND
     //  - GRAPPLE + direction: a timed transition attempt (pass / escape / sweep / stand). The other fighter
-    //    holds BLOCK to base and deny it. Attempts have a cooldown so they can't be spammed.
+    //    holds BLOCK to base and deny it. Attempts have a per-fighter cooldown (G.cd).
     //  - GRAPPLE alone: submission (if one is available from this position). Hold to squeeze.
     //  - Limb keys: strikes (power depends on position; bottom can only strike from guard / half guard).
     //  - BLOCK: top postures / bases, bottom covers and frames.
@@ -1580,7 +1576,7 @@
       }
     }
 
-    // hunting for a hold is a roll, not a free lock: it's a punish for a fighter who is exposed, rocked or gassed
+    // submission entry is a roll; odds favour attacking a fighter who is exposed, rocked or gassed
     _trySub(f, o, role, name) {
       const G = this.state.ground;
       f.stam = Math.max(0, f.stam - SUB_ATTEMPT_STAM);
@@ -1717,7 +1713,7 @@
     return null;
   }
 
-  const API = { IN, STRIKES, ROSTER, SUBS, POS_NAME, MOVES, SUBS_BY, BOTTOM_CAN_STRIKE, Sim, describe, CAGE_R, DT,
+  const API = { IN, STRIKES, ROSTER, SUBS, POS_NAME, MOVES, SUBS_BY, BOTTOM_CAN_STRIKE, Sim, describe, CAGE_R, DT, BREAK_T,
     KD: { FALL: KD_FALL, STAY: KD_STAY, RISE: KD_RISE, FOLLOW_DIST: KD_FOLLOW_DIST },
     LIMBS, LIMB_BIT, LIMB_NAME, MODS, MOD_BIT, HAND_KINDS, LEG_KINDS, KIND_LABEL, KIND_STATS, DEFAULT_MOVESET, normalizeMoveset, modOf, strikeTip, TIP_R, recovering };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;

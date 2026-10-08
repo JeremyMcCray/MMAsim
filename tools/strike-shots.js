@@ -62,7 +62,7 @@ const server = http.createServer((req, res) => {
     const range = await page.evaluate(([kind, lead]) => { const S = window.MMASim.STRIKES; for (const k in S) if (S[k].kind === kind && S[k].limb[0] === (lead ? 'l' : 'r')) return S[k].range || 1.0; return 1.0; }, [kind, lead]);
     await place(range - 0.1); await step(30, 0, 0);
     await clear();
-    // frames: strike durations are ~0.35-0.85 s; sample 7 frames over ~0.6 s (every 6 ticks = 0.1 s)
+    // frames: COLS cells spread evenly over the strike's windup + active + recovery (60 Hz ticks)
     const dur = await page.evaluate(([kind, lead]) => { const S = window.MMASim.STRIKES; for (const k in S) if (S[k].kind === kind && (S[k].limb[0] === (lead ? 'l' : 'r'))) return S[k].w + S[k].a + S[k].r; return 0.6; }, [kind, lead]);
     const per = Math.max(2, Math.round(dur * 60 / (COLS - 1)));
     let info = await step(1, held, press); const infos = [info];

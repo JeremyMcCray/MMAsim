@@ -1,5 +1,5 @@
 // Close-up screenshots of specific poses (high guard, closed guard, half guard, mount, ground and pound)
-// from fixed cameras, for checking poses after tuning. Needs playwright (npm i -D playwright).
+// from fixed cameras. Needs playwright (npm i -D playwright).
 //   node tools/closeups.js [outdir=/tmp/shots]
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');

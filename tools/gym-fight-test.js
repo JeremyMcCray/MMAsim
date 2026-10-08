@@ -1,4 +1,5 @@
 // Career loop through the gym: book from the computer, train on the whiteboard, fight, come back to the gym.
+//   node tools/gym-fight-test.js [outdir=/tmp/gymshots]
 const { chromium } = require('playwright'); const http = require('http'); const fs = require('fs'); const path = require('path');
 const ROOT = path.resolve(__dirname, '..'); const outdir = process.argv[2] || '/tmp/gymshots'; fs.mkdirSync(outdir, { recursive: true });
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json' };

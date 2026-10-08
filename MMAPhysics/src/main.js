@@ -111,7 +111,7 @@ async function boot() {
     const side = new THREE.Vector3(dir.z, 0, -dir.x);
     // behind-and-over the player's right shoulder, pulling back as the fighters separate
     const want = a.clone().sub(dir.clone().multiplyScalar(2.6 + dist * 0.35)).add(side.multiplyScalar(0.9)).add(new THREE.Vector3(0, 1.75 + dist * 0.1, 0));
-    // keep camera inside the cage-ish
+    // clamp to at most 1.5 m outside the cage
     const r = Math.hypot(want.x, want.z);
     if (r > CAGE_RADIUS + 1.5) { want.x *= (CAGE_RADIUS + 1.5) / r; want.z *= (CAGE_RADIUS + 1.5) / r; }
     const look = mid.clone(); look.y = 1.15;

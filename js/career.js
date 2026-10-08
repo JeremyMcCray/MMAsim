@@ -15,7 +15,7 @@
   const lerp = (a, b, t) => a + (b - a) * t;
 
   // ---------- the six trainable stats ----------
-  // label / sim key / what the player sees
+  // key = the sim's stat key; label / short / desc are player-facing
   const STATS = [
     { key: 'car', label: 'Stamina', short: 'STAM', desc: 'Cardio: stamina regen and how big the tank stays late in a fight.' },
     { key: 'chin', label: 'Health', short: 'HLTH', desc: 'Durability: how much a clean head shot rocks you and how hard you are to knock down.' },
@@ -39,7 +39,7 @@
     { id: 'coach', name: 'Head coach', stat: null, desc: 'A better coach makes every training week count for more.' }
   ];
   const FACILITY_MAX = 5;
-  const FACILITY_COST = [1500, 4000, 10000, 25000, 60000];            // level 0->1 ... 4->5
+  const FACILITY_COST = [1500, 4000, 10000, 25000, 60000];            // indexed by current level: [0] buys 0->1 ... [4] buys 4->5
   const COACH_COST = [6000, 25000, 90000, 250000, 600000];
   const FACILITY_BY_ID = {}; for (const f of FACILITIES) FACILITY_BY_ID[f.id] = f;
   function upgradeCost(id, level) { return (id === 'coach' ? COACH_COST : FACILITY_COST)[level] || null; }
@@ -142,7 +142,7 @@
       base, style: ROSTER[base].style, stats, rating: rating(stats), level: lvl,
       record: { w: wins, l: fights - wins }, from: pick(r, CITIES),
       color: pick(r, COLORS), skin: pick(r, SKINS),
-      diff: clamp(lvl, 0.2, 0.97)   // scripted CPU level that drives him
+      diff: clamp(lvl, 0.2, 0.97)   // CPU difficulty for the brain that drives him
     };
   }
 
@@ -152,8 +152,7 @@
     const open = orgsOpenTo(C.pop);
     if (C.champion && open.indexOf(TOP) < 0) open.push(TOP); // the champion always has the big league on the phone
     const top = open.reduce((m, o) => Math.max(m, o.tier), 0);
-    // better orgs make more of the offers the more popular you are; always at least one from your top tier.
-    // Promoters two levels below you stop calling.
+    // only your top tier and the one below it make offers; offer 0 always comes from the top tier
     const pool = open.filter(o => o.tier >= top - 1);
     const n = 2 + (r() < 0.6 ? 1 : 0);
     const offers = [];
@@ -210,7 +209,7 @@
     const facility = 1 + lvl * 0.3;              // level 5 room: +150 %
     const coachMul = 1 + coach * 0.12;           // level 5 coach: +60 %
     const dimin = Math.pow(1 - s, 1.2) + 0.1;    // easy gains early, grinding past 0.85
-    const hurt = 1 - injuryTotal(C) / 260;       // training hurt is less effective
+    const hurt = 1 - injuryTotal(C) / 260;       // injuries cut gains (floored at x0.35 below)
     return base * facility * coachMul * dimin * Math.max(0.35, hurt);
   }
   function injuryTotal(C) { return C.injury.head + C.injury.body + C.injury.legs; }
@@ -291,7 +290,6 @@
     dPop = Math.round(dPop * 10) / 10;
     if (dPop > 0) dPop = Math.max(0, Math.min(dPop, TIER_POP_CAP[o.tier] - C.pop));
     C.pop = clamp(Math.round((C.pop + dPop) * 10) / 10, 0, 100);
-    // money
     const pay = o.purse + (won ? o.bonus : 0);
     C.money += pay;
     // record

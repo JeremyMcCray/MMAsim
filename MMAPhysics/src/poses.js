@@ -51,9 +51,8 @@ export const LIMP = {
   lThigh: [0, 0, 0], lShin: [10, 0, 0], rThigh: [0, 0, 0], rShin: [10, 0, 0],
 };
 
-// Strikes. Impact poses were solved so the weapon ends up on the opponent's centre line
-// (~0.75 m in front of the hips for punches, ~0.9 m for kicks) with the hips and shoulders
-// rotating into the blow the way a real striker's do.
+// Strikes. Impact poses put the weapon on the opponent's centre line (~0.75 m in front of
+// the hips for punches, ~0.9 m for kicks) with the hips and shoulders rotating into the blow.
 // keys: joints it animates. Every keyframe must specify each of those joints (or 'stance').
 // weapon: which collider deals damage. active: [t0, t1] window in which that weapon can score.
 // speed: multiplier on the joint controllers' natural frequency while the strike plays.

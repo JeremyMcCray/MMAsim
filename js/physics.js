@@ -1,15 +1,14 @@
 /* ============================================================
    CAGE RULES — MMAPhys: active-ragdoll physics for the standing game
-   Ported from the MMAPhysics prototype (Rapier). No DOM, no Three.js,
-   so the same file runs in the browser and in Node (tools/headless.js).
+   Rapier-based. No DOM, no Three.js, so the same file runs in the
+   browser and in Node (tools/headless.js).
 
    Both fighters are active ragdolls: eleven rigid bodies joined by
    ball joints whose motors drive every limb toward a target pose
-   (stance / guard / strike keyframes). Nothing is animated directly:
-   a punch is a real rigid body thrown at the opponent, so a strike
-   only scores when its fist or shin actually arrives with speed,
-   square to the target. A guard works because the forearms are
-   physically in the way.
+   (stance / guard / strike keyframes). Limbs are never animated
+   directly: a strike scores only when its fist or shin arrives with
+   speed, square to the target, and a guard blocks because the
+   forearms are physically in the way.
 
    ---- TUNING (the knobs you will want first) ----
    DMG_SCALE   overall damage from a clean impact (fights should go rounds)
@@ -38,7 +37,7 @@
   const MOVE_SPEED = 1.9;
   const CAGE_APOTHEM = 4.3;           // physics fence (visual posts sit at r = 4.75)
   const PART_MULT = { head: 1.6, chest: 1.0, pelvis: 0.8, upperArm: 0.35, forearm: 0.3, fist: 0.25, thigh: 0.55, shin: 0.3, foot: 0.2 };
-  const KICK_PART_MULT = { thigh: 1.0, shin: 0.5, pelvis: 0.6, chest: 0.6 }; // a shin into the trunk hurts and drains, it isn't a KO weapon (the bar-filling body damage is scaled again by the sim's BODY_TOUGHNESS)
+  const KICK_PART_MULT = { thigh: 1.0, shin: 0.5, pelvis: 0.6, chest: 0.6 }; // kicks to the trunk drain rather than finish (body damage is scaled again by sim's BODY_TOUGHNESS)
   const BLOCK_MULT = 0.15;            // hit on the arms while actively guarding
   const ARM_MULT = 0.45;              // hit on the arms while not guarding (shoulder roll, stray glove)
   const CHECK_MULT = 0.45;            // low kick into a raised / braced shin while guarding
@@ -86,10 +85,9 @@
     const k = sh > 1e-6 ? (2 * half) / sh : 2;
     return [x * k, y * k, z * k];
   }
-  // quaternion -> the per-axis "angles" Rapier's spherical joint motors actually measure, which
-  // (found empirically, see tools/probe.js history) is 2*asin(q_i) per axis. Feeding the motors these
-  // instead of a rotation vector makes them settle on the exact target rotation even for big
-  // multi-axis swings (hooks, roundhouse kicks), where a rotation vector drifts by 30-40 degrees.
+  // quaternion -> the per-axis "angles" Rapier's spherical joint motors measure: 2*asin(q_i) per axis
+  // (empirical; tools/probe.js). With these targets the motors settle exactly even on big multi-axis
+  // swings (hooks, roundhouse kicks); a rotation vector drifts 30-40 degrees there.
   function qToMotor(q) {
     let { x, y, z, w } = q;
     if (w < 0) { x = -x; y = -y; z = -z; w = -w; }
@@ -147,15 +145,14 @@
   // straight down at identity. Euler angles are degrees in the parent segment's frame, order XYZ:
   //   rotX negative -> limb swings forward (+Z);  rotZ positive -> toward +X;  rotY -> twist.
   // Torso rotY positive brings the LEFT shoulder forward (orthodox blading).
-  // Arm angles here were checked with forward kinematics (tools/posecheck.js): the fighter's own segments do not
-  // collide with each other, so a pose that folds an upper arm across the chest simply clips through it.
-  // Elbows stay beside / in front of the ribs, outside the chest box; only the forearms and gloves come inside.
+  // A fighter's own segments pass through each other, so an upper arm folded across the chest clips through it:
+  // keep elbows beside / in front of the ribs, outside the chest box (check with tools/posecheck.js).
   const STANCE = { pelvisYaw: 14, chest: [4, 16, 0], head: [8, -14, 0], lUpperArm: [-32, -22, -10], lForearm: [-132, 0, 0], rUpperArm: [-30, -16, 6], rForearm: [-138, 0, -22], lThigh: [-22, 0, -4], lShin: [26, 0, 0], rThigh: [12, 0, 8], rShin: [6, 0, 0] };
   // high guard: elbows in front of the ribs and pulled in, forearms rising close together in front of the face,
   // gloves up at the temples — a glove's width apart, level with the top of the head — so the shell closes the
-  // middle against straights, the sides against hooks and the top against head kicks. Placed by search
-  // (tools/guard-test.js battery): elbows at chest-local (+-0.18, 0.08, 0.25), gloves at (+-0.15, 0.42, 0.12).
-  // The upper arms press into the front corners of the chest box (~3 cm), as a real tucked guard does.
+  // middle against straights, the sides against hooks and the top against head kicks. Tuned with
+  // tools/guard-test.js: elbows at chest-local (+-0.18, 0.08, 0.25), gloves at (+-0.15, 0.42, 0.12).
+  // The upper arms intentionally overlap the front corners of the chest box by ~3 cm.
   const GUARD  = { pelvisYaw: 16, chest: [12, 18, 0], head: [16, -16, 0], lUpperArm: [-76, 3, 12], lForearm: [-128, 0, 9], rUpperArm: [-76, -3, -12], rForearm: [-128, 0, -9], lThigh: [-20, 0, -4], lShin: [30, 0, 0], rThigh: [10, 0, 8], rShin: [10, 0, 0] };
   // low guard (BLOCK + MOD3), Philly shell: bladed hard, lead shoulder rolled up in front of the chin, lead arm
   // across the belly (elbow at the hip, forearm along the belt line, glove at the far hip), rear glove up at the
@@ -186,7 +183,7 @@
   const CELEBRATE = { pelvisYaw: 0, chest: [-8, 0, 0], head: [-12, 0, 0], lUpperArm: [-170, 0, 30], lForearm: [-20, 0, 0], rUpperArm: [-170, 0, -30], rForearm: [-20, 0, 0], lThigh: [-5, 0, -8], lShin: [8, 0, 0], rThigh: [-5, 0, 8], rShin: [8, 0, 0] };
   // rocked: chin up, hands low, knees soft
   const WOBBLE = { pelvisYaw: 10, chest: [-6, 10, 0], head: [-10, -8, 0], lUpperArm: [-40, 8, -12], lForearm: [-70, 0, 8], rUpperArm: [-30, -10, 10], rForearm: [-80, 0, -6], lThigh: [-30, 0, -6], lShin: [38, 0, 0], rThigh: [4, 0, 10], rShin: [20, 0, 0] };
-  // High guard: the lead prop stands up on the center line, covering the head.
+  // edge guard: the lead arm props up on the centre line, covering the head
   const EDGE_GUARD = Object.assign({}, STANCE, {
     pelvisYaw: 6, chest: [10, 6, 0], head: [2, -4, 0],
     lUpperArm: [-100, -30, 65], lForearm: [-130, -40, -50],
@@ -240,15 +237,12 @@
         { t: 0.24, pelvisYaw: -22, chest: [-8, -30, 0], head: [8, 10, 0], rUpperArm: [-87, 6, 34], rForearm: [-30, 0, -2] },
         { t: 0.30, pelvisYaw: -22, chest: [-8, -30, 0], head: [8, 10, 0], rUpperArm: [-87, 6, 34], rForearm: [-30, 0, -2] },
         { t: 0.54, pelvisYaw: S, chest: S, head: S, rUpperArm: S, rForearm: S }] },
-    // ---- overhand: a looping punch thrown on a diagonal, not a vertical chop. The fist leaves the cheek and swings OUT
-    // and up beside the rear shoulder (elbow lifting to shoulder height, fist about level with the top of the head),
-    // crests over the top with the elbow high and wide, then comes DOWN and ACROSS onto the jaw from outside-high to
-    // inside-low, the arm still bent with the elbow up near fist height. The hips and shoulders turn into it while the
-    // body dips, and the fist carries on down across the body before coming back up the middle to the chin.
+    // ---- overhand: a looping punch on a diagonal. The fist swings out and up beside the rear shoulder, crests with
+    // the elbow high and wide, then comes down and across onto the jaw (outside-high to inside-low) while the body dips.
     // Fist path (fighter frame, x right / y up / z forward): cheek (0.15,0.52,0.14) -> wide (0.44,0.78,0.24) ->
     // crest (0.24,0.80,0.58) -> impact (-0.06,0.59,0.80) -> through (-0.25,0.52,0.71). Solved with tools/limbsolve.js.
-    // Keep the upper arm's quaternion components below ~0.85 (tools/limbsolve.js + a settle test): past that the
-    // 2*asin motor mapping goes unstable and the fist flaps up and down instead of holding the arc.
+    // Keep the upper arm's quaternion components below ~0.85: past that the 2*asin motor mapping (qToMotor) goes
+    // unstable and the fist flaps instead of holding the arc.
     rh_overhand: { name: 'overhand right', part: 'head', keys: ['chest', 'head', 'rUpperArm', 'rForearm', 'lUpperArm', 'lForearm', 'rThigh', 'pelvisYaw', 'lift'], weapon: 'rFist', weaponMult: 1.4, active: [0.21, 0.37], cost: 7.5, speed: 1.5, lunge: 1.5,
       frames: [
         { t: 0.00, pelvisYaw: S, chest: S, head: S, rUpperArm: S, rForearm: S, lUpperArm: S, lForearm: S, rThigh: S, lift: 0 },
@@ -276,7 +270,7 @@
         { t: 0.48, pelvisYaw: 42, pelvisTilt: [-2, 0, -16], chest: [-2, 16, 6], head: [8, -16, 0], lThigh: [-62, -34, -18], lShin: [104, 0, 0], rThigh: [-7, 25, 29], rShin: [13, 0, 0], lUpperArm: [-34, -6, 20], rUpperArm: [-60, -10, -14], lift: 0, lAnkle: 25 },
         { t: 0.60, pelvisYaw: 18, pelvisTilt: [0, 0, -4], chest: [2, 14, 2], head: [8, -12, 0], lThigh: [-30, -14, -6], lShin: [44, 0, 0], rThigh: [9, 2, 9], rShin: [6, 0, 0], lUpperArm: [-34, -18, -6], rUpperArm: [-36, -14, 6], lift: 0, lAnkle: 5 },
         { t: 0.72, pelvisYaw: S, pelvisTilt: S, chest: S, head: S, lThigh: S, lShin: S, rThigh: S, rShin: S, lUpperArm: S, rUpperArm: S, lift: 0, lAnkle: 0 }] },
-    // ---- roundhouse kicks. Authored by knee / foot position with tools/kicksolve.js, every one the same story:
+    // ---- roundhouse kicks. Authored by knee / foot position with tools/kicksolve.js, all with the same phases:
     //   load:    weight onto the support leg, the kicking knee starts up and FORWARD with the shin folded, toes pointing
     //   chamber: knee high and across, pointed at the target, shin still folded (~130 deg), foot trailing behind it
     //   impact:  hips turned over, thigh at target height, and only now the shin snaps out (slight bend left in it);
@@ -328,7 +322,7 @@
         { t: 0.30, pelvisYaw: -10, chest: [-16, -10, 0], head: [8, 6, 0], rThigh: [-124, -14, 2], rShin: [80, 0, 0], lThigh: [-8, 0, -6], lShin: [12, 0, 0], lUpperArm: [-95, 6, 10], rUpperArm: [-95, -6, -10] },
         { t: 0.62, pelvisYaw: S, chest: S, head: S, rThigh: S, rShin: S, lThigh: S, lShin: S, lUpperArm: S, rUpperArm: S }] }
   };
-  // ground strikes are not physical; they keep the old timed model in sim.js
+  // ground strikes use the timed (non-physical) model in sim.js
 
   function mirrorEuler(e) { return e === S ? S : [e[0], -e[1], -e[2]]; }
   function mirrorStrike(def, key, name, scaleT) {
@@ -352,14 +346,11 @@
     return out;
   }
   // ---- hip turnover on the roundhouse kicks.
-  // A real round kick is thrown from the hips: the pelvis rolls over the head of the support-side femur so the
-  // kicking hip rises and comes forward and points down at the target, the trunk leans away with it, and the
-  // shin is whipped through by that rotation rather than swung from a level pelvis. The keyframes above author
-  // WHERE the shin goes; this adds HOW the body gets it there. turnover is an extra pelvis rotation
-  // [pitch, yaw, roll] in degrees (pelvis frame, same convention as pelvisTilt) that ramps in ahead of the shin
-  // (the hips lead), peaks through the live window and eases out in the recovery. Both hip ball joints are
-  // counter-rotated by the same amount, so the legs still arrive exactly on the authored pose in world space
-  // (ranges, aim and hit detection are untouched) while the pelvis and everything above it turn over around them.
+  // turnover: extra pelvis rotation [pitch, yaw, roll] in degrees (pelvis frame, same convention as pelvisTilt)
+  // that rolls the kicking hip up and over and leans the trunk away. It ramps in ahead of the live window (the
+  // hips lead), peaks through it and eases out in recovery. Both hip joints are counter-rotated by the same amount,
+  // so the legs still land exactly on the authored keyframes in world space (ranges, aim and hit detection are
+  // unaffected); only the pelvis and everything above it turn over.
   // Sign: roll positive tips the top of the pelvis toward the fighter's left, i.e. the RIGHT hip comes up.
   RAW.rl_hkick.turnover = [8, 0, 5];     // the keyframes already roll the hips 62 deg: this is the extra lean and a nose-down pelvis
   RAW.rl_bkick.turnover = [8, 0, 16];
@@ -438,8 +429,8 @@
       const weaponR = d.weapon.endsWith('Fist') ? 0.062 : d.weapon.endsWith('Foot') ? 0.11 : 0.055;
       d.range = best + weaponR + TARGET_R[d.part] + 0.04;
     }
-    // measured with tools/probe.js: the furthest root-to-root distance at which the strike still lands
-    // on what it is aimed at. The AI picks strikes from these.
+    // measured with tools/probe.js (furthest root-to-root distance at which the strike still lands on its
+    // target); overrides the FK estimate above. The AI picks strikes from these.
     const RANGE = { lh_straight: 1.0, rh_straight: 1.0, lh_hook: 0.85, rh_hook: 0.85, rh_uppercut: 0.75, lh_uppercut: 0.9, rh_overhand: 1.3, lh_overhand: 1.25,
       ll_lkick: 1.2, rl_lkick: 1.2, rl_hkick: 1.4, ll_hkick: 1.3, rl_bkick: 1.0, ll_bkick: 1.2, rl_teep: 1.25, ll_teep: 1.15, rl_knee: 0.8, ll_knee: 0.7 };
     for (const k in RANGE) if (STRIKES[k]) STRIKES[k].range = RANGE[k];
@@ -663,8 +654,7 @@
         const f0 = fr[i], f1 = fr[i + 1];
         const u = clamp((tt - f0.t) / (f1.t - f0.t), 0, 1);
         const act = st.def.active;
-        // Which part of the blow is this segment? Each gets its own timing curve so the motion reads as
-        // load -> explode -> carry through -> settle instead of the same ease-in-ease-out for every piece:
+        // each phase of the blow gets its own timing curve (load -> explode -> carry through -> settle):
         //   windup   (ends before the weapon is live)     smoothstep: a deliberate load
         //   delivery (the frame that carries into impact) accelerating: the target races ahead and the under-damped
         //                                                 motors arrive at full speed, so the limb snaps rather than eases
@@ -700,7 +690,7 @@
             out.zeta[j] = zeta;
           }
         }
-        // hip turnover (see RAW.*.turnover): the pelvis rolls over the support hip ahead of the shin
+        // hip turnover (see RAW.*.turnover)
         if (st.def.turnover) {
           const t0 = act[0] * (1 - (st.def.turnoverLead || 0.45)), t1 = act[0], t2 = act[1], t3 = 1;
           let k;
@@ -712,16 +702,15 @@
             const e = st.def.turnover;
             const qx = qEuler([e[0] * k, e[1] * k, e[2] * k]);
             out.turnover = qx;
-            // the legs are aimed in world space: counter-rotate both hip ball joints so only the body above them turns
+            // counter-rotate both hips so the legs keep their authored world-space aim
             const qi = qConj(qx);
             out.q.lThigh = qMul(qi, out.q.lThigh);
             out.q.rThigh = qMul(qi, out.q.rThigh);
-            // the drive comes from the core: the pelvis is pushed hard enough to get there first
+            // drive the pelvis faster so the hips lead the leg
             out.speed.pelvis = Math.max(out.speed.pelvis || 1, spdMul * 1.25);
-            // rolling over lifts the kicking hip socket (the sockets sit 0.10 m apart) and the swing of the leg
-            // bumps the hips up with it. The support knee sinks a little, and the kicking thigh is eased back
-            // toward hanging by the angle that puts the shin back at the authored height, so a low kick still
-            // bites the thigh instead of skimming the hip.
+            // rolling over raises the kicking hip socket (sockets are 0.10 m apart). Compensate: sink the hips a
+            // little and ease the kicking thigh back toward hanging so the shin stays at its authored height
+            // (otherwise a low kick skims the hip instead of hitting the thigh).
             const rise = 0.10 * Math.abs(Math.sin(e[2] * k * DEG)) + 0.03 * k;
             out.lift -= rise * 0.5;
             const kt = st.def.weapon[0] + 'Thigh', qk = out.q[kt];
@@ -779,7 +768,7 @@
         if (tl > maxT) { tx *= maxT / tl; ty *= maxT / tl; tz *= maxT / tl; }
         body.addTorque(V(tx, ty, tz), true);
       }
-      // rocked: the legs keep betraying him
+      // rocked: random shoves to chest and hips, scaled by wobble
       if (this.wobble > 0 && !this.ko && this.downT <= 0 && !this.lying && rand) {
         const k = this.wobble * 60;
         this.bodies.chest.addTorque(V((rand() - 0.5) * k, (rand() - 0.5) * k * 0.5, (rand() - 0.5) * k), true);
@@ -795,8 +784,8 @@
         const kH = 110, cH = 19;
         const above = p.y - hTarget;
         let fy;
-        // the hover is a cushion, not a jetpack: once the hips are above where they should be it lets go
-        // (and pulls down a little) so a fighter who gets bumped upward comes straight back to the mat
+        // above the target height the hover lets go and pulls down slightly, so a fighter bumped upward
+        // drops straight back to the mat
         if (above > 0.03) fy = M * (9.81 * 0.25 - 80 * (above - 0.03) - cH * Math.max(0, v.y)) * Math.max(0.35, g);
         else fy = M * (9.81 * HOVER_FRACTION + kH * (hTarget - p.y) - cH * v.y) * Math.max(0.35, g);
         fy = clamp(fy, -M * 20, M * 26);
@@ -826,8 +815,8 @@
         const cv = this.bodies.chest.linvel();
         this.bodies.chest.addForce(V(M * 1.5 * (vdx - cv.x), 0, M * 1.5 * (vdz - cv.z)), true);
       } else if (!this.ko) {
-        // knocked down but conscious: a soft cushion under the hips so he comes down onto his hands and knees
-        // (or sits back onto the mat) instead of slamming. Above the target it does nothing: gravity brings him down.
+        // knocked down but conscious: a soft cushion under the hips (active only near / below the target height)
+        // so he settles onto hands and knees or sits back onto the mat
         const pelvis = this.bodies.pelvis, p = pelvis.translation(), v = pelvis.linvel(), M = this.totalMass;
         const hTarget = KD_HIP_HEIGHT[this.kdDir] || KD_HIP_HEIGHT.back;
         const falling = this.downT > this.downTotal * 0.5;
@@ -882,8 +871,8 @@
         if (result) break;
       }
       if (!result) return null;
-      // glove on glove is a touch, not a blow: the punch keeps travelling — unless he is guarding, when a glove
-      // held at the temple is part of the shell and catches the shot like a forearm
+      // slow, glancing, or glove-on-glove contact is a glance (reported once per strike; the strike stays live).
+      // A glove counts as a real hit while the defender guards, since it is part of the shell.
       if (result.vn < VMIN || result.clean < MIN_CLEAN || (result.partName === 'fist' && !opp.guard)) {
         if (st.glanced) return null;
         st.glanced = true;
@@ -897,7 +886,7 @@
     // physical consequence of being hit: shove the part and the core. dmg is in sim units (100 = KO).
     takeHit(hit, dmg, blocked) {
       const { n, point, seg } = hit;
-      // the shove saturates: a fight-ending shot snaps the head and buckles the legs, it doesn't launch the body
+      // the shove saturates at HIT_IMPULSE_CAP so big shots drop a fighter on the spot
       const d = Math.min(dmg, HIT_IMPULSE_CAP);
       const imp = (blocked ? 1.5 : 3) + d * 2.4;
       this.bodies[seg].applyImpulseAtPoint(V(n.x * imp, n.y * imp * 0.4, n.z * imp), point, true);
@@ -917,7 +906,7 @@
     }
     knockOut() { this.ko = true; this.strike = null; }
     // go down for `fall` seconds, catching himself — forward onto hands and knees ('fwd') or back onto the mat ('back') —
-    // and then stay there until getUp() is called. Only a KO (knockOut) makes him go fully limp.
+    // and then stay there until getUp() is called
     knockDown(fall, dir) { this.downT = fall; this.downTotal = fall; this.kdDir = dir === 'fwd' ? 'fwd' : 'back'; this.lying = true; this.riseT = 0; this.strike = null; this.guard = false; }
     // climb back to the stance over `rise` seconds
     getUp(rise) { this.lying = false; this.downT = 0; this.riseT = rise; this.riseTotal = rise; }
@@ -1020,8 +1009,8 @@
 
   function init(RAPIER) { R = RAPIER; return R.init ? R.init() : Promise.resolve(); }
 
-  // Lead-hand prop. Each boxing kind becomes its own path. The long axis is the one that
-  // points forward in the orthodox guard, so these angles were checked against that.
+  // Lead-hand prop moves: one path per punch kind (EDGE_MOVES). Angles assume the prop's long axis
+  // points forward in the orthodox guard.
   function edgeMove(name, speed, active, lunge, frames) {
     const d = {
       name, limb: 'lh', weapon: 'lFist', weapons: ['lFist'], speed, active, lunge,

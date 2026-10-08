@@ -1,12 +1,9 @@
 /* ============================================================
-   Cage Rules — the career gym, as a place.
-   A walkable 3D room built from the career save: a hanging heavy bag you
-   can practise every strike on (it swings, and it tells you how hard you
-   hit it), a computer with your fight offers, a whiteboard with the week's
-   training plan, a front desk for upgrades and a wall of fame. Every
-   facility you buy shows up on the floor, and the room itself goes from a
-   garage to a proper gym as the upgrades add up.
-   Pure Three.js on top of js/render.js (same fighter rig, no physics engine).
+   Cage Rules — the career gym as a walkable 3D room, rebuilt from the save.
+   Stations: heavy bag (pendulum + hit-force readout), computer (offers),
+   whiteboard (training week), front desk (upgrades), wall of fame (history).
+   Each facility level adds furniture; the total level sets the room tier
+   (garage -> elite). Pure Three.js on js/render.js's fighter rig, no physics.
    ============================================================ */
 (function (root) {
   'use strict';
@@ -121,7 +118,7 @@
   }
 
   // ---------- the facilities, as furniture. level 0 = nothing (or the cheapest version) ----------
-  // Each returns nothing; it adds meshes to g and circles to obstacles [{x,z,r}].
+  // Each adds meshes to g and pushes collision circles {x,z,r} onto obs.
   function heavyBags(level, g, obs, tier) {
     const m = mats();
     // extra bags for the heavy bag room (the main bag is built separately, it is the one you hit)
@@ -187,7 +184,7 @@
       const bar = cyl(g, 0.016, 0.016, 1.8, m.chrome, -3.6, 1.1, -3.1, 10); bar.rotation.z = Math.PI / 2;
       obs.push({ x: -3.6, z: -2.6, r: 0.7 });
     }
-    if (level >= 5) { // dumbbell rack + neck harness hanging
+    if (level >= 5) { // dumbbell rack
       box(g, 1.6, 0.05, 0.4, m.steel, -5.8, 0.4, -3.3); box(g, 1.6, 0.05, 0.4, m.steel, -5.8, 0.8, -3.3);
       for (let i = 0; i < 5; i++) for (const y of [0.47, 0.87]) { const d = cyl(g, 0.05 + i * 0.008, 0.05 + i * 0.008, 0.28, m.chrome, -6.4 + i * 0.3, y, -3.3, 10); d.rotation.z = Math.PI / 2; }
       obs.push({ x: -5.8, z: -3.3, r: 0.6 });
@@ -238,7 +235,7 @@
       for (let i = 0; i < 4; i++) box(g, 0.95, 1.4, 0.08, i % 2 ? m.blue : m.foam, -3.0 + i * 1.0, 0.75, 5.44);
     }
     if (level >= 4) { for (let i = 0; i < 3; i++) box(g, 0.5, 0.06, 0.3, m.white, -3.4, 0.03 + i * 0.07, 4.9); }   // folded gi / towels
-    if (level >= 5) { // trophy mat corner: a podium block with belts hung on the wall
+    if (level >= 5) { // three gold belts on the front wall
       for (let i = 0; i < 3; i++) box(g, 0.5, 0.14, 0.06, m.gold, -5.6 + i * 0.6, 1.9, 5.44);
     }
   }
@@ -461,7 +458,7 @@
       matRoom(C.gym.bjj || 0, g, obs);
       wrestling(C.gym.wre || 0, g, obs);
       recovery(C.gym.recovery || 0, g, obs);
-      // the head coach stands by the ring with his arms folded (idle pose), better dressed as the levels go up
+      // the head coach stands by the ring in the idle pose; dark kit from level 4
       if ((C.gym.coach || 0) >= 1) {
         this.coach = new FighterModel(this.scene, (C.gym.coach >= 4) ? 0x15151a : 0x2c3e50, 0x8d5a3b, 1);
         this.coachState = { x: 3.4, z: -0.9 + 0.0, act: { type: 'idle', t: 0 }, dmg: { head: 0, body: 0, legs: 0 }, rocked: 0, ground: null, blocking: false, stam: 100, idx: 1 };
@@ -626,8 +623,7 @@
       // ----- camera: third person, behind the fighter -----
       const cam = this.cam;
       if (!cam.init) { cam.yaw = P.yaw; cam.init = true; cam.pos.set(clamp(P.x - Math.sin(P.yaw) * 4.2, -ROOM.hw + 0.35, ROOM.hw - 0.35), 2.5, clamp(P.z - Math.cos(P.yaw) * 4.2, -ROOM.hd + 0.35, ROOM.hd - 0.35)); cam.tgt.set(P.x, 1.0, P.z); }
-      // the camera yaw only turns when locked on (swinging round to look past you at the bag); walking never moves it,
-      // so W/A/S/D stay the same screen directions
+      // camera yaw turns only while locked on (swings to look past you at the bag), which keeps free-walk W/A/S/D screen-relative
       if (locked) { let d = lockYaw - cam.yaw; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; cam.yaw += d * expo(dt, 7); }
       const back = locked ? 3.2 : 4.0, up = locked ? 1.8 : 2.2, side = locked ? 1.1 : 0.35; // over the right shoulder
       let cx = P.x - Math.sin(cam.yaw) * back + Math.cos(cam.yaw) * side, cz = P.z - Math.cos(cam.yaw) * back - Math.sin(cam.yaw) * side;
@@ -682,8 +678,8 @@
       // bag axis under the swing
       const B = this.bag, px = BAG.x, pz = BAG.z, py = BAG.pivot;
       const sx = Math.sin(B.tx), sz = Math.sin(B.tz), cy = Math.cos(Math.max(Math.abs(B.tx), Math.abs(B.tz)));
-      // closest approach between the bag (a hanging capsule) and the tip's path since last frame, so a fast
-      // hook or a low frame rate can't step straight through it
+      // closest approach between the bag (a hanging capsule) and the tip's path since last frame, sampled
+      // along the segment so fast strikes and low frame rates still register
       let best = 1e9, bestS = 0, hx = wx, hz = wz;
       for (let k = 0; k <= 4; k++) {
         const u = k / 4, tx = prev[0] + (wx - prev[0]) * u, ty = prev[1] + (h - prev[1]) * u, tz = prev[2] + (wz - prev[2]) * u;

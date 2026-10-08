@@ -16,7 +16,7 @@ export async function createPhysics() {
   world.timestep = PHYS_DT;
   try {
     world.integrationParameters.numSolverIterations = 8;
-  } catch (e) { /* older API */ }
+  } catch (e) { /* property missing in older Rapier builds */ }
   return { RAPIER, world };
 }
 
