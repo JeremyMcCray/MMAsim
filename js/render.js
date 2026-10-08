@@ -738,9 +738,9 @@
       segments.push({ dir: [Math.cos(am), Math.sin(am)], postDir: [Math.cos(a0), Math.sin(a0)], mats: [fM, dM, aM], postMats: [pM, dM], meshes: [post, pad, panel, rail, rail2] });
     }
     g.userData.segments = segments;
-    // arena floor + crowd
+    const legacy = new THREE.Group();
     const floor = new THREE.Mesh(new THREE.CircleGeometry(40, 48), new THREE.MeshStandardMaterial({ color: 0x08080b, roughness: 1 }));
-    floor.rotation.x = -Math.PI / 2; floor.position.y = -0.7; floor.receiveShadow = true; g.add(floor);
+    floor.rotation.x = -Math.PI / 2; floor.position.y = -0.7; floor.receiveShadow = true; legacy.add(floor);
     const crowdGeo = new THREE.BoxGeometry(0.5, 1.0, 0.5);
     const crowdMat = new THREE.MeshStandardMaterial({ color: 0x3a3a48, roughness: 1 });
     const count = 900;
@@ -755,30 +755,35 @@
       col.setHSL(Math.random(), 0.35, 0.18 + Math.random() * 0.15); crowd.setColorAt(i, col);
     }
     crowd.instanceMatrix.needsUpdate = true;
-    g.add(crowd);
-    // seating tiers
+    legacy.add(crowd);
     for (let r = 0; r < 6; r++) {
       const tier = new THREE.Mesh(new THREE.CylinderGeometry(8 + r * 1.6 + 1.2, 8 + r * 1.6 + 1.2, 0.55, 48, 1, true), new THREE.MeshStandardMaterial({ color: 0x101016, roughness: 1, side: THREE.DoubleSide }));
-      tier.position.y = -0.7 + r * 0.55 + 0.27; g.add(tier);
+      tier.position.y = -0.7 + r * 0.55 + 0.27; legacy.add(tier);
     }
+    g.add(legacy);
+    g.userData.legacy = legacy;
     scene.add(g);
     return g;
   }
 
   // ---------- renderer ----------
   class Renderer {
-    constructor(canvas) {
+    constructor(canvas, audio) {
       this.canvas = canvas;
-      this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+      // Alpha stays on so a color void can show through the fence. Legacy paints an opaque arena instead.
+      this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, premultipliedAlpha: false, powerPreference: 'high-performance' });
       this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      this.renderer.setClearColor(0x000000, 0);
       this.renderer.shadowMap.enabled = true;
       this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       this.renderer.outputEncoding = THREE.sRGBEncoding;
       this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
       this.renderer.toneMappingExposure = 1.05;
       this.scene = new THREE.Scene();
-      this.scene.background = new THREE.Color(0x07070a);
-      this.scene.fog = new THREE.Fog(0x07070a, 18, 42);
+      this.legacy = true;
+      this._legacyColor = new THREE.Color(0x07070a);
+      this._legacyFog = new THREE.Fog(0x07070a, 18, 42);
+      this.musicBg = root.MMAMusicBg ? new root.MMAMusicBg.MusicBackground(audio) : null;
       this.camera = new THREE.PerspectiveCamera(42, 16 / 9, 0.1, 100);
       this.camera.position.set(0, 2.2, 7.5);
       this.camTarget = new THREE.Vector3(0, 1, 0);
@@ -807,13 +812,25 @@
       this.fx = [];
       this.time = 0;
       this._tmp = new THREE.Vector3();
+      this.setBackdrop(this.musicBg ? this.musicBg.presetId : 'legacy');
       this.resize();
       window.addEventListener('resize', () => this.resize());
+    }
+
+    setBackdrop(id) {
+      const legacy = !id || id === 'legacy';
+      this.legacy = legacy;
+      if (this.arena && this.arena.userData.legacy) this.arena.userData.legacy.visible = legacy;
+      this.scene.background = legacy ? this._legacyColor : null;
+      this.scene.fog = legacy ? this._legacyFog : null;
+      this.renderer.setClearColor(legacy ? 0x07070a : 0x000000, legacy ? 1 : 0);
+      if (this.musicBg) this.musicBg.setPreset(legacy ? 'legacy' : id);
     }
 
     resize() {
       const w = this.canvas.clientWidth || window.innerWidth, h = this.canvas.clientHeight || window.innerHeight;
       this.renderer.setSize(w, h, false);
+      this.renderer.setClearColor(this.legacy ? 0x07070a : 0x000000, this.legacy ? 1 : 0);
       this.camera.aspect = w / h; this.camera.updateProjectionMatrix();
     }
 
@@ -823,7 +840,6 @@
       this.lastGround = false;
     }
 
-    // visual effect: impact burst
     impact(pos, big, color) {
       const geo = new THREE.SphereGeometry(big ? 0.22 : 0.13, 10, 8);
       const mat = new THREE.MeshBasicMaterial({ color: color || 0xffe9b0, transparent: true, opacity: 0.9 });
@@ -832,7 +848,15 @@
       if (big) this.shake = Math.min(1, this.shake + 0.6);
     }
 
-    handleEvent(ev, S) {
+    // Project a contact into the void and let the background particles take the hit.
+    _voidImpact(pos, power) {
+      if (!this.musicBg || this.legacy || !this.musicBg.impactOn || !pos) return;
+      const proj = pos.clone().project(this.camera);
+      if (proj.z > 1) return;
+      this.musicBg.punch((proj.x * 0.5 + 0.5) * this.musicBg.w, (-proj.y * 0.5 + 0.5) * this.musicBg.h, power);
+    }
+
+    handleEvent(ev) {
       if (!this.models.length) return;
       if (ev.k === 'hit') {
         const victim = this.models[ev.j];
@@ -840,14 +864,30 @@
           : ev.part === 'head' ? victim.headWorld(this._tmp.clone()) : ev.part === 'legs' ? new THREE.Vector3(victim.px, 0.5, victim.pz) : victim.torsoWorld(this._tmp.clone());
         this.impact(p, ev.big || ev.rocked, ev.rocked ? 0xff5533 : ev.jammed ? 0xaaaaaa : ev.momentum ? 0xffb347 : 0xffe9b0);
         victim.flash = ev.rocked ? 1 : 0.5;
+        let power = clamp((ev.dmg || (ev.big ? 4 : 1.6)) / 7.5, 0.28, 1);
+        if (ev.rocked) power = Math.max(power, 0.92);
+        else if (ev.big) power = Math.max(power, 0.62);
+        if (ev.jammed) power *= 0.4;
+        this._voidImpact(p, power);
       } else if (ev.k === 'block') {
         const victim = this.models[ev.j];
-        this.impact(ev.at ? new THREE.Vector3(ev.at[0], ev.at[1], ev.at[2]) : victim.headWorld(this._tmp.clone()).add(new THREE.Vector3(0, -0.1, 0)), false, 0x88aaff);
-      } else if (ev.k === 'kd' || ev.k === 'td' || ev.k === 'sweep') this.shake = 1;
-      else if (ev.k === 'ko' || ev.k === 'tap') this.shake = 1.2;
+        const p = ev.at ? new THREE.Vector3(ev.at[0], ev.at[1], ev.at[2]) : victim.headWorld(this._tmp.clone()).add(new THREE.Vector3(0, -0.1, 0));
+        this.impact(p, false, 0x88aaff);
+        this._voidImpact(p, 0.22);
+      } else if (ev.k === 'kd' || ev.k === 'td' || ev.k === 'sweep') {
+        this.shake = 1;
+        const victim = this.models[ev.j != null ? ev.j : 0];
+        if (victim) this._voidImpact(new THREE.Vector3(victim.px, 0.8, victim.pz), 1);
+      } else if (ev.k === 'ko' || ev.k === 'tap') {
+        this.shake = 1.2;
+        const who = ev.j != null ? ev.j : ev.i;
+        const victim = this.models[who != null ? who : 0];
+        if (victim) this._voidImpact(new THREE.Vector3(victim.px, 1.1, victim.pz), 1);
+      }
     }
 
     update(S, dt, inputs) {
+      if (this.musicBg) this.musicBg.step();
       this.time += dt;
       if (!this.models.length) return;
       const F = S.f;
@@ -883,7 +923,6 @@
       const want = ground ? 4.8 : clamp(4.4 + dist * 1.1, 4.8, 7.6);
       const height = ground ? 3.1 : 2.55 + dist * 0.15;
       const tx = mx + this.camSide.x * want, tz = mz + this.camSide.z * want;
-      // don't let camera go through the far crowd: clamp radius
       this.camPos.x += (tx - this.camPos.x) * expo(dt, 4); this.camPos.z += (tz - this.camPos.z) * expo(dt, 4); this.camPos.y += (height - this.camPos.y) * expo(dt, 4);
       this.camTarget.x += (mx - this.camTarget.x) * expo(dt, 5); this.camTarget.z += (mz - this.camTarget.z) * expo(dt, 5);
       this.camTarget.y += ((ground ? 0.45 : 0.95) - this.camTarget.y) * expo(dt, 4);

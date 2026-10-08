@@ -1,11 +1,13 @@
 :root {
-  --red: #e23b3b; --blue: #3b7ae2; --gold: #e0b23a; --bg: #0b0b10; --panel: rgba(14, 14, 20, 0.86);
+  --red: #e23b3b; --blue: #3b7ae2; --gold: #e0b23a; --bg: #07070a; --panel: rgba(14, 14, 20, 0.86);
   --text: #f2f2f5; --muted: #9a9aa8; --hp: #52d273; --st: #ffcc33;
   --font-head: 'Barlow Condensed', Impact, 'Arial Narrow', sans-serif; --font: 'Barlow', system-ui, sans-serif;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); overflow: hidden; }
-#gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#musicbg { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; display: block; }
+#musicbg[hidden] { display: none !important; }
+#gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; z-index: 1; background: transparent; }
 .layer { position: fixed; inset: 0; }
 .hidden { display: none !important; }
 button { font-family: var(--font-head); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; border: 0; border-radius: 6px; padding: 10px 18px; color: #fff; background: var(--red); font-size: 18px; transition: transform .08s, filter .15s; }
@@ -69,7 +71,25 @@ h1 span { color: var(--red); display: block; font-size: 64px; letter-spacing: .2
 .opt-note b, .opt-help b { color: #fff; font-family: var(--font-head); letter-spacing: .05em; }
 .opt-cols { display: grid; grid-template-columns: 1fr 1.25fr; gap: 28px; margin-top: 10px; }
 .opt-audio { margin-top: 4px; }
-.opt-audio h3, .opt-col h3 { font-family: var(--font-head); font-weight: 700; font-size: 18px; letter-spacing: .15em; color: var(--gold); margin: 10px 0 6px; }
+.opt-audio h3, .opt-look h3, .opt-col h3 { font-family: var(--font-head); font-weight: 700; font-size: 18px; letter-spacing: .15em; color: var(--gold); margin: 10px 0 6px; }
+.opt-look { margin-top: 14px; }
+.bg-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+button.bg-swatch { background: rgba(255,255,255,.04); border: 2px solid rgba(255,255,255,.18); color: var(--text); font-size: 14px; letter-spacing: .08em; padding: 6px 12px 6px 6px; display: inline-flex; align-items: center; gap: 8px; border-radius: 8px; }
+button.bg-swatch i { width: 22px; height: 22px; border-radius: 4px; background: var(--swatch); box-shadow: inset 0 0 0 1px rgba(255,255,255,.28); display: block; flex: 0 0 auto; }
+button.bg-swatch.on { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold); }
+button.bg-swatch:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.bg-preview { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; color: var(--muted); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.bg-preview span { display: inline-flex; align-items: center; gap: 6px; }
+.bg-preview i { width: 14px; height: 14px; border-radius: 3px; display: block; box-shadow: inset 0 0 0 1px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.35); }
+.bg-menu-wrap { margin-top: 10px; }
+button.bg-menu { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: rgba(255,255,255,.04); border: 2px solid rgba(255,255,255,.18); color: var(--text); font-size: 14px; letter-spacing: .12em; padding: 8px 12px; border-radius: 8px; text-transform: uppercase; }
+button.bg-menu b { color: var(--gold); font-weight: 700; letter-spacing: .08em; }
+button.bg-menu[aria-expanded="true"] { border-color: var(--gold); }
+.bg-sub { margin-top: 8px; padding: 10px 12px; border: 1px solid rgba(255,255,255,.12); border-radius: 8px; background: rgba(0,0,0,.22); }
+.opt-look .fx-row { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-bottom: 4px; }
+.opt-look .mute-music { margin-top: 0; }
+.opt-look label.mute-music:has(input:disabled) { opacity: 0.4; cursor: not-allowed; }
+.opt-look label.mute-music:has(input:disabled) input { cursor: not-allowed; }
 .vol-row { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .08em; max-width: 420px; }
 .vol-row input[type="range"] { flex: 1; accent-color: var(--gold); cursor: pointer; }
 .vol-row span { min-width: 2.2em; color: #fff; font-family: var(--font-head); font-size: 18px; letter-spacing: .04em; }
