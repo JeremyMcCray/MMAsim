@@ -173,9 +173,9 @@
   }
 
   // ---------- fighter model ----------
-  // The visible fighter is eleven rigid segments (the same rig the physics uses: box pelvis and
-  // chest, ball head, capsule limbs, ball gloves, box feet). While the ragdoll is live the segments
-  // copy its bodies one-to-one from the pose snapshot in the sim state. On the ground (and in the
+  // The visible fighter is one skinned body bound to eleven segment frames (the same rig the physics
+  // uses: box pelvis and chest, ball head, capsule limbs, ball gloves, box feet). While the ragdoll is
+  // live the segments copy its bodies one-to-one from the pose snapshot in the sim state. On the ground (and in the
   // menu / without physics) a hidden two-bone IK skeleton is posed from POSES and the segments are
   // snapped onto its bones, so the look never changes.
   const SEGS = (root.MMAPhys && root.MMAPhys.SEGS) || null;
@@ -203,301 +203,100 @@
   const SH_X = RIG.shoulder[0], SH_Y = RIG.chestUp + RIG.shoulder[1], HIP_XX = RIG.hip[0], HIP_Y = RIG.hip[1];
   const _q = new THREE.Quaternion(), _pw = new THREE.Vector3(), _off = new THREE.Vector3();
 
-  function makeProp() {
-    const g = new THREE.Group();
-    const steel = new THREE.MeshStandardMaterial({ color: 0xe7edf4, metalness: 0.72, roughness: 0.2 });
-    const goldMat = new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.6, roughness: 0.32 });
-    const gripMat = new THREE.MeshStandardMaterial({ color: 0x4a2c18, roughness: 0.72 });
-    // Built along local -Y. The lead forearm aims that axis forward in the guard.
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.78, 0.014), steel);
-    bar.position.y = -0.52;
-    const edge = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.78, 0.05), steel);
-    edge.position.y = -0.52;
-    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.02, 0.045), goldMat);
-    guard.position.y = -0.12;
-    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.02, 0.13, 8), gripMat);
-    grip.position.y = -0.04;
-    const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.028, 8, 6), goldMat);
-    pommel.position.y = 0.04;
-    g.add(bar, edge, guard, grip, pommel);
-    g.visible = false;
-    return g;
-  }
-  function makePop() {
-    const g = new THREE.Group();
-    // Long axis along local -Z, which is the direction Object3D.lookAt aims.
-    const metal = new THREE.MeshStandardMaterial({ color: 0x4a4a52, metalness: 0.72, roughness: 0.28 });
-    const gripMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1c, roughness: 0.8 });
-    const slide = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.075, 0.26), metal);
-    slide.position.z = -0.05;
-    const tube = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.026, 0.12), metal);
-    tube.position.z = -0.22;
-    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.12, 0.055), gripMat);
-    grip.position.set(0, -0.09, 0.03);
-    grip.rotation.x = -0.22;
-    const sight = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.02, 0.02), new THREE.MeshBasicMaterial({ color: 0xffb24a }));
-    sight.position.set(0, 0.05, -0.26);
-    g.add(slide, tube, grip, sight);
-    g.scale.setScalar(1.28);
-    g.visible = false;
-    return g;
-  }
-  function BloodField(scene) {
-    this.canvas = document.createElement('canvas');
-    this.canvas.width = this.canvas.height = 512;
-    this.g = this.canvas.getContext('2d');
-    this.tex = new THREE.CanvasTexture(this.canvas);
-    this.mesh = new THREE.Mesh(
-      new THREE.CircleGeometry(4.55, 40),
-      new THREE.MeshBasicMaterial({ map: this.tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
-    );
-    this.mesh.rotation.x = -Math.PI / 2;
-    this.mesh.position.y = 0.045;
-    this.mesh.visible = false;
-    this.mesh.renderOrder = 1;
-    scene.add(this.mesh);
-    const geo = new THREE.SphereGeometry(0.04, 6, 5);
-    const mat = new THREE.MeshBasicMaterial({ color: 0x8a1014 });
-    this.drops = [];
-    for (let i = 0; i < 140; i++) {
-      const m = new THREE.Mesh(geo, mat);
-      m.visible = false;
-      m.castShadow = false;
-      scene.add(m);
-      this.drops.push({ m, v: new THREE.Vector3(), life: 0 });
+  // ---------- procedural skinned body ----------
+  // The visible body is one continuous skinned mesh: tubes lofted through cross-section rings (ellipses with
+  // separate front / back fullness, an optional squareness and radial grooves) and weighted to the physics
+  // segments, so shoulders, elbows, the waist, the neck and the knees bend as skin instead of showing seams
+  // between rigid parts. Bones are the eleven segments followed by the two ankle-hinged feet.
+  const BONES = SEG_ORDER.concat(['lFoot', 'rFoot']);
+  const BI = {}; BONES.forEach((n, i) => { BI[n] = i; });
+  const TAU = Math.PI * 2;
+  const W1 = (b) => [[BI[b], 1]];
+  const W2 = (a, b, t) => [[BI[a], 1 - t], [BI[b], t]];
+  // radial modifier: a groove `depth` deep centred at `deg` (0 = fighter's right, 90 = front, 270 = back)
+  const groove = (deg, depth, width) => { const a = deg * Math.PI / 180; return (th) => { let d = ((th - a) % TAU + TAU) % TAU; if (d > Math.PI) d = TAU - d; return 1 - depth * Math.exp(-(d / width) * (d / width)); }; };
+  const mods = (...f) => (th) => f.reduce((s, g) => s * g(th), 1);
+
+  class MeshBuilder {
+    constructor() { this.pos = []; this.si = []; this.sw = []; this.idx = {}; this.n = 0; }
+    vert(x, y, z, w) {
+      this.pos.push(x, y, z);
+      let s = 0; for (const p of w) s += p[1];
+      for (let i = 0; i < 4; i++) { const p = w[i]; this.si.push(p ? p[0] : 0); this.sw.push(p ? p[1] / s : 0); }
+      return this.n++;
     }
-    this.on = false;
-  }
-  BloodField.prototype.stamp = function (x, z, size) {
-    const u = (x / 9.1 + 0.5) * 512;
-    const v = (z / 9.1 + 0.5) * 512;
-    const rad = 8 + size * 16;
-    const g = this.g;
-    const grd = g.createRadialGradient(u, v, 0, u, v, rad);
-    grd.addColorStop(0, 'rgba(110, 6, 10, 0.9)');
-    grd.addColorStop(0.55, 'rgba(80, 4, 8, 0.5)');
-    grd.addColorStop(1, 'rgba(80, 4, 8, 0)');
-    g.fillStyle = grd;
-    g.beginPath();
-    g.arc(u, v, rad, 0, Math.PI * 2);
-    g.fill();
-    this.tex.needsUpdate = true;
-    this.mesh.visible = true;
-  };
-  BloodField.prototype.explode = function (origin) {
-    if (!origin) return;
-    this.mesh.visible = true;
-    this.stamp(origin.x, origin.z, 6);
-    for (let i = 0; i < 28; i++) {
-      const ang = Math.random() * Math.PI * 2;
-      const rad = 0.15 + Math.random() * 1.8;
-      this.stamp(origin.x + Math.cos(ang) * rad, origin.z + Math.sin(ang) * rad, 1.4 + Math.random() * 2.2);
+    tri(a, b, c, m) { (this.idx[m] || (this.idx[m] = [])).push(a, b, c); }
+    // triangle wound so its normal points away from `ref`
+    face(a, b, c, ref, m) {
+      const P = this.pos, ax = P[a * 3], ay = P[a * 3 + 1], az = P[a * 3 + 2];
+      const e1x = P[b * 3] - ax, e1y = P[b * 3 + 1] - ay, e1z = P[b * 3 + 2] - az;
+      const e2x = P[c * 3] - ax, e2y = P[c * 3 + 1] - ay, e2z = P[c * 3 + 2] - az;
+      const nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
+      if (nx * (ax - ref[0]) + ny * (ay - ref[1]) + nz * (az - ref[2]) < 0) this.tri(a, c, b, m); else this.tri(a, b, c, m);
     }
-    for (let i = 0; i < this.drops.length; i++) {
-      const d = this.drops[i];
-      d.life = 0.7 + Math.random() * 0.8;
-      d.m.visible = true;
-      d.m.position.copy(origin);
-      const sc = 1.6 + Math.random() * 3.4;
-      d.m.scale.setScalar(sc);
-      const ang = Math.random() * Math.PI * 2;
-      const sp = 2.4 + Math.random() * 7;
-      d.v.set(Math.cos(ang) * sp, 2.2 + Math.random() * 6.5, Math.sin(ang) * sp);
-    }
-  };
-  BloodField.prototype.burst = function (origin, power) {
-    if (!this.on || !origin) return;
-    const pwr = power < 0.3 ? 0.3 : power > 1.4 ? 1.4 : power;
-    const n = 12 + Math.round(pwr * 20);
-    let spawned = 0;
-    for (let i = 0; i < this.drops.length && spawned < n; i++) {
-      const d = this.drops[i];
-      if (d.life > 0) continue;
-      d.life = 0.55 + Math.random() * 0.55;
-      d.m.visible = true;
-      d.m.scale.setScalar(1);
-      d.m.position.copy(origin);
-      const ang = Math.random() * Math.PI * 2;
-      const sp = 1.1 + pwr * 3.2 * Math.random();
-      d.v.set(Math.cos(ang) * sp, 1.5 + Math.random() * 2.6 * pwr, Math.sin(ang) * sp);
-      spawned++;
-    }
-    const stains = 5 + Math.round(pwr * 8);
-    for (let i = 0; i < stains; i++) {
-      const ang = Math.random() * Math.PI * 2;
-      const rad = Math.random() * (0.45 + pwr);
-      this.stamp(origin.x + Math.cos(ang) * rad, origin.z + Math.sin(ang) * rad, 0.45 + Math.random() * pwr);
-    }
-  };
-  BloodField.prototype.step = function (dt) {
-    for (let i = 0; i < this.drops.length; i++) {
-      const d = this.drops[i];
-      if (d.life <= 0) continue;
-      d.life -= dt;
-      d.v.y -= 10 * dt;
-      d.m.position.x += d.v.x * dt;
-      d.m.position.y += d.v.y * dt;
-      d.m.position.z += d.v.z * dt;
-      if (d.m.position.y <= 0.05 || d.life <= 0) {
-        if (d.m.position.y <= 0.35) this.stamp(d.m.position.x, d.m.position.z, 0.55 + Math.random() * 0.7);
-        d.life = 0;
-        d.m.visible = false;
+    // ring: { c:[x,y,z], rx, rz, u, v, zf, zb, n, w, mat, mod, ha (half angle of a partial ring, centred on the back), ref }
+    ring(r, N) {
+      const full = r.ha === undefined, u = r.u || [1, 0, 0], v = r.v || [0, 0, 1], n = r.n || 2, zf = r.zf || 1, zb = r.zb || 1;
+      const a0 = full ? 0 : (270 - r.ha) * Math.PI / 180, a1 = full ? TAU : (270 + r.ha) * Math.PI / 180, M = full ? N : N + 1;
+      const out = [];
+      for (let k = 0; k < M; k++) {
+        const th = a0 + (a1 - a0) * k / N;
+        let cs = Math.cos(th), sn = Math.sin(th);
+        if (n !== 2) { cs = Math.sign(cs) * Math.pow(Math.abs(cs), 2 / n); sn = Math.sign(sn) * Math.pow(Math.abs(sn), 2 / n); }
+        let a = r.rx * cs, b = r.rz * sn * (sn > 0 ? zf : zb);
+        if (r.mod) { const s = r.mod(th); a *= s; b *= s; }
+        out.push(this.vert(r.c[0] + u[0] * a + v[0] * b, r.c[1] + u[1] * a + v[1] * b, r.c[2] + u[2] * a + v[2] * b, r.w));
       }
+      return out;
     }
-  };
-  BloodField.prototype.clear = function () {
-    this.g.clearRect(0, 0, 512, 512);
-    this.tex.needsUpdate = true;
-    this.mesh.visible = false;
-    for (let i = 0; i < this.drops.length; i++) { this.drops[i].life = 0; this.drops[i].m.visible = false; }
-  };
+    // loft a tube through the rings; `poles` = [startPole, endPole] positions ([x,y,z] or null) close the ends
+    loft(rings, N, mat, poles) {
+      const rows = rings.map((r) => this.ring(r, N));
+      for (let i = 0; i + 1 < rings.length; i++) {
+        const A = rows[i], B = rows[i + 1], full = rings[i].ha === undefined, M = A.length;
+        const m = rings[i + 1].mat || rings[i].mat || mat, ref = rings[i].ref || rings[i].c, cnt = full ? M : M - 1;
+        for (let k = 0; k < cnt; k++) { const k1 = (k + 1) % M; this.face(A[k], A[k1], B[k1], ref, m); this.face(A[k], B[k1], B[k], ref, m); }
+      }
+      const cap = (row, r, pole, ref) => {
+        const p = this.vert(pole[0], pole[1], pole[2], r.w), M = row.length, full = r.ha === undefined, m = r.mat || mat;
+        for (let k = 0; k < (full ? M : M - 1); k++) this.face(row[k], row[(k + 1) % M], p, ref, m);
+      };
+      if (poles && poles[0]) cap(rows[0], rings[0], poles[0], rings[1].c);
+      if (poles && poles[1]) cap(rows[rows.length - 1], rings[rings.length - 1], poles[1], rings[rings.length - 2].c);
+    }
+    build(matOrder) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
+      g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(this.si, 4));
+      g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(this.sw, 4));
+      const index = []; let start = 0;
+      matOrder.forEach((m, i) => { const a = this.idx[m] || []; if (a.length) g.addGroup(start, a.length, i); for (const v of a) index.push(v); start += a.length; });
+      g.setIndex(index);
+      g.computeVertexNormals();
+      return g;
+    }
+  }
+  // rounded end: rings shrinking along `dir` over `len`, then the pole
+  function dome(r, dir, len, w) {
+    const out = [];
+    for (const t of [0.45, 0.78, 0.94]) {
+      const s = Math.sqrt(1 - t * t);
+      out.push(Object.assign({}, r, { c: [r.c[0] + dir[0] * len * t, r.c[1] + dir[1] * len * t, r.c[2] + dir[2] * len * t], rx: r.rx * s, rz: r.rz * s, w: w || r.w, mod: null }));
+    }
+    return { rings: out, pole: [r.c[0] + dir[0] * len, r.c[1] + dir[1] * len, r.c[2] + dir[2] * len] };
+  }
 
   class FighterModel {
     constructor(scene, color, skin, idx) {
       this.idx = idx;
-      const skinMat = new THREE.MeshStandardMaterial({ color: skin, roughness: 0.75, metalness: 0.0 });
-      const shortsMat = new THREE.MeshStandardMaterial({ color, roughness: 0.6 });
-      const gloveMat = new THREE.MeshStandardMaterial({ color: idx === 0 ? 0xc62828 : 0x1e5bd6, roughness: 0.4, metalness: 0.05 });
-      const darkMat = new THREE.MeshStandardMaterial({ color: 0x1c1c22, roughness: 0.9 });
-      const headMat = skinMat.clone(), bodyMat = skinMat.clone(), legMat = skinMat.clone();
-      this.mats = { skinMat, shortsMat, gloveMat, headMat, bodyMat, legMat };
-      this.skinBase = new THREE.Color(skin);
-
-      // ---- visible segments (world-space groups)
-      // Each physics segment is a group holding an anatomical-ish body part built from lathes (smooth, tapered
-      // muscle shapes) plus a few spheres and boxes for landmarks. Everything stays inside / close to the physics
-      // collider of that segment so what you see is what gets hit.
+      // ---- segment frames (world-space groups), one per physics body, plus a foot hinged on each shin
       this.segs = {}; this.feet = {};
-      const seg = (name) => { const g = new THREE.Group(); scene.add(g); this.segs[name] = g; return g; };
+      for (const name of SEG_ORDER) { const g = new THREE.Group(); scene.add(g); this.segs[name] = g; }
+      for (const side of ['l', 'r']) { const foot = new THREE.Group(); foot.position.set(ANKLE_PIVOT[0], ANKLE_PIVOT[1], ANKLE_PIVOT[2]); this.segs[side + 'Shin'].add(foot); this.feet[side] = foot; }
       const addMesh = (g, geo, mat, offset, scale) => {
         const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true;
         if (offset) m.position.set(...offset); if (scale) m.scale.set(...scale); g.add(m); return m;
       };
-      // lathe around Y from a profile of [y, radius] pairs (top to bottom); zScale squashes it into an ellipse
-      const lathe = (g, profile, mat, zScale, offset) => {
-        // LatheGeometry winds its faces outward for points ordered bottom-to-top; profiles here are written top-down
-        const ordered = profile[0][0] > profile[profile.length - 1][0] ? profile.slice().reverse() : profile;
-        const pts = ordered.map(([y, r]) => new THREE.Vector2(Math.max(r, 0.001), y));
-        const m = addMesh(g, new THREE.LatheGeometry(pts, 24), mat, offset, zScale ? [1, 1, zScale] : null);
-        return m;
-      };
-      // smooth limb: capped lathe with rounded ends, radius given at the top, the belly (fraction f down) and the bottom
-      const limb = (g, half, rTop, rBelly, rBot, f, mat, ySkew) => {
-        const prof = [];
-        const N = 14;
-        for (let i = 0; i <= N; i++) {
-          const t = i / N, y = half - t * half * 2;
-          // blend top -> belly -> bottom with smooth cosine shoulders
-          let r;
-          if (t < f) { const u = t / f; r = rTop + (rBelly - rTop) * (0.5 - 0.5 * Math.cos(u * Math.PI)); }
-          else { const u = (t - f) / (1 - f); r = rBelly + (rBot - rBelly) * (0.5 - 0.5 * Math.cos(u * Math.PI)); }
-          prof.push([y, r]);
-        }
-        // rounded ends
-        prof.unshift([half + rTop * 0.6, rTop * 0.75], [half + rTop * 0.9, rTop * 0.35], [half + rTop, 0]);
-        prof.push([-half - rBot * 0.6, rBot * 0.75], [-half - rBot * 0.9, rBot * 0.35], [-half - rBot, 0]);
-        return lathe(g, prof, mat, null, ySkew ? [0, ySkew, 0] : null);
-      };
-      const R = RIG;
-      const trimMat = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.7 });
-      const bandMat = new THREE.MeshStandardMaterial({ color: 0x15151a, roughness: 0.85 });
-      const eyeWhite = new THREE.MeshStandardMaterial({ color: 0xf4f0ea, roughness: 0.4 });
-      const mouthMat = new THREE.MeshStandardMaterial({ color: 0x5a2a2a, roughness: 0.8 });
-
-      // -- pelvis: fight shorts. Waistband at the top, hips flare, hem just above the thigh tops, a seam stripe.
-      const pelvis = seg('pelvis');
-      const PW = R.pelvis[0], PH = R.pelvis[1], PD = R.pelvis[2];
-      lathe(pelvis, [[PH + 0.015, PW * 0.86], [PH, PW * 0.98], [PH * 0.4, PW * 1.06], [-PH * 0.3, PW * 1.1], [-PH - 0.02, PW * 1.06], [-PH - 0.05, PW * 0.98], [-PH - 0.06, 0.6 * PW]], shortsMat, PD / PW * 1.05);
-      lathe(pelvis, [[PH + 0.03, PW * 0.9], [PH + 0.03, PW * 0.84], [PH - 0.015, PW * 0.84], [PH - 0.015, PW * 1.0], [PH + 0.03, PW * 1.0]], bandMat, PD / PW * 1.05); // waistband
-      addMesh(pelvis, new THREE.BoxGeometry(0.02, PH * 1.6, 0.012), trimMat, [PW * 1.07, -0.01, 0]);   // side stripes
-      addMesh(pelvis, new THREE.BoxGeometry(0.02, PH * 1.6, 0.012), trimMat, [-PW * 1.07, -0.01, 0]);
-
-      // -- chest: a torso lathe (wide shoulders, narrow waist) squashed front-to-back, with traps, pecs and abs
-      const chest = seg('chest');
-      const CW = R.chest[0], CH = R.chest[1], CD = R.chest[2];
-      lathe(chest, [[CH + 0.045, CW * 0.36], [CH + 0.02, CW * 0.8], [CH - 0.01, CW * 1.04], [CH - 0.08, CW * 1.03], [0, CW * 0.95], [-CH * 0.55, CW * 0.86], [-CH, CW * 0.84], [-CH - 0.03, CW * 0.8]], bodyMat, CD / CW * 1.1);
-      // trapezius wedges running from the neck to the shoulders
-      addMesh(chest, new THREE.SphereGeometry(0.07, 14, 10), bodyMat, [0.1, CH - 0.01, -0.01], [1.5, 0.6, 0.75]);
-      addMesh(chest, new THREE.SphereGeometry(0.07, 14, 10), bodyMat, [-0.1, CH - 0.01, -0.01], [1.5, 0.6, 0.75]);
-      // pecs
-      addMesh(chest, new THREE.SphereGeometry(0.085, 16, 12), bodyMat, [0.085, CH * 0.3, CD * 0.62], [1.05, 0.68, 0.38]);
-      addMesh(chest, new THREE.SphereGeometry(0.085, 16, 12), bodyMat, [-0.085, CH * 0.3, CD * 0.62], [1.05, 0.68, 0.38]);
-      // abs: three rows of paired blocks down the front
-      for (let i = 0; i < 3; i++) for (const sx of [-1, 1]) addMesh(chest, new THREE.SphereGeometry(0.04, 10, 8), bodyMat, [sx * 0.04, -0.03 - i * 0.06, CD * 1.0], [0.95, 0.68, 0.2]);
-      // shoulder blades hint at the back
-      addMesh(chest, new THREE.SphereGeometry(0.09, 14, 10), bodyMat, [0.085, CH * 0.35, -CD * 0.62], [1.0, 1.0, 0.35]);
-      addMesh(chest, new THREE.SphereGeometry(0.09, 14, 10), bodyMat, [-0.085, CH * 0.35, -CD * 0.62], [1.0, 1.0, 0.35]);
-      // neck column rises from the chest (the head carries its own short neck so there is never a gap)
-      addMesh(chest, new THREE.CylinderGeometry(0.052, 0.062, 0.1, 16), bodyMat, [0, CH + 0.04, -0.005]);
-
-      // -- head: slightly egg-shaped skull, jaw, ears, brow, nose, eyes, mouth and a short crop of hair
-      const head = seg('head');
-      const HR = R.headR;
-      this.head = addMesh(head, new THREE.SphereGeometry(HR, 28, 22), headMat, [0, 0.01, -0.005], [0.93, 1.05, 1.0]);
-      addMesh(head, new THREE.SphereGeometry(HR * 0.78, 20, 16), headMat, [0, -HR * 0.52, HR * 0.18], [0.86, 0.72, 0.9]);     // jaw
-      addMesh(head, new THREE.CylinderGeometry(0.05, 0.056, 0.1, 16), headMat, [0, -HR - 0.02, -0.01]);                       // neck
-      addMesh(head, new THREE.SphereGeometry(0.028, 10, 8), headMat, [HR * 0.93, -0.005, -0.01], [0.55, 1.0, 0.8]);          // ears
-      addMesh(head, new THREE.SphereGeometry(0.028, 10, 8), headMat, [-HR * 0.93, -0.005, -0.01], [0.55, 1.0, 0.8]);
-      addMesh(head, new THREE.SphereGeometry(0.03, 12, 10), headMat, [0, 0.052, HR * 0.68], [2.2, 0.4, 0.7]);                 // brow ridge
-      addMesh(head, new THREE.SphereGeometry(0.02, 10, 8), headMat, [0, -0.02, HR * 0.94], [0.7, 1.25, 0.9]);               // nose
-      for (const sx of [-1, 1]) {
-        addMesh(head, new THREE.SphereGeometry(0.02, 10, 8), eyeWhite, [sx * 0.045, 0.02, HR * 0.82], [1.1, 0.7, 0.6]);
-        addMesh(head, new THREE.SphereGeometry(0.011, 8, 8), darkMat, [sx * 0.045, 0.02, HR * 0.82 + 0.014]);
-        addMesh(head, new THREE.SphereGeometry(0.05, 12, 10), headMat, [sx * 0.06, -0.03, HR * 0.5], [0.8, 0.75, 0.75]);     // cheekbones
-      }
-      addMesh(head, new THREE.BoxGeometry(0.05, 0.008, 0.01), mouthMat, [0, -0.065, HR * 0.86]);                              // mouth
-      addMesh(head, new THREE.SphereGeometry(HR * 1.01, 28, 14, 0, Math.PI * 2, 0, Math.PI * 0.44), darkMat, [0, 0.012, -0.015], [0.94, 1.05, 1.0]); // hair cap
-
-      for (const side of ['l', 'r']) {
-        const sx = side === 'l' ? -1 : 1;
-        // -- upper arm: deltoid cap at the shoulder, bicep belly, narrowing to the elbow
-        const ua = seg(side + 'UpperArm');
-        const UH = R.upperArm[0], UR = R.upperArm[1];
-        limb(ua, UH, UR * 1.15, UR * 1.3, UR * 0.95, 0.45, skinMat);
-        addMesh(ua, new THREE.SphereGeometry(UR * 1.55, 16, 12), skinMat, [0, UH + 0.01, 0], [1.0, 0.9, 1.0]);           // deltoid
-        // -- forearm + glove
-        const fa = seg(side + 'Forearm');
-        const FH = R.forearm[0], FR = R.forearm[1];
-        limb(fa, FH, FR * 1.1, FR * 1.25, FR * 0.82, 0.3, skinMat);
-        addMesh(fa, new THREE.SphereGeometry(FR * 1.1, 12, 10), skinMat, [0, FH + 0.005, 0]);                              // elbow
-        // MMA glove: padded knuckle block over the fist, open palm side, thumb, wrist strap
-        const GY = R.fistY, GR = R.fistR;
-        addMesh(fa, new THREE.SphereGeometry(GR, 18, 14), gloveMat, [0, GY, 0.005], [1.0, 1.0, 0.85]);                      // fist
-        addMesh(fa, new THREE.SphereGeometry(GR * 0.95, 16, 12), gloveMat, [0, GY - 0.01, 0.025], [1.05, 0.8, 0.8]);         // knuckle pad
-        addMesh(fa, new THREE.SphereGeometry(GR * 0.45, 10, 8), gloveMat, [sx * -GR * 0.75, GY + 0.015, 0.03], [0.8, 1.2, 0.8]); // thumb
-        for (let i = 0; i < 4; i++) addMesh(fa, new THREE.SphereGeometry(0.012, 8, 6), skinMat, [(-0.03 + i * 0.02) * -sx, GY - GR * 0.95, 0.01]); // fingertips
-        addMesh(fa, new THREE.CylinderGeometry(FR * 1.1, FR * 1.2, 0.06, 16), gloveMat, [0, GY + GR + 0.01, 0]);         // wrist strap
-        addMesh(fa, new THREE.CylinderGeometry(FR * 1.14, FR * 1.14, 0.014, 16), bandMat, [0, GY + GR + 0.02, 0]);     // strap seam
-        // -- thigh: shorts leg over the top half, quad belly, knee cap
-        const th = seg(side + 'Thigh');
-        const TH = R.thigh[0], TR = R.thigh[1];
-        limb(th, TH, TR * 1.12, TR * 1.26, TR * 0.86, 0.4, legMat);
-        lathe(th, [[TH + 0.03, TR * 1.15], [TH, TR * 1.32], [TH * 0.5, TR * 1.36], [0.02, TR * 1.33], [-0.01, TR * 1.28], [-0.015, TR * 0.9]], shortsMat, 1);
-        addMesh(th, new THREE.CylinderGeometry(TR * 1.32, TR * 1.32, 0.012, 20), trimMat, [0, -0.005, 0]);           // hem trim
-        addMesh(th, new THREE.SphereGeometry(TR * 0.72, 14, 10), legMat, [0, -TH - 0.01, 0.015], [1.0, 1.0, 0.9]);   // knee
-        // -- shin: calf belly high at the back, thin ankle, bare foot
-        const sh = seg(side + 'Shin');
-        const SH = R.shin[0], SR = R.shin[1];
-        limb(sh, SH, SR * 1.12, SR * 1.28, SR * 0.82, 0.3, legMat);
-        addMesh(sh, new THREE.SphereGeometry(SR * 1.15, 14, 10), legMat, [0, SH * 0.45, -SR * 0.5], [0.95, 1.5, 0.95]);  // calf
-        const fp = R.footPos, FW = R.foot[0], FHh = R.foot[1], FL = R.foot[2];
-        addMesh(sh, new THREE.SphereGeometry(SR * 0.9, 12, 10), legMat, [0, fp[1] + FHh + 0.02, -0.005], [1.0, 0.8, 1.0]); // ankle
-        // the foot hangs off an ankle group so it can point (plantar-flex) with the physics foot during kicks
-        const AP = ANKLE_PIVOT, foot = new THREE.Group(); foot.position.set(AP[0], AP[1], AP[2]); sh.add(foot); this.feet[side] = foot;
-        const fo = (x, y, z) => [x - AP[0], y - AP[1], z - AP[2]];
-        addMesh(foot, new THREE.BoxGeometry(FW * 2, FHh * 2, FL * 1.6), legMat, fo(fp[0], fp[1], fp[2] - FL * 0.2));          // foot body
-        addMesh(foot, new THREE.SphereGeometry(FW, 14, 10), legMat, fo(fp[0], fp[1] - FHh * 0.1, fp[2] + FL * 0.6), [1.0, 0.75, 1.0]); // toes
-        addMesh(foot, new THREE.SphereGeometry(FW * 0.9, 12, 10), legMat, fo(fp[0], fp[1], fp[2] - FL * 0.95), [1.0, 0.8, 0.7]);     // heel
-        addMesh(foot, new THREE.BoxGeometry(FW * 2.05, 0.008, FL * 2.05), bandMat, fo(fp[0], fp[1] - FHh, fp[2] - FL * 0.02));      // sole
-      }
-      // a cut over the eye, a marked nose and mouth, and a smear on the chest (shown as damage climbs)
-      const bloodMat = new THREE.MeshStandardMaterial({ color: 0x8a0f12, roughness: 0.35, transparent: true, opacity: 0 });
-      this.bloodMat = bloodMat;
-      const cut = addMesh(head, new THREE.BoxGeometry(0.05, 0.016, 0.02), bloodMat, [0.05, 0.062, R.headR * 0.78]); cut.rotation.z = 0.3; cut.castShadow = false;
-      const nose = addMesh(head, new THREE.BoxGeometry(0.03, 0.06, 0.02), bloodMat, [0, -0.05, R.headR * 0.88]); nose.castShadow = false;
-      const cheek = addMesh(head, new THREE.SphereGeometry(0.03, 8, 6), bloodMat, [-0.075, -0.02, R.headR * 0.7]); cheek.scale.set(1, 1.3, 0.5); cheek.castShadow = false;
-      const smear = addMesh(chest, new THREE.BoxGeometry(0.14, 0.22, 0.01), bloodMat, [0.02, 0.0, R.chest[2] * 1.1 + 0.01]); smear.castShadow = false;
-      this.blood = { cut, nose, cheek, smear };
 
       // ---- hidden IK skeleton (drives the segments when the ragdoll is parked)
       this.root = new THREE.Group();
@@ -513,6 +312,202 @@
       this.lKn = new THREE.Group(); this.lKn.position.y = -THIGH_L; this.lHip.add(this.lKn);
       this.rKn = new THREE.Group(); this.rKn.position.y = -THIGH_L; this.rHip.add(this.rKn);
       scene.add(this.root);
+
+      // ---- bind pose: the skeleton standing straight at the origin, arms hanging, facing +Z. The body is
+      // modelled in this frame and bound to the segments here, then skinned to wherever they go.
+      this.body.position.set(0, HIP_H, 0);
+      this._applySkeleton();
+      for (const n of SEG_ORDER) this.segs[n].updateMatrixWorld(true);
+      const R = RIG, Sg = this.segs;
+      const L = {
+        hipY: Sg.rThigh.position.y + R.thigh[0] + 0.03, headY: Sg.head.position.y,
+        shX: SH_X, shY: Sg.rUpperArm.position.y + R.upperArm[0] + 0.02, elY: Sg.rForearm.position.y + R.forearm[0] + 0.02, fistY: Sg.rForearm.position.y + R.fistY,
+        hipX: HIP_XX, kneeY: Sg.rShin.position.y + R.shin[0] + 0.03,
+        ankleY: Sg.rShin.position.y + ANKLE_PIVOT[1], ankleZ: ANKLE_PIVOT[2], footY: Sg.rShin.position.y + R.footPos[1], footZ: R.footPos[2]
+      };
+      const MATS = ['body', 'head', 'legs', 'shorts', 'band', 'trim', 'hair'];
+      const skinOpts = { roughness: 0.62, metalness: 0.0, skinning: true };
+      const bodyMat = new THREE.MeshStandardMaterial(Object.assign({ color: skin }, skinOpts));
+      const headMat = bodyMat.clone(), legMat = bodyMat.clone(), skinMat = bodyMat.clone();
+      const shortsMat = new THREE.MeshStandardMaterial({ color, roughness: 0.55, skinning: true, side: THREE.DoubleSide });
+      const bandSkinMat = new THREE.MeshStandardMaterial({ color: 0x15151a, roughness: 0.85, skinning: true });
+      const trimSkinMat = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.7, skinning: true });
+      const hairMat = new THREE.MeshStandardMaterial({ color: 0x1a1210, roughness: 0.95, skinning: true });
+      const gloveMat = new THREE.MeshStandardMaterial({ color: idx === 0 ? 0xc62828 : 0x1e5bd6, roughness: 0.4, metalness: 0.05 });
+      const darkMat = new THREE.MeshStandardMaterial({ color: 0x1c1c22, roughness: 0.9 });
+      const bandMat = new THREE.MeshStandardMaterial({ color: 0x15151a, roughness: 0.85 });
+      const eyeWhite = new THREE.MeshStandardMaterial({ color: 0xf4f0ea, roughness: 0.4 });
+      const mouthMat = new THREE.MeshStandardMaterial({ color: 0x5a2a2a, roughness: 0.8 });
+      this.mats = { skinMat, shortsMat, gloveMat, headMat, bodyMat, legMat, hairMat };
+      this.skinBase = new THREE.Color(skin);
+
+      const B = new MeshBuilder();
+      const ring = (y, rx, rz, w, o) => Object.assign({ c: [0, y, 0], rx, rz, w }, o || {});
+      // -- torso, neck and head: one tube from the hips to the crown
+      {
+        const { hipY, shY, headY } = L, sternum = groove(90, 0.035, 0.28), spine = groove(270, 0.03, 0.3), linea = groove(90, 0.018, 0.2);
+        const T = [
+          ring(hipY - 0.03, 0.15, 0.10, W1('pelvis')),
+          ring(hipY, 0.17, 0.115, W1('pelvis'), { zb: 1.12 }),
+          ring(hipY + 0.07, 0.165, 0.11, W1('pelvis'), { zb: 1.05, mod: linea }),
+          ring(hipY + 0.14, 0.15, 0.10, W2('pelvis', 'chest', 0.35), { zf: 1.02, mod: mods(linea, spine) }),
+          ring(hipY + 0.21, 0.156, 0.105, W2('pelvis', 'chest', 0.8), { zf: 1.03, mod: mods(linea, spine) }),
+          ring(hipY + 0.29, 0.168, 0.115, W1('chest'), { zf: 1.06, mod: mods(sternum, spine) }),
+          ring(hipY + 0.37, 0.185, 0.122, W1('chest'), { zf: 1.13, mod: mods(sternum, spine) }),
+          ring(hipY + 0.45, 0.20, 0.128, W1('chest'), { zf: 1.16, mod: mods(sternum, spine) }),
+          ring(hipY + 0.52, 0.205, 0.125, W1('chest'), { zf: 1.08, mod: spine }),
+          ring(shY - 0.02, 0.20, 0.115, W1('chest')),
+          ring(shY + 0.025, 0.145, 0.095, W1('chest')),
+          ring(shY + 0.05, 0.095, 0.08, W1('chest')),
+          ring(shY + 0.065, 0.068, 0.066, W2('chest', 'head', 0.3), { c: [0, shY + 0.065, -0.005] }),
+          ring(headY - 0.08, 0.07, 0.07, W2('chest', 'head', 0.7), { zf: 1.25, mat: 'head' }),
+          ring(headY - 0.05, 0.092, 0.092, W1('head'), { zf: 1.15, mat: 'head' }),
+          ring(headY - 0.015, 0.106, 0.105, W1('head'), { zf: 1.05, mat: 'head' }),
+          ring(headY + 0.02, 0.114, 0.115, W1('head'), { zb: 1.04, mat: 'head' }),
+          ring(headY + 0.06, 0.113, 0.112, W1('head'), { zf: 0.98, zb: 1.08, mat: 'head' }),
+          ring(headY + 0.095, 0.10, 0.105, W1('head'), { zb: 1.06, mat: 'head' }),
+          ring(headY + 0.12, 0.072, 0.078, W1('head'), { mat: 'head' }),
+          ring(headY + 0.135, 0.035, 0.04, W1('head'), { mat: 'head' })
+        ];
+        B.loft(T, 36, 'body', [[0, hipY - 0.05, 0], [0, headY + 0.142, 0]]);
+        // hair: a thin shell over the crown, open at the forehead, reaching down behind the ears
+        const H = [
+          { y: headY - 0.01, ha: 80, rx: 0.111, rz: 0.112, zb: 1.04 }, { y: headY + 0.02, ha: 100, rx: 0.114, rz: 0.115, zb: 1.04 },
+          { y: headY + 0.05, ha: 125, rx: 0.1135, rz: 0.113, zf: 0.985, zb: 1.07 }, { y: headY + 0.072, ha: 150, rx: 0.11, rz: 0.11, zf: 0.98, zb: 1.075 },
+          { y: headY + 0.09, ha: 170, rx: 0.102, rz: 0.106, zb: 1.06 }, { y: headY + 0.105, ha: 180, rx: 0.09, rz: 0.096, zb: 1.03 },
+          { y: headY + 0.122, ha: 180, rx: 0.068, rz: 0.075 }, { y: headY + 0.136, ha: 180, rx: 0.033, rz: 0.038 }
+        ].map((h) => ring(h.y + 0.003, h.rx * 1.025, h.rz * 1.025, W1('head'), { ha: h.ha, zf: h.zf, zb: h.zb, mat: 'hair' }));
+        B.loft(H, 36, 'hair', [null, [0, headY + 0.146, 0]]);
+      }
+      for (const side of ['l', 'r']) {
+        const sx = side === 'l' ? -1 : 1, ua = side + 'UpperArm', fa = side + 'Forearm', th = side + 'Thigh', sh = side + 'Shin', ft = side + 'Foot';
+        // -- arm: deltoid over the shoulder, bicep / triceps, elbow, forearm, down into the glove
+        {
+          const { shX, shY, elY, fistY } = L, x = sx * shX;
+          const r = (y, rx, rz, w, o) => Object.assign({ c: [x, y, 0], rx, rz, w }, o || {});
+          const A = [
+            r(shY + 0.062, 0.044, 0.044, W2('chest', ua, 0.3), { c: [sx * (shX - 0.025), shY + 0.062, 0] }),
+            r(shY + 0.038, 0.068, 0.066, W2('chest', ua, 0.4), { c: [sx * (shX - 0.012), shY + 0.038, 0] }),
+            r(shY + 0.005, 0.08, 0.076, W2('chest', ua, 0.6)),
+            r(shY - 0.045, 0.079, 0.075, W2('chest', ua, 0.85), { zf: 1.03 }),
+            r(shY - 0.10, 0.069, 0.067, W1(ua), { zf: 1.08, zb: 1.06 }),
+            r(elY + 0.12, 0.066, 0.063, W1(ua), { zf: 1.14, zb: 1.06 }),
+            r(elY + 0.06, 0.057, 0.055, W1(ua), { zf: 1.04 }),
+            r(elY + 0.025, 0.052, 0.053, W2(ua, fa, 0.3)),
+            r(elY, 0.05, 0.053, W2(ua, fa, 0.5), { zb: 1.08 }),
+            r(elY - 0.03, 0.052, 0.052, W2(ua, fa, 0.75)),
+            r(elY - 0.07, 0.057, 0.054, W1(fa), { zf: 1.04 }),
+            r(elY - 0.12, 0.051, 0.048, W1(fa)),
+            r(elY - 0.18, 0.043, 0.041, W1(fa)),
+            r(fistY + 0.09, 0.038, 0.036, W1(fa)),
+            r(fistY + 0.06, 0.036, 0.034, W1(fa))
+          ];
+          const d = dome(A[A.length - 1], [0, -1, 0], 0.04);
+          B.loft(A.concat(d.rings), 24, 'body', [[sx * (shX - 0.03), shY + 0.075, 0], d.pole]);
+        }
+        // -- leg: glute / quad, knee, calf, ankle
+        {
+          const { hipX, hipY, kneeY, ankleY, ankleZ } = L, x = sx * hipX;
+          const r = (y, rx, rz, w, o) => Object.assign({ c: [x, y, 0], rx, rz, w }, o || {});
+          const G = [
+            r(hipY + 0.07, 0.075, 0.075, W2('pelvis', th, 0.3)),
+            r(hipY + 0.02, 0.086, 0.09, W2('pelvis', th, 0.45), { zb: 1.16 }),
+            r(hipY - 0.04, 0.088, 0.092, W2('pelvis', th, 0.7), { zb: 1.12, zf: 1.02 }),
+            r(hipY - 0.11, 0.09, 0.092, W2('pelvis', th, 0.9), { zf: 1.1, zb: 1.1 }),
+            r(hipY - 0.20, 0.086, 0.09, W1(th), { zf: 1.12, zb: 1.04 }),
+            r(hipY - 0.29, 0.078, 0.082, W1(th), { zf: 1.1 }),
+            r(kneeY + 0.08, 0.068, 0.072, W1(th), { zf: 1.06 }),
+            r(kneeY + 0.035, 0.062, 0.066, W2(th, sh, 0.3), { zf: 1.06 }),
+            r(kneeY, 0.06, 0.066, W2(th, sh, 0.5), { zf: 1.1 }),
+            r(kneeY - 0.035, 0.06, 0.066, W2(th, sh, 0.75), { zb: 1.1 }),
+            r(kneeY - 0.09, 0.062, 0.07, W1(sh), { zb: 1.3 }),
+            r(kneeY - 0.16, 0.058, 0.066, W1(sh), { zb: 1.32 }),
+            r(kneeY - 0.23, 0.05, 0.056, W1(sh), { zb: 1.18 }),
+            r(ankleY + 0.09, 0.043, 0.047, W1(sh)),
+            r(ankleY + 0.04, 0.04, 0.044, W1(sh), { c: [x, ankleY + 0.04, ankleZ * 0.5] }),
+            r(ankleY, 0.04, 0.045, W2(sh, ft, 0.4), { c: [x, ankleY, ankleZ] }),
+            r(ankleY - 0.03, 0.038, 0.042, W2(sh, ft, 0.7), { c: [x, ankleY - 0.03, ankleZ] })
+          ];
+          const d = dome(G[G.length - 1], [0, -1, 0], 0.04, W2(sh, ft, 0.85));
+          B.loft(G.concat(d.rings), 24, 'legs', [[x, hipY + 0.09, 0], d.pole]);
+          // -- foot: cross-sections from the heel to the toes, flat sole, arched instep
+          const { footY, footZ } = L, sole = footY - R.foot[1];
+          const f = (dz, rx, ry, o) => Object.assign({ c: [x, sole + ry, footZ + dz], u: [1, 0, 0], v: [0, 1, 0], rx, rz: ry, n: 2.4, w: W1(ft) }, o || {});
+          const F = [
+            f(-0.105, 0.03, 0.026), f(-0.08, 0.042, 0.034), f(-0.04, 0.047, 0.038, { zf: 1.1 }), f(0.0, 0.05, 0.036, { zf: 1.06 }),
+            f(0.05, 0.053, 0.031), f(0.09, 0.054, 0.025), f(0.115, 0.045, 0.018)
+          ];
+          B.loft(F, 20, 'legs', [[x, sole + 0.02, footZ - 0.115], [x, sole + 0.012, footZ + 0.126]]);
+        }
+        // -- shorts leg: a loose tube from inside the trunk to just above the knee, with a hem stripe
+        {
+          const { hipX, hipY } = L, x = sx * (hipX - 0.005);
+          const r = (y, rx, rz, w, o) => Object.assign({ c: [x, y, 0], rx, rz, w }, o || {});
+          B.loft([
+            r(hipY + 0.01, 0.095, 0.104, W2('pelvis', th, 0.45)),
+            r(hipY - 0.05, 0.105, 0.112, W2('pelvis', th, 0.7)),
+            r(hipY - 0.12, 0.106, 0.112, W2('pelvis', th, 0.9), { zf: 1.02 }),
+            r(hipY - 0.19, 0.104, 0.108, W1(th), { zf: 1.04 }),
+            r(hipY - 0.25, 0.102, 0.106, W1(th), { zf: 1.03 }),
+            r(hipY - 0.272, 0.103, 0.107, W1(th), { mat: 'trim' }),
+            r(hipY - 0.285, 0.103, 0.107, W1(th), { mat: 'trim' })
+          ], 24, 'shorts', null);
+        }
+      }
+      // -- shorts trunk: waistband, hips, closed under the crotch
+      {
+        const { hipY } = L, waistY = hipY + 0.16, th0 = 'rThigh';
+        B.loft([
+          ring(waistY + 0.012, 0.165, 0.112, W2('pelvis', 'chest', 0.3), { mat: 'band' }),
+          ring(waistY - 0.018, 0.172, 0.117, W2('pelvis', 'chest', 0.2), { mat: 'band' }),
+          ring(waistY - 0.035, 0.173, 0.118, W1('pelvis'), { mat: 'shorts' }),
+          ring(waistY - 0.09, 0.19, 0.126, W1('pelvis'), { zb: 1.1 }),
+          ring(hipY, 0.20, 0.133, W1('pelvis'), { zb: 1.12 }),
+          ring(hipY - 0.04, 0.206, 0.136, W2('pelvis', th0, 0.1), { zb: 1.06 }),
+          ring(hipY - 0.06, 0.204, 0.134, W2('pelvis', th0, 0.15))
+        ], 36, 'shorts', [null, [0, hipY - 0.07, 0]]);
+      }
+      const bones = BONES.map((n) => n === 'lFoot' ? this.feet.l : n === 'rFoot' ? this.feet.r : this.segs[n]);
+      const skinMesh = new THREE.SkinnedMesh(B.build(MATS), [bodyMat, headMat, legMat, shortsMat, bandSkinMat, trimSkinMat, hairMat]);
+      skinMesh.castShadow = true; skinMesh.receiveShadow = true; skinMesh.frustumCulled = false;
+      scene.add(skinMesh);
+      skinMesh.bind(new THREE.Skeleton(bones));
+      this.skinMesh = skinMesh;
+
+      // ---- rigid details riding on the segments
+      // face: ears, brow ridge, nose, eyes and mouth sit on the head frame (head centre = origin, face at +Z)
+      const head = this.segs.head, chest = this.segs.chest;
+      const faceMat = headMat.clone(); faceMat.skinning = false; this.faceMat = faceMat;
+      addMesh(head, new THREE.SphereGeometry(0.028, 12, 10), faceMat, [0.112, -0.005, -0.012], [0.5, 1.0, 0.8]);    // ears
+      addMesh(head, new THREE.SphereGeometry(0.028, 12, 10), faceMat, [-0.112, -0.005, -0.012], [0.5, 1.0, 0.8]);
+      addMesh(head, new THREE.SphereGeometry(0.03, 14, 10), faceMat, [0, 0.047, 0.104], [1.75, 0.28, 0.45]);       // brow ridge
+      addMesh(head, new THREE.SphereGeometry(0.02, 12, 10), faceMat, [0, -0.02, 0.104], [0.7, 1.3, 0.9]);          // nose
+      for (const sx of [-1, 1]) {
+        addMesh(head, new THREE.SphereGeometry(0.02, 12, 10), eyeWhite, [sx * 0.045, 0.02, 0.102], [1.15, 0.8, 0.7]);
+        addMesh(head, new THREE.SphereGeometry(0.011, 10, 8), darkMat, [sx * 0.045, 0.02, 0.117]);
+      }
+      addMesh(head, new THREE.BoxGeometry(0.05, 0.008, 0.01), mouthMat, [0, -0.065, 0.104]);                     // mouth
+      // MMA gloves: padded fist with a squared knuckle block, thumb and a wrist strap, on the forearm frame
+      for (const side of ['l', 'r']) {
+        const sx = side === 'l' ? -1 : 1, g = this.segs[side + 'Forearm'], GB = new MeshBuilder(), fy = R.fistY, w = [[0, 1]];
+        const r = (y, rx, rz, o) => Object.assign({ c: [0, y, 0.004], rx, rz, w }, o || {});
+        GB.loft([
+          r(fy + 0.095, 0.046, 0.044, { mat: 'band' }), r(fy + 0.08, 0.057, 0.053, { mat: 'band' }), r(fy + 0.065, 0.058, 0.054, { mat: 'glove' }),
+          r(fy + 0.045, 0.063, 0.057, { n: 2.4 }), r(fy + 0.02, 0.069, 0.061, { zf: 1.1, n: 2.6 }), r(fy - 0.005, 0.07, 0.061, { zf: 1.15, n: 2.6 }),
+          r(fy - 0.03, 0.066, 0.057, { zf: 1.1, n: 2.4 }), r(fy - 0.05, 0.05, 0.046), r(fy - 0.062, 0.028, 0.026)
+        ], 24, 'glove', [[0, fy + 0.102, 0.004], [0, fy - 0.068, 0.004]]);
+        const glove = new THREE.Mesh(GB.build(['glove', 'band']), [gloveMat, bandMat]);
+        glove.castShadow = true; glove.receiveShadow = true; g.add(glove);
+        addMesh(g, new THREE.SphereGeometry(0.028, 12, 10), gloveMat, [-sx * 0.058, fy + 0.015, 0.03], [0.8, 1.3, 0.8]);   // thumb
+      }
+      // blood: a cut over the eye, a bloody nose/mouth, and a smear on the chest (shown as damage climbs)
+      const bloodMat = new THREE.MeshStandardMaterial({ color: 0x8a0f12, roughness: 0.35, transparent: true, opacity: 0 });
+      this.bloodMat = bloodMat;
+      const cut = addMesh(head, new THREE.BoxGeometry(0.05, 0.016, 0.02), bloodMat, [0.05, 0.062, 0.1]); cut.rotation.z = 0.3; cut.castShadow = false;
+      const nose = addMesh(head, new THREE.BoxGeometry(0.03, 0.06, 0.02), bloodMat, [0, -0.05, 0.1]); nose.castShadow = false;
+      const cheek = addMesh(head, new THREE.SphereGeometry(0.03, 8, 6), bloodMat, [-0.075, -0.02, 0.078]); cheek.scale.set(1, 1.3, 0.35); cheek.castShadow = false;
+      const smear = addMesh(chest, new THREE.BoxGeometry(0.14, 0.22, 0.01), bloodMat, [0.02, 0.0, 0.15]); smear.castShadow = false;
+      this.blood = { cut, nose, cheek, smear };
 
       // shadow blob
       const blob = new THREE.Mesh(new THREE.CircleGeometry(0.42, 20), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false }));
@@ -553,9 +548,10 @@
       if (this.pop && this.pop.parent) this.pop.parent.remove(this.pop);
       for (const n in this.segs) this.scene.remove(this.segs[n]);
       this.scene.remove(this.root); this.scene.remove(this.blob);
+      this.scene.remove(this.skinMesh); this.skinMesh.geometry.dispose();
     }
 
-    setColors(color, skin) { this.mats.shortsMat.color.setHex(color); this.skinBase.setHex(skin); for (const k of ['skinMat', 'headMat', 'bodyMat', 'legMat']) this.mats[k].color.setHex(skin); }
+    setColors(color, skin) { this.mats.shortsMat.color.setHex(color); this.skinBase.setHex(skin); for (const k of ['skinMat', 'headMat', 'bodyMat', 'legMat']) this.mats[k].color.setHex(skin); this.faceMat.color.setHex(skin); }
 
     // bruising + blood per damage region
     updateDamage(f) {
@@ -569,6 +565,7 @@
         mat.emissive.setRGB(fl * 0.6, fl * 0.1, fl * 0.1);
       };
       tint(this.mats.headMat, f.dmg.head); tint(this.mats.bodyMat, f.dmg.body); tint(this.mats.legMat, f.dmg.legs);
+      this.faceMat.color.copy(this.mats.headMat.color); this.faceMat.emissive.copy(this.mats.headMat.emissive);
       this.mats.skinMat.emissive.setRGB(fl * 0.6, fl * 0.1, fl * 0.1);
       const h = f.dmg.head;
       this.bloodMat.opacity = h > 25 ? Math.min(1, (h - 25) / 30) : 0;
