@@ -289,8 +289,9 @@ js/ai.js          scripted CPU opponent
 js/brain.js       neural fighter brain (evolved weights from brains/*.json)
 js/career.js      career mode model: offers, orgs, popularity, camps, gym, injuries, save
 js/gym.js         the career gym as a walkable 3D room: heavy bag, stations, furniture per upgrade
-js/render.js      Three.js arena, segment fighters (follow the ragdoll bones when standing,
-                  a two‑bone IK rig posed from POSES on the ground), camera, FX
+js/render.js      Three.js arena, procedurally skinned fighters (one continuous body mesh lofted
+                  from cross-sections and weighted to the ragdoll segments; follows the ragdoll
+                  when standing, a two‑bone IK rig posed from POSES on the ground), camera, FX
 js/net.js         PeerJS rooms (host‑authoritative; bone poses ride in the state snapshot)
 js/audio.js       WebAudio sound effects
 js/main.js        menus, lobby, input, game loop, HUD
