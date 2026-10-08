@@ -95,11 +95,12 @@
     // leaving the walkable gym for anything but one of its own station panels tears the room down
     if (App.gym && App.gym.active && name !== 'career') exitGym(name === null); // screen(null) = a fight is taking the scene
     hide($('#gymHud'));
-    for (const id of ['menu', 'lobby', 'end', 'career', 'careerNew']) { const el = $('#' + id); if (id === name) show(el); else hide(el); }
+    for (const id of ['menu', 'lobby', 'end', 'career', 'careerNew', 'more']) { const el = $('#' + id); if (el && id === name) show(el); else if (el) hide(el); }
     if (App.optionsOpen) closeOptions();
     if (name) hide($('#hud')); else show($('#hud'));
     if (name === 'menu') refreshMenuCareer();
-    App.audio.play(name === 'menu' || name === 'lobby' || name === 'career' || name === 'careerNew' ? 'menu' : 'fight');
+    if (!name || name === 'end') App.audio.play('fight');
+    else App.audio.stop();
   }
   function centerMsg(html, ms) {
     const el = $('#centerMsg'); el.innerHTML = html; el.classList.add('show');
@@ -222,6 +223,16 @@
         refreshLobby(); sendPick(); maybeStart(); break;
       case 'in':
         App.remote.h = d.h | 0; App.remote.p |= (d.p | 0); break;
+      case 'say': {
+        const kind = slashKind(d.m);
+        if (kind) { grant(1, kind); break; }
+        showLine(1, d.m);
+        if (App.net) App.net.send({ t: 'say', i: 1, m: d.m });
+        break;
+      }
+      case 'd':
+        if (App.sim) App.sim.drawPocket(1);
+        break;
       case 'rematch':
         App.rematch[1] = true; toast('Opponent wants a rematch!'); maybeRematch(); break;
     }
@@ -238,6 +249,9 @@
       case 's':
         App.state = d.s; App.lastSnap = performance.now();
         if (d.ev && d.ev.length) processEvents(d.ev, App.state);
+        break;
+      case 'say':
+        if (d && d.m) showLine(d.i, d.m);
         break;
     }
   }
@@ -368,6 +382,7 @@
         case 'push': if (ev.ok) { A.block(); feed(text); } else A.whiff(); break;
         case 'miss': A.whiff(); if (ev.slipped) feed(text); break;
         case 'kd': A.slam(); centerMsg('KNOCKDOWN!', 1400); feed(text, true); break;
+        case 'line': break;
         case 'follow': A.slam(); feed(text, true); break;
         case 'getup': feed(text); break;
         case 'td': A.slam(); feed(text, true); break;
@@ -379,7 +394,7 @@
         case 'subescape': A.whistle(); feed(text, true); break;
         case 'subhold': A.block(); feed(text); break;
         case 'tap': A.tap(); feed(text, true); break;
-        case 'ko': A.horn(); feed(text, true); break;
+        case 'ko': A.horn(); if (ev.method === 'FATALITY') centerMsg('FATALITY', 2600); feed(text, true); break;
         case 'bell':
           if (ev.end) { A.bell(2); centerMsg('END OF ROUND ' + ev.round, 2500); }
           else { A.bell(1); centerMsg('FIGHT!', 900); }
@@ -388,7 +403,7 @@
         case 'end': {
           const res = ev.res;
           const w = res.winner == null ? 'DRAW' : S.f[res.winner].name.toUpperCase() + ' WINS';
-          centerMsg(w + '<small>' + res.method + '</small>');
+          centerMsg(res.method === 'FATALITY' ? 'FATALITY<small>' + (res.winner == null ? '' : S.f[res.winner].name) + '</small>' : w + '<small>' + res.method + '</small>');
           if (res.method.indexOf('Decision') >= 0 || res.method.indexOf('Draw') >= 0) A.bell(3);
           setTimeout(() => { if (App.state && App.state.result) showEnd(App.state); }, 3800);
           break;
@@ -553,21 +568,43 @@
     $('#controlsHint').innerHTML =
       '<div class="ctl-row">' + [B('fwd'), B('left'), B('back'), B('right')].join(' ') + ' move / circle (stepping into a shot adds power, backing off takes it away) · ' + B('lh') + ' left hand · ' + B('rh') + ' right hand · ' + B('ll') + ' left leg · ' + B('rl') + ' right leg</div>' +
       '<div class="ctl-row">' + MODS.map(row).join(' · ') + '</div>' +
-      '<div class="ctl-row">' + B('block') + ' hold: block / sprawl (+ ' + B('mod3') + ' drops into a shell that covers the body), tap twice: push them off · ' + B('grapple') + ' takedown / dive on a downed opponent · ' + B('dodge') + ' slip · knocked down: a direction or ' + B('dodge') + ' gets up, or stay down to recover · ground: hands & legs strike, ' + B('grapple') + ' submission / sweep, ' + B('block') + ' posture / cover, ' + B('dodge') + ' let up · <b>ESC</b> options · <b>H</b> hide this · <b>M</b> mute</div>';
+      '<div class="ctl-row">' + B('block') + ' hold: block / sprawl (+ ' + B('mod3') + ' drops into a shell that covers the body), tap twice: push them off · ' + B('grapple') + ' takedown / dive on a downed opponent · ' + B('dodge') + ' slip · knocked down: a direction or ' + B('dodge') + ' gets up, or stay down to recover · ground: hands & legs strike, ' + B('grapple') + ' submission / sweep, ' + B('block') + ' posture / cover, ' + B('dodge') + ' let up · <b>Enter</b> chat · <b>ESC</b> options · <b>H</b> hide this · <b>M</b> mute' +
+      (App.extras && App.extras.pocket ? ' · <b>G</b> draw' : '') + '</div>';
   }
 
   // ============================================================
   //  Input
   // ============================================================
   window.addEventListener('keydown', (e) => {
-    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) { if (e.code === 'Escape') e.target.blur(); return; }
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA')) { if (e.code === 'Escape') e.target.blur(); return; }
+    if (e.code === 'Enter' && !e.repeat) {
+      const el = document.activeElement;
+      const tag = el && el.tagName;
+      const box = el && el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+      const shown = box && box.width > 0 && box.height > 0;
+      if (shown && (tag === 'BUTTON' || tag === 'A')) return;
+      const moreOpen = $('#more') && !$('#more').classList.contains('hidden');
+      // Enter opens chat in a fight. In the career gym it is the "use" key, so it has to reach the bind.
+      const inGym = App.gym && App.gym.active;
+      if (!inGym && !App.optionsOpen && !capture && !moreOpen && App.talk) { e.preventDefault(); App.talk.open(); }
+      if (!inGym) return;
+    }
     if (capture) {
       e.preventDefault();
       if (e.repeat) return;
       if (e.code === 'Escape') cancelCapture(); else captureKey(e.code);
       return;
     }
+    if (!$('#more').classList.contains('hidden')) {
+      if (e.code === 'Escape' && !e.repeat) { e.preventDefault(); screen('menu'); }
+      return;
+    }
     if (e.code === 'Escape') { e.preventDefault(); if (!e.repeat) { if (App.optionsOpen) closeOptions(); else openOptions(); } return; }
+    if ((e.code === 'KeyG' || e.key === 'g' || e.key === 'G') && !e.repeat && App.extras && App.extras.pocket && App.playing && !App.optionsOpen && App.mode !== 'watch') {
+      e.preventDefault();
+      tryDraw();
+      return;
+    }
     if (App.optionsOpen) return;
     if (e.code === 'KeyH' && !Controls.keyMap.KeyH) { if (!e.repeat) { App.hintsHidden = !App.hintsHidden; $('#controlsHint').style.display = App.hintsHidden ? 'none' : ''; } return; }
     if (e.code === 'KeyM' && !Controls.keyMap.KeyM) { if (!e.repeat) { App.audio.setMuted(!App.audio.muted); toast(App.audio.muted ? 'Muted' : 'Sound on', 1200); } return; }
@@ -594,11 +631,11 @@
       updateGymHUD();
       return;
     }
-    if (!App.playing || !App.state) { if (App.renderer && App.state) App.renderer.update(App.state, dt, null); return; }
+    if (!App.playing || !App.state) { if (App.renderer && App.state) App.renderer.update(App.state, dt, null); tickTalk(dt); return; }
 
     const isHost = App.mode !== 'guest';
     let inputs = [0, 0];
-    if (App.paused && isLocal()) { App.pressed = 0; App.renderer.update(App.state, 0, inputs); updateHUD(App.state, inputs); return; }
+    if (App.paused && isLocal()) { App.pressed = 0; App.renderer.update(App.state, 0, inputs); updateHUD(App.state, inputs); tickTalk(dt); return; }
     if (isHost) {
       const sim = App.sim;
       if (App.autoPilot) { const o = App.autoPilot.update(sim.state, dt); const watch = App.mode === 'watch'; sim.setInput(0, watch ? o.held : (o.held | (App.held & SIM_MASK)), watch ? o.pressed : (o.pressed | (App.pressed & SIM_MASK))); App.pressed = 0; if (watch) inputs[0] = o.held; }
@@ -606,6 +643,7 @@
       if (App.brain) { const o = App.brain.update(sim.state, dt); sim.setInput(1, o.held, o.pressed); inputs[1] = o.held; }
       else { sim.setInput(1, App.remote.h, App.remote.p); App.remote.p = 0; inputs[1] = App.remote.h; }
       if (App.mode !== 'watch') inputs[0] = App.held & SIM_MASK;
+      applyExtras(sim);
       sim.step(dt);
       const evs = sim.drainEvents();
       if (evs.length) processEvents(evs, sim.state);
@@ -632,6 +670,7 @@
     }
     App.renderer.update(App.state, dt, inputs);
     updateHUD(App.state, inputs);
+    tickTalk(dt);
   }
   requestAnimationFrame(loop);
 
@@ -1078,6 +1117,116 @@
 
   window.addEventListener('mmaphys', (e) => { if (!e.detail.ok) { App.physFailed = true; toast('Physics engine failed to load: ' + (e.detail.error && e.detail.error.message), 8000); } });
 
+  // Extra options, opened from the G in the title. The pocket row stays concealed until that title's G is double-clicked.
+  const Extras = { mark: false, edge: false, pocket: false };
+  function loadExtras() {
+    try {
+      Extras.mark = localStorage.getItem('cr_fx_1') === '1';
+      Extras.edge = localStorage.getItem('cr_fx_2') === '1';
+      Extras.pocket = localStorage.getItem('cr_fx_3') === '1';
+    } catch (_) {}
+  }
+  function saveExtras() {
+    try {
+      localStorage.setItem('cr_fx_1', Extras.mark ? '1' : '0');
+      localStorage.setItem('cr_fx_2', Extras.edge ? '1' : '0');
+      localStorage.setItem('cr_fx_3', Extras.pocket ? '1' : '0');
+    } catch (_) {}
+  }
+  function syncExtras() {
+    const mark = $('#optMark'), edge = $('#optEdge'), pocket = $('#optPocket'), smile = $('#markSmile');
+    if (mark) mark.checked = Extras.mark;
+    if (edge) edge.checked = Extras.edge;
+    if (pocket) pocket.checked = Extras.pocket;
+    if (smile) smile.classList.toggle('hidden', !Extras.pocket);
+    if (App.renderer) App.renderer.setMarks(Extras.mark);
+    if (!App.playing && App.state) for (const f of App.state.f) f.edge = !!Extras.edge;
+    updateHint();
+  }
+  function applyExtras(sim) {
+    if (!sim) return;
+    for (const f of sim.state.f) {
+      const local = f.idx === App.myIdx;
+      if (!f.ownPocket && f.pocket) {
+        if (local && !Extras.pocket) f.pocket = false;
+        else if (!local && !f.heldPocket && !Extras.pocket) f.pocket = false;
+      }
+      if (f.pocket) f.edge = false;
+      else f.edge = !!(Extras.edge || f.ownEdge);
+    }
+  }
+  function slashKind(text) {
+    const s = String(text || '').trim().toLowerCase();
+    if (s === '/sword-fight') return 'edge';
+    if (s === '/pew-pew') return 'pocket';
+    return '';
+  }
+  function grant(i, kind) {
+    const f = App.sim && App.sim.state.f[i];
+    if (!f) return;
+    if (kind === 'edge') { f.ownEdge = true; f.ownPocket = false; f.pocket = false; f.edge = true; }
+    else if (kind === 'pocket') { f.ownPocket = true; f.pocket = true; f.edge = false; }
+  }
+  function lineName(i) {
+    const f = App.state && App.state.f && App.state.f[i];
+    if (f && f.name) return f.name;
+    if (i === App.myIdx) return myName() || 'You';
+    return 'Opponent';
+  }
+  function showLine(i, text) {
+    text = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    if (!text || !App.talk) return;
+    const slot = App.state && App.state.f && App.state.f[i] ? i : null;
+    App.talk.add(lineName(i), text, slot);
+  }
+  function postLine(text) {
+    text = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    if (!text) return;
+    const kind = slashKind(text);
+    if (App.mode === 'guest') { if (App.net) App.net.send({ t: 'say', m: text }); return; }
+    if (kind) { grant(App.myIdx, kind); return; }
+    showLine(App.myIdx, text);
+    if (App.mode === 'host' && App.net) App.net.send({ t: 'say', i: App.myIdx, m: text });
+  }
+  function tryDraw() {
+    if (!Extras.pocket || !App.playing || App.mode === 'watch') return;
+    const phase = App.state && App.state.phase;
+    const draw = () => { if (App.sim) App.sim.drawPocket(App.myIdx); };
+    if (phase !== 'fight') {
+      if (phase === 'intro' || phase === 'break') { draw(); toast('The bell hasn\'t rung', 1400); }
+      return;
+    }
+    if (App.mode === 'guest') { if (App.net) App.net.send({ t: 'd' }); return; }
+    draw();
+  }
+  function tickTalk(dt) {
+    if (!App.talk || !App.renderer || !App.renderer.camera) return;
+    const cam = App.renderer.camera;
+    const w = window.innerWidth, h = window.innerHeight;
+    if (!App.talk._v && typeof THREE !== 'undefined') App.talk._v = new THREE.Vector3();
+    App.talk.tick(dt, (slot) => {
+      const m = App.renderer.models[slot];
+      if (!m || !m.headWorld || !App.talk._v) return null;
+      const v = m.headWorld(App.talk._v);
+      v.y += 0.45;
+      v.project(cam);
+      if (v.z > 1) return null;
+      return { x: (v.x * 0.5 + 0.5) * w, y: (-v.y * 0.5 + 0.5) * h };
+    });
+  }
+  App.extras = Extras;
+  loadExtras();
+  $('#titleG').onclick = () => { if ($('#menu').classList.contains('hidden')) return; screen('more'); syncExtras(); };
+  $('#moreG').addEventListener('dblclick', (e) => { e.preventDefault(); $('#optPocketRow').classList.remove('hidden'); });
+  $('#btnMoreClose').onclick = () => screen('menu');
+  $('#optMark').addEventListener('change', () => { Extras.mark = $('#optMark').checked; saveExtras(); syncExtras(); });
+  $('#optEdge').addEventListener('change', () => { Extras.edge = $('#optEdge').checked; saveExtras(); syncExtras(); });
+  $('#optPocket').addEventListener('change', () => { Extras.pocket = $('#optPocket').checked; saveExtras(); syncExtras(); });
+  syncExtras();
+  App.talk = new CageTalk.Talk();
+  App.talk.mount();
+  App.talk.onLine = postLine;
+
   window.CageRules = App; // dev hook: window.CageRules.sim / .state / .renderer
   // dev hook: advance the career gym by n 60 Hz frames with these inputs (tools/gym-test.js)
   App.gymTick = (n, held, pressed) => { if (!App.gym || !App.gym.active) return; for (let k = 0; k < n; k++) { App.gym.update(1 / 60, held | 0, k === 0 ? (pressed | 0) : 0, IN_INTERACT, IN_LOCK); } };
@@ -1087,6 +1236,7 @@
     for (let k = 0; k < n; k++) {
       if (App.autoPilot) { const o = App.autoPilot.update(sim.state, 1 / 60); sim.setInput(0, o.held, o.pressed); } else sim.setInput(0, App.held & SIM_MASK, App.pressed & SIM_MASK);
       if (App.brain) { const o = App.brain.update(sim.state, 1 / 60); sim.setInput(1, o.held, o.pressed); }
+      applyExtras(sim);
       sim.acc = 0; sim.step(1 / 60);
       const evs = sim.drainEvents(); if (evs.length) processEvents(evs, sim.state);
     }
@@ -1094,12 +1244,12 @@
 
   // Build the arena right away so the menu has a live 3D background
   window.addEventListener('load', () => {
-    try { menuScene(); } catch (e) { console.error(e); toast('WebGL failed to start: ' + e.message, 8000); }
+    try { menuScene(); syncExtras(); } catch (e) { console.error(e); toast('WebGL failed to start: ' + e.message, 8000); }
   });
   // Browsers block audio until a gesture, and a rejected play() must be retried on the next one.
   function unlockMusic() {
-    const onMenu = !$('#menu').classList.contains('hidden') || !$('#lobby').classList.contains('hidden') || (App.gym && App.gym.active);
-    App.audio.play(onMenu ? 'menu' : 'fight');
+    if (App.playing || !$('#end').classList.contains('hidden')) App.audio.play('fight');
+    else if (App.gym && App.gym.active) App.audio.play('menu');
   }
   window.addEventListener('pointerdown', unlockMusic);
   window.addEventListener('keydown', unlockMusic);
