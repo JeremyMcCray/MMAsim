@@ -305,16 +305,19 @@
     return [Math.sqrt(cx * cx + cy * cy + cz * cz), s, t];
   }
 
-  function makeFighter(idx, key, name, color, moveset) {
+  function makeFighter(idx, key, name, color, moveset, extra) {
     const r = ROSTER[key] || ROSTER.balanced;
+    extra = extra || {};
+    const stats = Object.assign({}, r.stats);
+    if (extra.stats) for (const k in stats) if (typeof extra.stats[k] === 'number') stats[k] = clamp(extra.stats[k], 0, 1);
     return {
-      idx, key: r.key, name: name || r.name, style: r.style,
-      stats: Object.assign({}, r.stats),
-      color: color != null ? color : r.color, skin: r.skin,
+      idx, key: r.key, name: name || r.name, style: extra.style || r.style,
+      stats,
+      color: color != null ? color : r.color, skin: extra.skin != null ? extra.skin : r.skin,
       moveset: normalizeMoveset(moveset),
       x: idx === 0 ? -1.3 : 1.3, z: 0,
       vx: 0, vz: 0,
-      dmg: { head: 0, body: 0, legs: 0 },
+      dmg: { head: clamp(extra.dmg && extra.dmg.head || 0, 0, 60), body: clamp(extra.dmg && extra.dmg.body || 0, 0, 60), legs: clamp(extra.dmg && extra.dmg.legs || 0, 0, 60) }, // career mode: fighting hurt
       stam: 100,
       stamMax: 100,       // ceiling stamina regens to; eroded by head/body damage and by swinging on empty
       act: { type: 'idle', name: '', t: 0, dur: 0, hit: false },
@@ -412,8 +415,8 @@
         rounds: this.settings.rounds,
         roundLen: this.settings.roundLen,
         grappling: this.settings.grappling, // false = striking only: no takedowns, knockdowns are standing eight-counts
-        f: [makeFighter(0, p[0].fighter || 'striker', p[0].name, p[0].color, p[0].moveset),
-            makeFighter(1, p[1].fighter || 'wrestler', p[1].name, p[1].color, p[1].moveset)],
+        f: [makeFighter(0, p[0].fighter || 'striker', p[0].name, p[0].color, p[0].moveset, p[0]),
+            makeFighter(1, p[1].fighter || 'wrestler', p[1].name, p[1].color, p[1].moveset, p[1])],
         ground: null,             // { top, bottom, pos, trans, sub, ctrlT, idleT, cd:[..] }
         cards: [],                // per round [{p0, p1, j:[[10,9],[10,9],[10,9]]}]
         result: null,
