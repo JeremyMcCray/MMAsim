@@ -7,7 +7,6 @@ const P = require('../js/physics.js');
 const fights = parseInt(process.argv[2] || '1', 10);
 const seed0 = parseInt(process.argv[3] || '1337', 10);
 const verbose = process.argv[4] === '1';
-const legacy = process.argv[5] === 'legacy'; // run the old swept-tip striking model for comparison
 
 (async () => {
   await P.init(RAPIER);
@@ -18,7 +17,7 @@ const legacy = process.argv[5] === 'legacy'; // run the old swept-tip striking m
   for (let n = 0; n < fights; n++) {
     const seed = seed0 + n;
     const players = [{ fighter: keys[n % 4] }, { fighter: keys[(n + 1 + (n >> 2)) % 4] }];
-    const sim = new Sim({ seed, rounds: 3, roundLen: 180, players, physics: !legacy });
+    const sim = new Sim({ seed, rounds: 3, roundLen: 180, players });
     const brains = [new CpuBrain(0, 0.6), new CpuBrain(1, 0.6)];
     const S = sim.state;
     let t0 = Date.now(), ticks = 0;

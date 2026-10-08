@@ -329,6 +329,6 @@ and prints landed / blocked / whiffed counts, damage per hit, finishes and
 simulation cost. In the browser, `?auto=1` lets the CPU drive your fighter in
 practice mode, and `window.CageRules` exposes the live sim, state and renderer.
 
-The old swept‑tip striking model is still in `js/sim.js` and is used
-automatically if the physics engine fails to load. Its tuning (`KIND_STATS`,
-`handPath` / `legPath`) only matters in that fallback.
+The physics engine is required for fights: there is no classic striking model any
+more. `KIND_STATS` still supplies strike names and ground-strike data, and the
+`handPath` / `legPath` tip paths are only used by the gym bag and the renderer.

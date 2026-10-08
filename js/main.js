@@ -325,6 +325,7 @@
       window.addEventListener('mmaphys', () => beginFight(msg), { once: true });
       return;
     }
+    if (isHost && App.physFailed) return; // already toasted; there is no fight without the engine
     if (App.sim) App.sim.destroy();
     App.sim = null; App.state = null; App.evQueue = []; App.remote = { h: 0, p: 0 }; App.rematch = [false, false];
     App.lobby.ready = [false, false];
@@ -336,7 +337,6 @@
       // watch mode: a brain drives the red corner too. ?auto=1 : let the CPU drive your fighter in practice (handy for tuning)
       App.autoPilot = App.mode === 'watch' ? makeBrain(0, App.lobby.brains[0], diff)
         : App.mode === 'practice' && /[?&]auto=1/.test(location.search) ? new CpuBrain(0, diff) : null;
-      if (!App.sim.phys) toast('Physics engine unavailable — running the classic striking model.', 5000);
     } else {
       // placeholder state until the first snapshot arrives
       const tmp = new Sim({ seed: msg.seed, rounds: msg.settings.rounds, roundLen: msg.settings.len, players: msg.players, physics: false, grappling: msg.settings.grappling !== false });

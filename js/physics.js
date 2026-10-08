@@ -997,6 +997,7 @@
   // vn: closing speed along the contact normal; clean: how square (1 = dead on)
   // defenderGuarding: BLOCK held. defenderGuardLow: BLOCK + MOD3 — the arms are down covering the body, so a shot to the
   // chest / pelvis is taken on them (and the head is whatever the physics says it is: open).
+  const PUNCH_DMG_MULT = 0.85; // all punches hit 15% softer than kicks / knees are tuned for
   function impactDamage(def, hit, striker, defenderGuarding, defenderGuardLow) {
     const kick = def.isKick;
     let mult = PART_MULT[hit.partName];
@@ -1007,7 +1008,7 @@
     else if (region === 'legs' && hit.partName !== 'thigh' && defenderGuarding && kick) { blocked = true; mult = CHECK_MULT; }
     else if (region === 'legs' && !kick) mult *= 0.6; // punching a leg
     const staminaMult = 0.6 + 0.4 * Math.min(1, striker.stam / 30);
-    const dmg = DMG_SCALE * Math.pow(Math.max(0, hit.vn - VMIN), 1.3) * mult * def.weaponMult * (0.65 + 0.35 * hit.clean) * staminaMult;
+    const dmg = DMG_SCALE * Math.pow(Math.max(0, hit.vn - VMIN), 1.3) * mult * def.weaponMult * (0.65 + 0.35 * hit.clean) * staminaMult * (kick ? 1 : PUNCH_DMG_MULT);
     return { dmg: Math.min(dmg, DMG_CAP), region, blocked };
   }
 
