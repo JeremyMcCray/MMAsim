@@ -31,9 +31,10 @@
     { id: 'block', label: 'Block / sprawl / cover (hold) · push (tap twice)', bit: IN.BLOCK, def: ['KeyL', 'Semicolon'] },
     { id: 'grapple', label: 'Takedown / submission / sweep', bit: IN.GRAPPLE, def: ['Space', ''] },
     { id: 'dodge', label: 'Slip / stand up', bit: IN.DODGE, def: ['ShiftLeft', 'ShiftRight'] },
-    { id: 'interact', label: 'Use (gym: computer, whiteboard, desk)', bit: 1 << 14, def: ['Enter', 'KeyF'] }
+    { id: 'interact', label: 'Use (gym: computer, whiteboard, desk)', bit: 1 << 14, def: ['Enter', 'KeyF'] },
+    { id: 'lock', label: 'Lock on to the heavy bag (gym)', bit: 1 << 15, def: ['KeyT', ''] }
   ];
-  const IN_INTERACT = 1 << 14, SIM_MASK = 0x3fff; // the interact bit is ours; the simulation only ever sees the bits in IN
+  const IN_INTERACT = 1 << 14, IN_LOCK = 1 << 15, SIM_MASK = 0x3fff; // the interact bit is ours; the simulation only ever sees the bits in IN
   const Controls = { binds: {}, moveset: null, keyMap: {} };
   const KEY_NAMES = { ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Space: 'SPACE', ShiftLeft: 'L-SHIFT', ShiftRight: 'R-SHIFT', ControlLeft: 'L-CTRL', ControlRight: 'R-CTRL', AltLeft: 'L-ALT', AltRight: 'R-ALT', Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/', BracketLeft: '[', BracketRight: ']', Backslash: '\\', Minus: '-', Equal: '=', Enter: 'ENTER', Tab: 'TAB', Backspace: 'BKSP', CapsLock: 'CAPS', Backquote: '`', NumpadEnter: 'NUM ENTER', NumpadAdd: 'NUM +', NumpadSubtract: 'NUM -', NumpadMultiply: 'NUM *', NumpadDivide: 'NUM /', NumpadDecimal: 'NUM .' };
   function keyName(code) {
@@ -631,7 +632,7 @@
     if (App.gym && App.gym.active) {
       // the career gym: walk, hit the bag, use the stations. Nothing moves while the options panel is up.
       const live = !App.optionsOpen;
-      App.gym.update(dt, live ? App.held : 0, live ? App.pressed : 0, IN_INTERACT); App.pressed = 0;
+      App.gym.update(dt, live ? App.held : 0, live ? App.pressed : 0, IN_INTERACT, IN_LOCK); App.pressed = 0;
       updateGymHUD();
       return;
     }
@@ -787,7 +788,7 @@
       $('#btnGymResultOk').onclick = () => { CareerUI.justFought = false; rb.classList.add('hidden'); };
     } else rb.classList.add('hidden');
     const B = id => '<b>' + keyName(Controls.binds[id][0]) + '</b>';
-    const help = B('fwd') + B('left') + B('back') + B('right') + ' walk · ' + B('lh') + ' ' + B('rh') + ' hands · ' + B('ll') + ' ' + B('rl') + ' legs (hold ' + B('mod1') + ' / ' + B('mod2') + ' / ' + B('mod3') + ' for the other strikes) · ' + B('block') + ' guard · ' + B('interact') + ' use · <b>ESC</b> options';
+    const help = B('fwd') + B('left') + B('back') + B('right') + ' walk · ' + B('lh') + ' ' + B('rh') + ' hands · ' + B('ll') + ' ' + B('rl') + ' legs (hold ' + B('mod1') + ' / ' + B('mod2') + ' / ' + B('mod3') + ' for the other strikes) · ' + B('block') + ' guard · ' + B('interact') + ' use · ' + B('lock') + ' lock on bag · <b>ESC</b> options';
     if (help !== GymHUD.help) { GymHUD.help = help; $('#gHelp').innerHTML = help; }
   }
   function updateGymHUD() {
@@ -795,7 +796,9 @@
     const st = G.station;
     let prompt = '';
     if (st && st.tab) prompt = '<b>' + keyName(Controls.binds.interact[0]) + '</b> ' + esc(G.prompt);
-    else if (st && st.id === 'bag') prompt = '<span class="muted">HEAVY BAG</span> throw strikes · hold ' + keyName(Controls.binds.block[0]) + ' to guard';
+    else if (st && st.id === 'bag') prompt = '<span class="muted">HEAVY BAG</span> throw strikes · hold ' + keyName(Controls.binds.block[0]) + ' to guard · <b>' + keyName(Controls.binds.lock[0]) + '</b> ' + (G.locked ? 'unlock' : 'lock on');
+    const lockBtn = $('#btnGymLock'), canLock = !!(G.locked || G.canLock());
+    if (lockBtn) { lockBtn.classList.toggle('hidden', !canLock); lockBtn.classList.toggle('on', !!G.locked); lockBtn.textContent = (G.locked ? 'UNLOCK BAG' : 'LOCK ON BAG') + ' [' + keyName(Controls.binds.lock[0]) + ']'; }
     if (prompt !== GymHUD.prompt) { GymHUD.prompt = prompt; const el = $('#gPrompt'); el.innerHTML = prompt; el.classList.toggle('show', !!prompt); }
     const S = G.session;
     let bag = '';
@@ -984,6 +987,7 @@
   $('#btnCareerGym').onclick = () => { careerSave(); closeStation(); };
   $('#btnGymMenu').onclick = () => { careerSave(); screen('menu'); };
   $('#btnGymOptions').onclick = () => openOptions();
+  $('#btnGymLock').onclick = (e) => { e.currentTarget.blur(); if (App.gym && App.gym.active) App.gym.toggleLock(); };
   $('#btnCareerOptions').onclick = () => openOptions();
   $('#btnCareerDelete').onclick = () => {
     if (CareerUI.confirmDel++ < 1) { $('#btnCareerDelete').textContent = 'CLICK AGAIN TO DELETE'; setTimeout(() => { CareerUI.confirmDel = 0; $('#btnCareerDelete').textContent = 'RETIRE (DELETE SAVE)'; }, 4000); return; }
@@ -1118,7 +1122,7 @@
 
   window.CageRules = App; // dev hook: window.CageRules.sim / .state / .renderer
   // dev hook: advance the career gym by n 60 Hz frames with these inputs (tools/gym-test.js)
-  App.gymTick = (n, held, pressed) => { if (!App.gym || !App.gym.active) return; for (let k = 0; k < n; k++) { App.gym.update(1 / 60, held | 0, k === 0 ? (pressed | 0) : 0, IN_INTERACT); } };
+  App.gymTick = (n, held, pressed) => { if (!App.gym || !App.gym.active) return; for (let k = 0; k < n; k++) { App.gym.update(1 / 60, held | 0, k === 0 ? (pressed | 0) : 0, IN_INTERACT, IN_LOCK); } };
   // dev hook: advance a practice fight by n sim ticks regardless of frame rate (used by tools/browser-test.js)
   App.tick = (n) => {
     const sim = App.sim; if (!sim) return;

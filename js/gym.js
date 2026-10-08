@@ -22,7 +22,7 @@
   const ROOM = { hw: 7.5, hd: 5.5, h: 3.6 };          // half width (x), half depth (z), ceiling height
   const BAG = { x: 0.6, z: -0.6, r: 0.18, top: 1.95, bot: 0.72, pivot: 2.95 };
   const SPAWN = { x: 3.4, z: 1.7, yaw: Math.PI + 0.25 };     // facing -z, into the room
-  const PLAYER_R = 0.32, WALK = 2.3;
+  const PLAYER_R = 0.32, WALK = 2.3, LOCK_RANGE = 3.2;   // how close to the bag you can lock on
 
   // the interaction spots. `tab` is the hub panel the station opens; the bag has none (you just hit it).
   const STATIONS = [
@@ -291,7 +291,7 @@
       this.cam = { yaw: Math.PI, pos: new THREE.Vector3(), tgt: new THREE.Vector3(), init: false };
       this.bag = { tx: 0, tz: 0, wx: 0, wz: 0, squash: 0 };
       this.session = { hits: 0, combo: 0, bestCombo: 0, hardest: 0, last: '', lastT: -9, comboT: 0 };
-      this.prompt = ''; this.station = null; this.fx = [];
+      this.prompt = ''; this.station = null; this.fx = []; this.locked = false;
       this.time = 0; this._tip = [0, 0, 0]; this._tipPrev = null; this._tmp = new THREE.Vector3();
       this.moveset = null;
       this._saved = null;
@@ -307,7 +307,7 @@
         if (this.R.setArenaVisible) this.R.setArenaVisible(false);
         this.player = { x: SPAWN.x, z: SPAWN.z, yaw: SPAWN.yaw, face: SPAWN.yaw, act: { type: 'idle', t: 0 }, blocking: false, buf: null, moving: false };
         this.model = new FighterModel(this.scene, C.color, C.skin, 0);
-        this.cam.init = false;
+        this.cam.init = false; this.locked = false;
         this.session = { hits: 0, combo: 0, bestCombo: 0, hardest: 0, last: '', lastT: -9, comboT: 0 };
       }
       this.refresh(C);
@@ -519,12 +519,24 @@
     }
 
     // ---- per frame ----
-    update(dt, held, pressed, interactBit) {
+    canLock() { const P = this.player; return !!P && Math.hypot(BAG.x - P.x, BAG.z - P.z) < LOCK_RANGE; }
+    toggleLock() {
+      if (this.locked) { this.locked = false; return; }
+      if (this.canLock()) this.locked = true;
+    }
+
+    update(dt, held, pressed, interactBit, lockBit) {
       if (!this.active) return;
       this.time += dt;
       const P = this.player, C = this.C, R = this.R;
       const live = !this.paused;
-      // ----- movement (relative to the camera) -----
+      // ----- lock-on: face the bag and strafe around it -----
+      if (live && lockBit && (pressed & lockBit)) this.toggleLock();
+      if (this.locked && (!live && this.station && this.station.tab || Math.hypot(BAG.x - P.x, BAG.z - P.z) > LOCK_RANGE + 1.2)) this.locked = false;
+      const locked = this.locked;
+      const bdx = BAG.x - P.x, bdz = BAG.z - P.z, bagDist = Math.hypot(bdx, bdz);
+      const lockYaw = Math.atan2(bdx, bdz);
+      // ----- movement -----
       let mx = 0, mz = 0;
       if (live) {
         if (held & IN.FWD) mz += 1; if (held & IN.BACK) mz -= 1; if (held & IN.LEFT) mx -= 1; if (held & IN.RIGHT) mx += 1;
@@ -535,13 +547,15 @@
       const canMove = !striking || inRecovery;
       P.moving = false;
       if ((mx || mz) && canMove) {
-        const cy = this.cam.yaw; // camera looks along +forward = (sin cy, cos cy)
+        // free: W/A/S/D are screen directions (the camera does not swing round while you walk).
+        // locked: W/S close in on / back off the bag, A/D circle it.
+        const cy = locked ? lockYaw : this.cam.yaw; // forward = (sin cy, cos cy), right = (cos cy, -sin cy)
         const fx = Math.sin(cy), fz = Math.cos(cy), rx = Math.cos(cy), rz = -Math.sin(cy);
         let dx = fx * mz + rx * mx, dz = fz * mz + rz * mx;
         const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
-        const sp = WALK * (striking ? 0.5 : 1);
+        const sp = WALK * (striking ? 0.5 : 1) * (locked ? 0.8 : 1);
         P.x += dx * sp * dt; P.z += dz * sp * dt;
-        P.face = Math.atan2(dx, dz);
+        if (!locked) P.face = Math.atan2(dx, dz);
         P.moving = true;
       }
       // keep inside the room and out of the furniture
@@ -550,10 +564,9 @@
         const dx = P.x - o.x, dz = P.z - o.z, d = Math.hypot(dx, dz), min = o.r + PLAYER_R;
         if (d < min && d > 1e-4) { P.x = o.x + dx / d * min; P.z = o.z + dz / d * min; }
       }
-      // ----- the bag: face it when you are close and not walking away -----
-      const bdx = BAG.x - P.x, bdz = BAG.z - P.z, bagDist = Math.hypot(bdx, bdz);
-      const nearBag = bagDist < 1.75;
-      if (nearBag && !P.moving) P.face = Math.atan2(bdx, bdz);
+      // ----- facing: locked on, always the bag (re-measured after the walk) -----
+      const nearBag = locked || bagDist < 1.75;
+      if (locked) P.face = Math.atan2(BAG.x - P.x, BAG.z - P.z);
       let dy = P.face - P.yaw; while (dy > Math.PI) dy -= Math.PI * 2; while (dy < -Math.PI) dy += Math.PI * 2;
       P.yaw += dy * expo(dt, striking ? 6 : 12);
 
@@ -613,15 +626,15 @@
       // ----- camera: third person, behind the fighter -----
       const cam = this.cam;
       if (!cam.init) { cam.yaw = P.yaw; cam.init = true; cam.pos.set(clamp(P.x - Math.sin(P.yaw) * 4.2, -ROOM.hw + 0.35, ROOM.hw - 0.35), 2.5, clamp(P.z - Math.cos(P.yaw) * 4.2, -ROOM.hd + 0.35, ROOM.hd - 0.35)); cam.tgt.set(P.x, 1.0, P.z); }
-      // the camera yaw follows where the fighter is going (not where he turns to face the bag) so A/D never flips
-      if (P.moving) { let d = P.face - cam.yaw; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; cam.yaw += d * expo(dt, 1.6); }
-      else if (nearBag) { let d = P.yaw - cam.yaw; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; cam.yaw += d * expo(dt, 1.2); }
-      const back = nearBag ? 3.2 : 4.0, up = nearBag ? 1.8 : 2.2, side = nearBag ? 1.1 : 0.35; // over the right shoulder
+      // the camera yaw only turns when locked on (swinging round to look past you at the bag); walking never moves it,
+      // so W/A/S/D stay the same screen directions
+      if (locked) { let d = lockYaw - cam.yaw; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; cam.yaw += d * expo(dt, 7); }
+      const back = locked ? 3.2 : 4.0, up = locked ? 1.8 : 2.2, side = locked ? 1.1 : 0.35; // over the right shoulder
       let cx = P.x - Math.sin(cam.yaw) * back + Math.cos(cam.yaw) * side, cz = P.z - Math.cos(cam.yaw) * back - Math.sin(cam.yaw) * side;
       cx = clamp(cx, -ROOM.hw + 0.35, ROOM.hw - 0.35); cz = clamp(cz, -ROOM.hd + 0.35, ROOM.hd - 0.35);
-      cam.pos.x += (cx - cam.pos.x) * expo(dt, 4); cam.pos.z += (cz - cam.pos.z) * expo(dt, 4); cam.pos.y += (up - cam.pos.y) * expo(dt, 3);
-      const tx = (nearBag ? (P.x + BAG.x) / 2 : P.x) + Math.cos(cam.yaw) * side * 0.5, tz = (nearBag ? (P.z + BAG.z) / 2 : P.z) - Math.sin(cam.yaw) * side * 0.5;
-      cam.tgt.x += (tx - cam.tgt.x) * expo(dt, 5); cam.tgt.z += (tz - cam.tgt.z) * expo(dt, 5); cam.tgt.y += ((nearBag ? 1.2 : 1.0) - cam.tgt.y) * expo(dt, 4);
+      cam.pos.x += (cx - cam.pos.x) * expo(dt, 8); cam.pos.z += (cz - cam.pos.z) * expo(dt, 8); cam.pos.y += (up - cam.pos.y) * expo(dt, 3);
+      const tx = (locked ? (P.x + BAG.x) / 2 : P.x) + Math.cos(cam.yaw) * side * 0.5, tz = (locked ? (P.z + BAG.z) / 2 : P.z) - Math.sin(cam.yaw) * side * 0.5;
+      cam.tgt.x += (tx - cam.tgt.x) * expo(dt, 8); cam.tgt.z += (tz - cam.tgt.z) * expo(dt, 8); cam.tgt.y += ((locked ? 1.2 : 1.0) - cam.tgt.y) * expo(dt, 4);
       R.camera.position.copy(cam.pos);
       if (R.shake > 0) { R.camera.position.x += (Math.random() - 0.5) * 0.05 * R.shake; R.camera.position.y += (Math.random() - 0.5) * 0.05 * R.shake; R.shake = Math.max(0, R.shake - dt * 4); }
       R.camera.lookAt(cam.tgt);

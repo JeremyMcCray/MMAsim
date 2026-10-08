@@ -332,6 +332,8 @@ table.hist td.w { color: #52d273; font-family: var(--font-head); font-weight: 70
 .gym-prompt.show { opacity: 1; }
 .gym-prompt b { display: inline-block; font-family: var(--font-head); font-size: 14px; letter-spacing: .1em; background: var(--gold); color: #141408; border-radius: 4px; padding: 2px 8px; margin-right: 8px; }
 .gym-prompt .muted { color: var(--gold); font-family: var(--font-head); letter-spacing: .15em; font-size: 13px; margin-right: 8px; }
+#gymHud .gym-lock { position: absolute; left: 50%; bottom: 66px; transform: translateX(-50%); letter-spacing: .12em; }
+#gymHud .gym-lock.on { background: var(--gold); color: #141408; border-color: var(--gold); }
 .gym-bag { position: absolute; left: 14px; bottom: 56px; background: rgba(8,8,12,.6); border: 1px solid rgba(255,255,255,.08); border-radius: 8px; padding: 8px 14px; display: none; min-width: 260px; }
 .gym-bag.show { display: block; }
 .gym-bag .last { font-family: var(--font-head); font-size: 22px; font-weight: 700; letter-spacing: .04em; }
