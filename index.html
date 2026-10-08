@@ -57,6 +57,7 @@
     <div class="menu-btns">
       <button class="big" id="btnHost">CREATE ROOM</button>
       <button class="big" id="btnJoin">JOIN ROOM</button>
+      <button class="big gold" id="btnCareer">CAREER</button>
       <button class="big ghost" id="btnPractice">PRACTICE vs CPU</button>
       <button class="big ghost" id="btnWatch">WATCH AI vs AI</button>
       <button class="ghost" id="btnOptions">OPTIONS · CONTROLS</button>
@@ -99,6 +100,75 @@
       <button class="ghost" id="btnBack">BACK</button>
       <button class="ghost" id="btnLobbyOptions">OPTIONS</button>
       <button class="big" id="btnReady">READY</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== CAREER: NEW FIGHTER ===== -->
+<div id="careerNew" class="layer screen hidden">
+  <div class="panel wide">
+    <div class="lobby-head">
+      <div>
+        <div class="lobby-title">NEW CAREER</div>
+        <div class="lobby-status">From the regional circuit to the big league. Pick a base style — it only shapes where you start; training decides what you become.</div>
+      </div>
+    </div>
+    <div class="roster" id="careerBases"></div>
+    <div class="lobby-opts">
+      <label>Name <input id="careerName" maxlength="14" placeholder="Fighter name"></label>
+      <label>Nickname <input id="careerNick" maxlength="16" placeholder="optional"></label>
+      <label>Trunks <span class="swatches" id="careerColors"></span></label>
+      <label>Skin <span class="swatches" id="careerSkins"></span></label>
+    </div>
+    <div class="lobby-btns">
+      <button class="ghost" id="btnCareerNewBack">BACK</button>
+      <button class="big" id="btnCareerStart">START CAREER</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== CAREER HUB ===== -->
+<div id="career" class="layer screen hidden">
+  <div class="panel wide career">
+    <div class="career-head">
+      <div class="career-id">
+        <div class="career-name" id="cName">—</div>
+        <div class="career-sub" id="cSub"></div>
+      </div>
+      <div class="career-kpis">
+        <div class="kpi"><span>RECORD</span><b id="cRecord">0-0</b></div>
+        <div class="kpi"><span>BANK</span><b id="cMoney">$0</b></div>
+        <div class="kpi"><span>DATE</span><b id="cWeek">—</b></div>
+        <div class="kpi pop"><span>POPULARITY</span><b id="cPop">0</b><div class="popbar"><i id="cPopBar"></i><em id="cPopMarks"></em></div><small id="cPopLbl"></small></div>
+      </div>
+    </div>
+    <div class="career-result hidden" id="cResult"></div>
+    <div class="career-body">
+      <aside class="career-side">
+        <h3>STATS <small id="cRating"></small></h3>
+        <div id="cStats"></div>
+        <h3>CONDITION</h3>
+        <div id="cInjury"></div>
+        <h3>GYM</h3>
+        <div id="cGymSummary" class="gym-summary"></div>
+      </aside>
+      <section class="career-main">
+        <div class="tabs" id="cTabs">
+          <button data-tab="camp" class="tab">CAMP</button>
+          <button data-tab="offers" class="tab">OFFERS</button>
+          <button data-tab="gym" class="tab">GYM</button>
+          <button data-tab="history" class="tab">HISTORY</button>
+        </div>
+        <div class="tabpage" id="tabCamp"></div>
+        <div class="tabpage hidden" id="tabOffers"></div>
+        <div class="tabpage hidden" id="tabGym"></div>
+        <div class="tabpage hidden" id="tabHistory"></div>
+      </section>
+    </div>
+    <div class="lobby-btns">
+      <button class="ghost" id="btnCareerMenu">MAIN MENU</button>
+      <button class="ghost" id="btnCareerOptions">OPTIONS</button>
+      <button class="ghost danger" id="btnCareerDelete">RETIRE (DELETE SAVE)</button>
     </div>
   </div>
 </div>
@@ -169,6 +239,7 @@
     </div>
     <div class="lobby-btns">
       <button class="ghost" id="btnOptReset">RESET DEFAULTS</button>
+      <button class="ghost" id="btnOptQuit">QUIT TO MAIN MENU</button>
       <button class="big" id="btnOptClose">DONE</button>
     </div>
   </div>
@@ -184,7 +255,7 @@
   if (typeof Peer === 'undefined') document.write('<script src="lib/peerjs.min.js"><\/script>');
 </script>
 <script src="js/physics.js?v=12"></script>
-<script src="js/sim.js?v=12"></script>
+<script src="js/sim.js?v=16"></script>
 <script src="js/ai.js?v=12"></script>
 <script src="js/brain.js?v=12"></script>
 <script src="js/music-env.js?v=17"></script>

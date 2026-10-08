@@ -84,8 +84,8 @@
            P({ yaw: -0.8, lean: 0.12, roll: -0.12, lh: [-0.22, 0.45, 0.25], rh: [-0.25, 0.5, 0.55], elbowOut: 1.2, elbowUp: 1.3, oz: 0.08 })],
     uppercut: [P({ yaw: 0.45, lean: 0.22, h: HIP_H - 0.06, lh: [-0.14, 0.44, 0.3], rh: [0.3, 0.12, 0.12], hp: 0.15 }),
                P({ yaw: -0.4, lean: -0.1, h: HIP_H + 0.01, lh: [-0.2, 0.45, 0.28], rh: [0.0, 0.62, 0.5], oz: 0.08, hp: -0.1 })],
-    overhand: [P({ yaw: 0.55, lean: -0.05, lh: [-0.14, 0.44, 0.3], rh: [0.38, 0.62, -0.12], elbowOut: 1.0, elbowUp: 1.0 }),
-               P({ yaw: -0.6, lean: 0.42, roll: -0.25, lh: [-0.24, 0.4, 0.25], rh: [-0.1, 0.45, 0.8], oz: 0.14, hp: 0.25, elbowOut: 0.8, elbowUp: 0.5 })],
+    overhand: [P({ yaw: 0.4, lean: 0.05, lh: [-0.14, 0.44, 0.3], rh: [0.46, 0.6, 0.15], elbowOut: 1.3, elbowUp: 1.1 }),
+               P({ yaw: -0.6, lean: 0.3, roll: -0.15, lh: [-0.24, 0.4, 0.25], rh: [-0.1, 0.45, 0.8], oz: 0.14, hp: 0.25, elbowOut: 1.1, elbowUp: 1.1 })],
     hkick: [P({ yaw: -0.1, lean: 0.0, roll: 0.15, h: HIP_H - 0.05, hipYaw: -0.5, lh: [-0.18, 0.5, 0.3], rh: [0.34, 0.3, -0.05], rf: [0.42, 0.25], rfy: 0.72, rPole: [1, 0.3, 0.1], lf: [-0.1, 0.02], lPole: [0.4, 0, 1] }),
             P({ yaw: -0.9, lean: -0.5, roll: 0.5, h: HIP_H + 0.02, hipYaw: -1.4, lh: [0.05, 0.42, 0.28], rh: [0.3, -0.15, -0.3], rf: [-0.5, 0.55], rfy: 1.4, rPole: [0.9, 0.6, 0.0], lf: [-0.1, 0.02], lPole: [0.9, 0, 0.4], oz: 0.1, hp: 0.1, hy: 0.7 })],
     bkick: [P({ yaw: -0.1, lean: 0.0, roll: 0.12, h: HIP_H - 0.05, hipYaw: -0.45, lh: [-0.18, 0.5, 0.3], rh: [0.34, 0.3, -0.05], rf: [0.4, 0.25], rfy: 0.6, rPole: [1, 0.2, 0.1], lf: [-0.1, 0.02], lPole: [0.4, 0, 1] }),
@@ -180,6 +180,7 @@
   // snapped onto its bones, so the look never changes.
   const SEGS = (root.MMAPhys && root.MMAPhys.SEGS) || null;
   const SEG_ORDER = ['pelvis', 'chest', 'head', 'lUpperArm', 'lForearm', 'rUpperArm', 'rForearm', 'lThigh', 'lShin', 'rThigh', 'rShin'];
+  const ANKLE_PIVOT = [0, -0.215, -0.02]; // where the foot hinges on the shin — mirrors js/physics.js
   const RIG = { // segment dims (metres) — mirrors js/physics.js SEGS
     pelvis: [0.16, 0.09, 0.11], chest: [0.19, 0.20, 0.12], headR: 0.12,
     upperArm: [0.12, 0.05], forearm: [0.12, 0.045], fistR: 0.062, fistY: -0.18,
@@ -217,7 +218,7 @@
       // Each physics segment is a group holding an anatomical-ish body part built from lathes (smooth, tapered
       // muscle shapes) plus a few spheres and boxes for landmarks. Everything stays inside / close to the physics
       // collider of that segment so what you see is what gets hit.
-      this.segs = {};
+      this.segs = {}; this.feet = {};
       const seg = (name) => { const g = new THREE.Group(); scene.add(g); this.segs[name] = g; return g; };
       const addMesh = (g, geo, mat, offset, scale) => {
         const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true;
@@ -332,10 +333,13 @@
         addMesh(sh, new THREE.SphereGeometry(SR * 1.15, 14, 10), legMat, [0, SH * 0.45, -SR * 0.5], [0.95, 1.5, 0.95]);  // calf
         const fp = R.footPos, FW = R.foot[0], FHh = R.foot[1], FL = R.foot[2];
         addMesh(sh, new THREE.SphereGeometry(SR * 0.9, 12, 10), legMat, [0, fp[1] + FHh + 0.02, -0.005], [1.0, 0.8, 1.0]); // ankle
-        addMesh(sh, new THREE.BoxGeometry(FW * 2, FHh * 2, FL * 1.6), legMat, [fp[0], fp[1], fp[2] - FL * 0.2]);          // foot body
-        addMesh(sh, new THREE.SphereGeometry(FW, 14, 10), legMat, [fp[0], fp[1] - FHh * 0.1, fp[2] + FL * 0.6], [1.0, 0.75, 1.0]); // toes
-        addMesh(sh, new THREE.SphereGeometry(FW * 0.9, 12, 10), legMat, [fp[0], fp[1], fp[2] - FL * 0.95], [1.0, 0.8, 0.7]);     // heel
-        addMesh(sh, new THREE.BoxGeometry(FW * 2.05, 0.008, FL * 2.05), bandMat, [fp[0], fp[1] - FHh, fp[2] - FL * 0.02]);      // sole
+        // the foot hangs off an ankle group so it can point (plantar-flex) with the physics foot during kicks
+        const AP = ANKLE_PIVOT, foot = new THREE.Group(); foot.position.set(AP[0], AP[1], AP[2]); sh.add(foot); this.feet[side] = foot;
+        const fo = (x, y, z) => [x - AP[0], y - AP[1], z - AP[2]];
+        addMesh(foot, new THREE.BoxGeometry(FW * 2, FHh * 2, FL * 1.6), legMat, fo(fp[0], fp[1], fp[2] - FL * 0.2));          // foot body
+        addMesh(foot, new THREE.SphereGeometry(FW, 14, 10), legMat, fo(fp[0], fp[1] - FHh * 0.1, fp[2] + FL * 0.6), [1.0, 0.75, 1.0]); // toes
+        addMesh(foot, new THREE.SphereGeometry(FW * 0.9, 12, 10), legMat, fo(fp[0], fp[1], fp[2] - FL * 0.95), [1.0, 0.8, 0.7]);     // heel
+        addMesh(foot, new THREE.BoxGeometry(FW * 2.05, 0.008, FL * 2.05), bandMat, fo(fp[0], fp[1] - FHh, fp[2] - FL * 0.02));      // sole
       }
       // blood: a cut over the eye, a bloody nose/mouth, and a smear on the chest (shown as damage climbs)
       const bloodMat = new THREE.MeshStandardMaterial({ color: 0x8a0f12, roughness: 0.35, transparent: true, opacity: 0 });
@@ -505,6 +509,11 @@
         if (this.physMode) { g.position.lerp(_pw, a); g.quaternion.slerp(_q, a); }
         else { g.position.copy(_pw); g.quaternion.copy(_q); }
       }
+      // ankles (plantar-flexion, rad) ride along after the eleven segments
+      const n = SEG_ORDER.length * 7;
+      const al = pose.length > n + 1 ? pose[n] : 0, ar = pose.length > n + 1 ? pose[n + 1] : 0;
+      if (this.physMode) { this.feet.l.rotation.x += (al - this.feet.l.rotation.x) * a; this.feet.r.rotation.x += (ar - this.feet.r.rotation.x) * a; }
+      else { this.feet.l.rotation.x = al; this.feet.r.rotation.x = ar; }
     }
     // ---- segments <- hidden IK skeleton
     _segFromBone(name, bone, offY, offZ) {
@@ -522,6 +531,7 @@
       this._segFromBone('lForearm', this.lEl, -RIG.forearm[0] - 0.02); this._segFromBone('rForearm', this.rEl, -RIG.forearm[0] - 0.02);
       this._segFromBone('lThigh', this.lHip, -RIG.thigh[0] - 0.03); this._segFromBone('rThigh', this.rHip, -RIG.thigh[0] - 0.03);
       this._segFromBone('lShin', this.lKn, -RIG.shin[0] - 0.03); this._segFromBone('rShin', this.rKn, -RIG.shin[0] - 0.03);
+      this.feet.l.rotation.x = 0; this.feet.r.rotation.x = 0;
     }
 
     update(f, S, opp, dt, time, groundAxis, posLerp) {

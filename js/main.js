@@ -9,6 +9,7 @@
   const { Renderer } = window.MMARender;
   const { Net } = window.MMANet;
   const { Audio } = window.MMAAudio;
+  const Career = window.MMACareer;
 
   const $ = (s) => document.querySelector(s);
   const show = (el) => el.classList.remove('hidden');
@@ -73,7 +74,7 @@
   };
 
   // practice (you vs a brain) and watch (brain vs brain) both run the sim locally with no network
-  const isLocal = () => App.mode === 'practice' || App.mode === 'watch';
+  const isLocal = () => App.mode === 'practice' || App.mode === 'watch' || App.mode === 'career';
 
   // ============================================================
   //  Brains: the scripted CPU (js/ai.js) or an evolved neural brain (js/brain.js) from brains/index.json
@@ -124,10 +125,11 @@
     clearTimeout(toastT); toastT = setTimeout(() => hide(t), ms || 3500);
   }
   function screen(name) {
-    for (const id of ['menu', 'lobby', 'end']) { const el = $('#' + id); if (id === name) show(el); else hide(el); }
+    for (const id of ['menu', 'lobby', 'end', 'career', 'careerNew']) { const el = $('#' + id); if (id === name) show(el); else hide(el); }
     if (App.optionsOpen) closeOptions();
     if (name) hide($('#hud')); else show($('#hud'));
-    App.audio.play(name === 'menu' || name === 'lobby' ? 'menu' : 'fight');
+    if (name === 'menu') refreshMenuCareer();
+    App.audio.play(name === 'menu' || name === 'lobby' || name === 'career' || name === 'careerNew' ? 'menu' : 'fight');
   }
   function centerMsg(html, ms) {
     const el = $('#centerMsg'); el.innerHTML = html; el.classList.add('show');
@@ -341,7 +343,7 @@
     App.feedLines = []; $('#feed').innerHTML = '';
     $('#fp0 .nm').textContent = App.state.f[0].name; $('#fp1 .nm').textContent = App.state.f[1].name;
     $('#fp0 .tag').textContent = App.mode === 'watch' ? brainShort(App.lobby.brains[0]) : App.myIdx === 0 ? 'YOU' : 'P1';
-    $('#fp1 .tag').textContent = App.myIdx === 1 ? 'YOU' : (isLocal() ? brainShort(App.lobby.brains[1]) : 'P2');
+    $('#fp1 .tag').textContent = App.myIdx === 1 ? 'YOU' : App.mode === 'career' ? 'OPP' : (isLocal() ? brainShort(App.lobby.brains[1]) : 'P2');
     screen(null);
     $('#controlsHint').style.display = App.mode === 'watch' || App.hintsHidden ? 'none' : '';
     App.playing = true;
@@ -373,6 +375,12 @@
       row('Strikes landed / thrown', s => s.landed + ' / ' + s.thrown) + row('Damage dealt', s => Math.round(s.sig)) +
       row('Takedowns', s => s.td + ' / ' + s.tdAtt) + row('Control time', s => Math.round(s.ctrl) + 's') + row('Submission attempts', s => s.subs) + row('Knockdowns', s => s.kd);
     $('#btnRematch').textContent = 'REMATCH'; $('#btnRematch').disabled = false;
+    if (App.mode === 'career') {
+      settleCareerFight();
+      const lf = CareerUI.C && CareerUI.C.lastFight;
+      if (lf) $('#endDetail').textContent = (w ? (R.winner === 0 ? 'Victory. ' : 'Defeat. ') : '') + 'Paid ' + Career.fmtMoney(lf.pay) + ' · popularity ' + (lf.dPop >= 0 ? '+' : '') + lf.dPop + (lf.titleNote ? ' · ' + lf.titleNote : '');
+      $('#btnRematch').textContent = 'BACK TO THE GYM';
+    }
     screen('end');
   }
 
@@ -557,6 +565,7 @@
   function openOptions() {
     App.optionsOpen = true; App.held = 0; App.pressed = 0;
     if (App.playing && isLocal()) App.paused = true;
+    $('#btnOptQuit').style.display = $('#menu').classList.contains('hidden') && $('#career').classList.contains('hidden') && $('#careerNew').classList.contains('hidden') ? '' : 'none'; // nothing to quit from on the menus
     buildOptions(); show($('#options'));
   }
   function closeOptions() {
@@ -654,6 +663,229 @@
     updateHUD(App.state, inputs);
   }
   requestAnimationFrame(loop);
+
+  // ============================================================
+  //  Career mode (single player campaign) — model in js/career.js
+  // ============================================================
+  const CareerUI = { C: null, tab: 'camp', pick: { base: 'striker', color: null, skin: null }, justFought: false, lastTrain: null, confirmDel: 0 };
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const hex = (c) => '#' + (c >>> 0).toString(16).padStart(6, '0');
+  const pct100 = (v) => Math.round(v * 100);
+  function careerSave() { if (CareerUI.C) Career.save(CareerUI.C); }
+  function careerLoad() { if (!CareerUI.C) CareerUI.C = Career.load(); return CareerUI.C; }
+  function refreshMenuCareer() { const b = $('#btnCareer'); if (b) b.textContent = careerLoad() ? 'CONTINUE CAREER' : 'START A CAREER'; }
+
+  // ---- new fighter ----
+  function swatches(el, list, sel, onPick) {
+    el.innerHTML = list.map((c, i) => '<i data-i="' + i + '" style="background:' + hex(c) + '" class="' + (c === sel ? 'sel' : '') + '"></i>').join('');
+    el.querySelectorAll('i').forEach(i => i.onclick = () => onPick(list[+i.dataset.i]));
+  }
+  function openCareerNew() {
+    const P = CareerUI.pick;
+    if (P.color == null) P.color = Career.COLORS[0];
+    if (P.skin == null) P.skin = Career.SKINS[0];
+    const el = $('#careerBases'); el.innerHTML = '';
+    for (const key in ROSTER) {
+      const r = ROSTER[key], st = Career.startingStats(key);
+      const c = document.createElement('div'); c.className = 'card' + (P.base === key ? ' sel' : ''); c.dataset.key = key;
+      c.innerHTML = '<div class="swatch" style="background:' + hex(r.color) + '"></div><div class="cname">' + esc(r.style) + '</div><div class="cstyle">starting shape · rating ' + Career.rating(st) + '</div><div class="cdesc">' + esc(r.desc) + '</div>' +
+        Career.STATS.map(s => statBar(s.short, st[s.key])).join('');
+      c.onclick = () => { P.base = key; el.querySelectorAll('.card').forEach(x => x.classList.toggle('sel', x.dataset.key === key)); };
+      el.appendChild(c);
+    }
+    swatches($('#careerColors'), Career.COLORS, P.color, (c) => { P.color = c; openCareerNew(); });
+    swatches($('#careerSkins'), Career.SKINS, P.skin, (c) => { P.skin = c; openCareerNew(); });
+    try { if (!$('#careerName').value) $('#careerName').value = localStorage.getItem('cr_name') || ''; } catch (_) {}
+    screen('careerNew');
+  }
+  function startCareer() {
+    const name = ($('#careerName').value || '').trim();
+    if (!name) { toast('Give your fighter a name.'); $('#careerName').focus(); return; }
+    const P = CareerUI.pick;
+    CareerUI.C = Career.newCareer({ name, nick: $('#careerNick').value, base: P.base, color: P.color, skin: P.skin });
+    careerSave(); CareerUI.justFought = false; CareerUI.lastTrain = null;
+    openCareer('offers');
+  }
+
+  // ---- hub ----
+  function openCareer(tab) {
+    const C = careerLoad(); if (!C) { openCareerNew(); return; }
+    App.mode = null;
+    CareerUI.tab = tab || (C.booked ? 'camp' : 'offers');
+    CareerUI.confirmDel = 0; $('#btnCareerDelete').textContent = 'RETIRE (DELETE SAVE)';
+    screen('career'); renderCareer();
+  }
+  const dangerTag = (d) => d <= -8 ? '<span class="dang easy">FAVOURED</span>' : d <= 6 ? '<span class="dang even">EVEN</span>' : d <= 16 ? '<span class="dang hard">UNDERDOG</span>' : '<span class="dang brutal">LONG SHOT</span>';
+  const resultWord = (h) => h.draw ? 'DRAW' : h.won ? 'WIN' : 'LOSS';
+  function renderCareer() {
+    const C = CareerUI.C; if (!C) return;
+    const money = Career.fmtMoney;
+    // header
+    $('#cName').innerHTML = esc(C.name) + (C.nick ? ' <span style="color:var(--gold);font-size:22px">"' + esc(C.nick) + '"</span>' : '') + (C.champion ? '<span class="belt">' + esc(Career.TOP.name) + ' CHAMPION</span>' : '');
+    const tier = Career.tierFor(C.pop);
+    $('#cSub').textContent = ROSTER[C.base].style + ' base · ' + Career.TIER_NAME[tier] + ' level · ' + (C.streak > 1 ? C.streak + ' in a row' : C.streak < -1 ? (-C.streak) + ' straight losses' : 'rating ' + Career.rating(C.stats));
+    const r = C.record;
+    $('#cRecord').textContent = r.w + '-' + r.l + (r.d ? '-' + r.d : '');
+    $('#cRecord').title = r.ko + ' (T)KO · ' + r.sub + ' SUB · ' + r.dec + ' DEC';
+    $('#cMoney').textContent = money(C.money);
+    $('#cWeek').textContent = Career.weekLabel(C.week);
+    $('#cPop').textContent = Math.round(C.pop);
+    $('#cPopBar').style.width = Math.max(0, Math.min(100, C.pop)) + '%';
+    $('#cPopMarks').innerHTML = [24, 50, 74, Career.TITLE_POP].map(p => '<b style="left:' + p + '%" title="' + p + '"></b>').join('');
+    $('#cPopLbl').textContent = Career.popLabel(C.pop);
+    // last fight banner
+    const rb = $('#cResult');
+    if (CareerUI.justFought && C.lastFight) {
+      const h = C.lastFight;
+      rb.classList.remove('hidden'); rb.classList.toggle('lost', !h.won && !h.draw);
+      rb.innerHTML = '<div class="rh">' + resultWord(h) + '<small style="display:block;font-size:13px;color:var(--muted);letter-spacing:.15em">' + esc(h.method) + (/KO|Sub/i.test(h.method) ? ' · R' + h.round + ' ' + esc(h.time) : '') + '</small></div>' +
+        '<div class="rl">vs <b>' + esc(h.opp) + '</b> at <b>' + esc(h.org) + '</b>' + (h.titleNote ? ' · <b style="color:var(--gold)">' + esc(h.titleNote) + '</b>' : '') + '</div>' +
+        '<div class="rl">Paid <b>' + money(h.pay) + '</b> · popularity <b>' + (h.dPop >= 0 ? '+' : '') + h.dPop + '</b> → ' + Math.round(h.pop) +
+        ' · took <b>' + (h.inj.head + h.inj.body + h.inj.legs) + '</b> damage into camp · strikes landed ' + h.stats.me.landed + ' / ' + h.stats.opp.landed + '</div>';
+    } else rb.classList.add('hidden');
+    // side: stats
+    const lt = CareerUI.lastTrain;
+    $('#cStats').innerHTML = Career.STATS.map(s => {
+      const up = lt && lt.focus === s.key;
+      return '<div class="cstat' + (up ? ' up' : '') + '" title="' + esc(s.desc) + '"><span>' + s.label + '</span><div class="sb"><i style="width:' + pct100(C.stats[s.key]) + '%"></i></div><b>' + pct100(C.stats[s.key]) + (up ? '<small style="font-size:10px"> +' + (lt.gain * 100).toFixed(1) + '</small>' : '') + '</b></div>';
+    }).join('');
+    $('#cRating').textContent = 'overall ' + Career.rating(C.stats);
+    const injT = Career.injuryTotal(C);
+    const injCell = (k, lbl) => { const v = Math.round(C.injury[k]); return '<span style="color:' + (v > 40 ? '#ff6b6b' : v > 10 ? 'var(--gold)' : '') + '">' + lbl + '<small>' + (v <= 0 ? 'healthy' : v > 40 ? 'injured ' + v : 'sore ' + v) + '</small></span>'; };
+    $('#cInjury').innerHTML = '<div class="inj">' + injCell('head', 'HEAD') + injCell('body', 'BODY') + injCell('legs', 'LEGS') + '</div>' +
+      '<div class="inj-note">' + (injT <= 0 ? 'Fully healthy.' : 'Damage heals ' + (10 + (C.gym.recovery || 0) * 4) + ' a week (×2.5 resting). Training hurt is ' + Math.round((1 - Math.max(0.35, 1 - injT / 260)) * 100) + '% less effective, and you start a fight carrying half of it.') + '</div>';
+    $('#cGymSummary').innerHTML = Career.FACILITIES.map(f => '<b>' + (f.id === 'coach' ? 'Coach' : f.id === 'recovery' ? 'Recovery' : Career.STAT_BY_KEY[f.stat].label) + '</b> L' + (C.gym[f.id] || 0)).join(' · ');
+    // tabs
+    const nOffers = C.booked ? 0 : C.offers.length;
+    document.querySelectorAll('#cTabs .tab').forEach(b => {
+      b.classList.toggle('on', b.dataset.tab === CareerUI.tab);
+      if (b.dataset.tab === 'offers') b.innerHTML = 'OFFERS' + (nOffers ? '<span class="badge">' + nOffers + '</span>' : '');
+      if (b.dataset.tab === 'camp') b.innerHTML = C.booked ? (Career.fightReady(C) ? 'FIGHT WEEK<span class="badge">!</span>' : 'CAMP') : 'TRAINING';
+    });
+    for (const t of ['camp', 'offers', 'gym', 'history']) $('#tab' + t[0].toUpperCase() + t.slice(1)).classList.toggle('hidden', CareerUI.tab !== t);
+    renderCamp(C); renderOffers(C); renderGym(C); renderHistory(C);
+  }
+  function trainGrid(C) {
+    const hurt = Career.injuryTotal(C) > 0;
+    let h = '<div class="train-grid">' + Career.STATS.map(s => '<button class="train" data-focus="' + s.key + '"><span class="tn">' + s.label + '</span><span class="tg">+' + (Career.trainGain(C, s.key) * 100).toFixed(1) + '</span><div class="td">' + esc(s.desc) + ' Gym: ' + (Career.FACILITY_BY_ID[s.key].name) + ' L' + (C.gym[s.key] || 0) + '.</div></button>').join('') +
+      '<button class="train rest" data-focus="rest"><span class="tn">Rest &amp; recover</span><span class="tg">heal ×2.5</span><div class="td">No stat gains this week; injuries heal two and a half times as fast.' + (hurt ? '' : ' You are healthy — probably train instead.') + '</div></button></div>';
+    return h;
+  }
+  function bindTrain(root) {
+    root.querySelectorAll('.train').forEach(b => b.onclick = () => {
+      const C = CareerUI.C; if (!C) return;
+      const out = Career.trainWeek(C, b.dataset.focus); if (!out) return;
+      CareerUI.lastTrain = out; CareerUI.justFought = false; careerSave();
+      if (Career.fightReady(C)) { CareerUI.tab = 'camp'; toast('Fight week. Step in when you are ready.', 2500); }
+      renderCareer();
+    });
+  }
+  function fighterSide(name, nick, style, rec, rating, from, right) {
+    return '<div class="side' + (right ? ' r' : '') + '"><div class="fn">' + esc(name) + '</div><div class="fs">' + (nick ? '"' + esc(nick) + '" · ' : '') + esc(style) + '</div><div class="fr">' + rec + ' · rating ' + rating + (from ? ' · ' + esc(from) : '') + '</div></div>';
+  }
+  function renderCamp(C) {
+    const el = $('#tabCamp');
+    if (!C.booked) {
+      el.innerHTML = '<h3>NO FIGHT BOOKED</h3><div class="offer-none">Take an offer from the OFFERS tab, or spend a week in the gym while you wait — new offers come in every week, but a week off the cards costs a little popularity.</div>' + trainGrid(C);
+      bindTrain(el); return;
+    }
+    const B = C.booked, o = B.offer, opp = o.opp, d = Career.offerDanger(C, o);
+    const r = C.record;
+    let h = '<div class="fight-card">' + fighterSide(C.name, C.nick, ROSTER[C.base].style, r.w + '-' + r.l + (r.d ? '-' + r.d : ''), Career.rating(C.stats), null, false) +
+      '<div class="vs">VS</div>' + fighterSide(opp.name, opp.nick, opp.style, opp.record.w + '-' + opp.record.l, opp.rating + ' ' + dangerTag(d), opp.from, true) + '</div>' +
+      '<div class="fight-meta"><span><b>' + esc(o.orgName) + '</b> · ' + Career.TIER_NAME[o.tier] + '</span>' + (o.title ? '<span class="title-tag">' + (C.champion ? 'TITLE DEFENCE' : 'TITLE FIGHT') + '</span>' : '') +
+      '<span>purse <b>' + Career.fmtMoney(o.purse) + '</b> + <b>' + Career.fmtMoney(o.bonus) + '</b> win bonus</span><span><b>' + o.rounds + '</b> × ' + (o.len / 60) + ' min rounds</span>' +
+      '<span>' + (B.weeksLeft > 0 ? '<b>' + B.weeksLeft + '</b> week' + (B.weeksLeft === 1 ? '' : 's') + ' to go' : '<b>FIGHT WEEK</b>') + '</span></div>';
+    h += '<div class="cmp">' + Career.STATS.map(s => { const a = C.stats[s.key], b = opp.stats[s.key]; return '<div class="row"><b style="color:' + (a >= b ? '#52d273' : '#ff8a8a') + '">' + pct100(a) + '</b><div class="bar2 me"><i style="width:' + pct100(a) + '%"></i></div><span class="lbl">' + s.short + '</span><div class="bar2 op"><i style="width:' + pct100(b) + '%"></i></div><b>' + pct100(b) + '</b></div>'; }).join('') + '</div>';
+    if (B.weeksLeft > 0) {
+      h += '<h3>WEEK ' + (o.weeks - B.weeksLeft + 1) + ' OF ' + o.weeks + ' — WHAT ARE YOU TRAINING?</h3>' + trainGrid(C);
+    } else {
+      const inj = Career.injuryTotal(C);
+      h += '<div class="fight-now"><div><div class="t">IT\'S FIGHT NIGHT</div><small>' + (inj > 30 ? 'You are going in hurt (' + Math.round(inj) + ' damage carried) — it shows up on your damage meters from the first bell.' : inj > 0 ? 'A little banged up (' + Math.round(inj) + '), nothing serious.' : 'Healthy and ready.') + ' Quitting mid-fight counts as pulling out: no purse, and the promoter remembers.</small></div><button class="big" id="btnCareerFight">FIGHT</button></div>';
+    }
+    if (B.plan.length) h += '<div class="camp-plan">Camp so far: ' + B.plan.map(p => '<b>' + (p === 'rest' ? 'Rest' : Career.STAT_BY_KEY[p].label) + '</b>').join(' → ') + '</div>';
+    el.innerHTML = h; bindTrain(el);
+    const fb = $('#btnCareerFight'); if (fb) fb.onclick = () => launchCareerFight();
+  }
+  function renderOffers(C) {
+    const el = $('#tabOffers');
+    let h = '';
+    if (C.booked) h += '<div class="offer-none">You are booked against <b>' + esc(C.booked.offer.opp.name) + '</b>. New offers come in after the fight.</div>';
+    else if (!C.offers.length) h += '<div class="offer-none">Nobody is calling this week.</div>';
+    else {
+      h += C.offers.map(o => {
+        const d = Career.offerDanger(C, o);
+        return '<div class="offer t' + o.tier + (o.title ? ' title' : '') + '"><div><div class="org">' + esc(o.orgName) + '<small>' + Career.TIER_NAME[o.tier].toUpperCase() + '</small>' + (o.title ? '<span class="title-tag">' + (C.champion ? 'TITLE DEFENCE' : 'TITLE FIGHT') + '</span>' : '') + '</div>' +
+          '<div class="who">vs <b>' + esc(o.opp.name) + '</b>' + (o.opp.nick ? ' "' + esc(o.opp.nick) + '"' : '') + ' · ' + esc(o.opp.style) + ' · ' + o.opp.record.w + '-' + o.opp.record.l + ' · rating ' + o.opp.rating + dangerTag(d) + '</div>' +
+          '<div class="terms">in <b>' + o.weeks + ' weeks</b> · purse <b>' + Career.fmtMoney(o.purse) + '</b> + <b>' + Career.fmtMoney(o.bonus) + '</b> to win · ' + o.rounds + ' rounds</div>' + (o.note ? '<div class="note">' + esc(o.note) + '</div>' : '') + '</div>' +
+          '<button data-offer="' + o.id + '">ACCEPT</button></div>';
+      }).join('');
+    }
+    // what it takes to get the next org on the phone
+    const next = Career.ORGS.filter(x => x.pop > C.pop).sort((a, b) => a.pop - b.pop)[0];
+    h += '<div class="next-org">' + (C.champion ? 'You are the champion. Keep defending.' : C.pop >= Career.TITLE_POP ? 'The champion has agreed to fight you.' :
+      next ? 'Next up: <b>' + esc(next.name) + '</b> starts calling at popularity <b>' + next.pop + '</b> (you are at ' + Math.round(C.pop) + '). ' : 'A title shot comes at popularity <b>' + Career.TITLE_POP + '</b>. ') +
+      'Wins at bigger shows are worth more; fast finishes are worth a lot more; losses cost you. Each level of the sport can only make you so famous (' + Career.TIER_POP_CAP.slice(0, 3).join(' / ') + ') — move up to keep climbing.</div>';
+    el.innerHTML = h;
+    el.querySelectorAll('button[data-offer]').forEach(b => b.onclick = () => {
+      if (Career.accept(C, +b.dataset.offer)) { CareerUI.justFought = false; careerSave(); CareerUI.tab = 'camp'; renderCareer(); }
+    });
+  }
+  function renderGym(C) {
+    const el = $('#tabGym');
+    let h = '<div class="offer-none">Winnings go here. Each facility level makes a week of that training worth 30% more; the recovery suite heals 4 more damage a week per level; the head coach adds 12% to everything per level.</div>';
+    h += Career.FACILITIES.map(f => {
+      const lvl = C.gym[f.id] || 0, cost = Career.upgradeCost(f.id, lvl);
+      return '<div class="fac"><div><div class="fn">' + esc(f.name) + '</div><div class="fd">' + esc(f.desc) + '</div></div><div class="lvl" title="level ' + lvl + '">' + [1, 2, 3, 4, 5].map(i => '<i class="' + (i <= lvl ? 'on' : '') + '"></i>').join('') + '</div>' +
+        (cost == null ? '<button class="ghost" disabled>MAXED</button>' : '<button data-up="' + f.id + '"' + (C.money < cost ? ' class="ghost" disabled' : '') + '>UPGRADE · ' + Career.fmtMoney(cost) + '</button>') + '</div>';
+    }).join('');
+    el.innerHTML = h;
+    el.querySelectorAll('button[data-up]').forEach(b => b.onclick = () => { if (Career.buyUpgrade(C, b.dataset.up)) { careerSave(); renderCareer(); } });
+  }
+  function renderHistory(C) {
+    const el = $('#tabHistory');
+    let h = '';
+    if (!C.history.length) h += '<div class="offer-none">No fights yet.</div>';
+    else h += '<table class="hist"><tr><th>#</th><th>Date</th><th>Org</th><th>Opponent</th><th>Result</th><th>Method</th><th>Paid</th><th>Pop</th></tr>' +
+      C.history.slice().reverse().map((f, i) => '<tr><td>' + (C.history.length - i) + '</td><td>' + Career.weekLabel(f.week) + '</td><td>' + esc(f.org) + (f.title ? ' <span style="color:var(--gold)">TITLE</span>' : '') + '</td><td>' + esc(f.opp) + ' <span style="color:var(--muted)">(' + f.oppRating + ')</span></td><td class="' + (f.draw ? 'd' : f.won ? 'w' : 'l') + '">' + resultWord(f) + '</td><td>' + esc(f.method) + (/KO|Sub/i.test(f.method) ? ' R' + f.round : '') + '</td><td>' + Career.fmtMoney(f.pay) + '</td><td>' + (f.dPop >= 0 ? '+' : '') + f.dPop + '</td></tr>').join('') + '</table>';
+    h += '<div class="news">' + C.log.slice().reverse().map(l => '<div><b>' + Career.weekLabel(l.week).replace('Year ', 'Y').replace(' · Week ', ' W') + '</b>' + esc(l.text) + '</div>').join('') + '</div>';
+    el.innerHTML = h;
+  }
+
+  // ---- the fight ----
+  function launchCareerFight() {
+    const C = CareerUI.C; if (!C || !Career.fightReady(C)) return;
+    App.audio.init();
+    const setup = Career.fightSetup(C);
+    App.mode = 'career'; App.myIdx = 0;
+    App.lobby.settings.diff = setup.diff; App.lobby.brains = ['cpu', 'cpu']; App.lobby.ready = [false, false];
+    setup.players[0].moveset = Controls.moveset; setup.players[1].moveset = DEFAULT_MOVESET;
+    App.careerApplied = false;
+    beginFight({ t: 'start', seed: setup.seed, players: setup.players, settings: setup.settings });
+  }
+  // the fight is over (or abandoned): book the result once, then back to the hub
+  function settleCareerFight() {
+    const C = CareerUI.C; if (!C || App.mode !== 'career') return;
+    if (App.careerApplied) return;
+    App.careerApplied = true;
+    const S = App.state;
+    if (S && S.result && C.booked) Career.applyResult(C, S);
+    else if (C.booked) { Career.withdraw(C); toast('You pulled out of the fight. No purse, popularity -4.', 4000); }
+    CareerUI.justFought = true; CareerUI.lastTrain = null; careerSave();
+  }
+  function leaveCareerFight() { settleCareerFight(); stopFight(); openCareer(); }
+  $('#btnCareer').onclick = () => { App.audio.init(); if (careerLoad()) openCareer(); else openCareerNew(); };
+  $('#btnCareerNewBack').onclick = () => screen('menu');
+  $('#btnCareerStart').onclick = () => startCareer();
+  $('#careerName').addEventListener('keydown', (e) => { if (e.key === 'Enter') startCareer(); });
+  $('#btnCareerMenu').onclick = () => { careerSave(); screen('menu'); };
+  $('#btnCareerOptions').onclick = () => openOptions();
+  $('#btnCareerDelete').onclick = () => {
+    if (CareerUI.confirmDel++ < 1) { $('#btnCareerDelete').textContent = 'CLICK AGAIN TO DELETE'; setTimeout(() => { CareerUI.confirmDel = 0; $('#btnCareerDelete').textContent = 'RETIRE (DELETE SAVE)'; }, 4000); return; }
+    Career.erase(); CareerUI.C = null; CareerUI.confirmDel = 0; $('#btnCareerDelete').textContent = 'RETIRE (DELETE SAVE)';
+    toast('Career deleted.', 2000); screen('menu');
+  };
+  document.querySelectorAll('#cTabs .tab').forEach(b => b.onclick = () => { CareerUI.tab = b.dataset.tab; renderCareer(); });
 
   // ============================================================
   //  Wire up buttons
@@ -764,13 +996,16 @@
   };
   $('#nameInput').addEventListener('change', () => { App.lobby.names[App.myIdx] = myName(); sendPick(); refreshLobby(); });
   for (const id of ['selRounds', 'selLen', 'selGrapple']) $('#' + id).addEventListener('change', () => { readSettings(); sendPick(); refreshLobby(); });
-  $('#btnMenu').onclick = () => { stopFight(); if (App.net) { App.net.destroy(); App.net = null; } App.mode = null; screen('menu'); };
+  $('#btnMenu').onclick = () => { if (App.mode === 'career') settleCareerFight(); stopFight(); if (App.net) { App.net.destroy(); App.net = null; } App.mode = null; screen('menu'); };
+  $('#btnOptQuit').onclick = () => { closeOptions(); if (App.mode === 'career') { leaveCareerFight(); return; } stopFight(); if (App.net) { App.net.destroy(); App.net = null; } App.mode = null; screen('menu'); };
   $('#btnRematch').onclick = () => {
+    if (App.mode === 'career') { leaveCareerFight(); return; }
     if (App.mode === 'guest') { App.net.send({ t: 'rematch' }); $('#btnRematch').textContent = 'WAITING FOR HOST…'; $('#btnRematch').disabled = true; return; }
     App.rematch[0] = true;
     if (App.mode === 'host' && !App.rematch[1]) { $('#btnRematch').textContent = 'WAITING FOR OPPONENT…'; $('#btnRematch').disabled = true; }
     maybeRematch();
   };
+  refreshMenuCareer();
   try { $('#nameInput').value = localStorage.getItem('cr_name') || ''; } catch (_) {}
   $('#nameInput').addEventListener('input', () => { try { localStorage.setItem('cr_name', $('#nameInput').value); } catch (_) {} });
 

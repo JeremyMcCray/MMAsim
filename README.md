@@ -160,6 +160,47 @@ works from any camera angle.
   dominant rounds are 10‑8. Three (or 1 / 5) rounds, 1–5 minutes each.
 
 
+## Career mode (single player campaign)
+
+**CAREER** on the main menu. Create a fighter (a base style only shapes the
+starting spread — every stat starts well below the roster fighters) and work
+your way from regional shows to the UFC and a title shot. Progress is saved in
+the browser (`localStorage`) after every action.
+
+* **Offers** — two or three promoters at a time offer you a fight: an opponent
+  (style, record, rating and how he compares to you), a date (4–10 weeks out),
+  a purse and a win bonus. Short-notice fights pay a little more; long camps
+  give you more training weeks. Only orgs your popularity has reached make
+  offers: regional shows from the start, national ones at 24, majors at 50,
+  the UFC at 74, and the champion agrees to fight you at 92. Promoters two
+  levels below you stop calling. A week with no fight booked still lets you
+  train but costs a sliver of popularity.
+* **Popularity** — wins at bigger shows are worth more, finishes are worth
+  more, and the faster the finish the better (a round‑one KO in a 3‑rounder is
+  worth roughly three times a decision). Losses cost you, more so at the top.
+  Each level of the sport can only make you so famous (42 / 66 / 88), so you
+  have to move up to keep climbing. Bigger orgs also pay more the more popular
+  you are inside their band.
+* **Camp** — every week of a camp you choose one thing to train: **Stamina**,
+  **Health**, **Strike speed**, **Strike power**, **BJJ** or **Wrestling**
+  (the game's `car / chin / spd / pow / bjj / wre` stats), or **rest**. Gains
+  are bigger on low stats and grind past ~85.
+* **Gym** — winnings buy upgrades: one facility per stat (each level makes a
+  week of that training worth 30 % more), a recovery suite (injuries heal
+  faster) and a head coach (+12 % to all training per level), five levels each.
+* **Injuries** — about half the damage you take in a fight comes into the next
+  camp with you. It heals every week (faster when resting or with a better
+  recovery suite), makes training less effective while it lasts, and if you
+  fight before it is gone you start the fight with that damage on your meters.
+* **Opponents** are generated per org: the scripted CPU drives them at a level
+  that rises with the org, and their stat sheet is theirs, not a roster card.
+  The fight itself is a normal 3‑round (5 for titles) fight with full rules.
+  Quitting a career fight mid‑way counts as pulling out: no purse, and your
+  popularity takes a hit.
+
+`js/career.js` is the whole model (no DOM; it also loads in Node, so balance
+can be simulated headless); the screens live in `js/main.js`.
+
 ## Evolved brains (machine learning)
 
 Besides the scripted CPU (`js/ai.js`) the game has **neural brains**: a small
@@ -214,6 +255,7 @@ js/physics.js     MMAPhys: Rapier world, active ragdolls, stance / guard / strik
 js/sim.js         fight simulation (seeded, fixed‑step). Standing = ragdolls, ground = ruleset
 js/ai.js          scripted CPU opponent
 js/brain.js       neural fighter brain (evolved weights from brains/*.json)
+js/career.js      career mode model: offers, orgs, popularity, camps, gym, injuries, save
 js/render.js      Three.js arena, segment fighters (follow the ragdoll bones when standing,
                   a two‑bone IK rig posed from POSES on the ground), camera, FX
 js/net.js         PeerJS rooms (host‑authoritative; bone poses ride in the state snapshot)

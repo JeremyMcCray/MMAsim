@@ -123,7 +123,7 @@
         if (dist <= 1.7 && r() < aggr) {
           // takedown?
           const tdWant = st.wre * 0.22 + (oppWinding ? 0.25 : 0) + (op.rocked > 0 ? 0.2 : 0) + (me.dmg.head > 55 ? 0.2 : 0);
-          if (S.grappling !== false && dist <= 1.5 && me.stam > 20 && r() < tdWant * (0.4 + d * 0.6)) {
+          if (S.grappling !== false && dist <= 1.5 && me.stam > 20 && !(me.tdCd > 0) && r() < tdWant * (0.4 + d * 0.6)) {
             this.pressed |= IN.GRAPPLE;
           } else {
             const pick = this._pickStrike(me, op, dist);
