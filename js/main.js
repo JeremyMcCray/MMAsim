@@ -400,11 +400,11 @@
           feed(text); break;
         case 'round': centerMsg('ROUND ' + ev.round, 2200); break;
         case 'end': {
+          // no centre-screen result here: the ref announces the winner in the hand-raise, and the end screen follows
           const res = ev.res;
-          const w = res.winner == null ? 'DRAW' : S.f[res.winner].name.toUpperCase() + ' WINS';
-          centerMsg(res.method === 'FATALITY' ? 'FATALITY<small>' + (res.winner == null ? '' : S.f[res.winner].name) + '</small>' : w + '<small>' + res.method + '</small>');
           if (res.method.indexOf('Decision') >= 0 || res.method.indexOf('Draw') >= 0) A.bell(3);
-          setTimeout(() => { if (App.state && App.state.result) showEnd(App.state); }, 3800);
+          // after the referee has raised the winner's hand
+          setTimeout(() => { if (App.state && App.state.result) showEnd(App.state); }, window.MMARender.ceremonyEnd(res) * 1000);
           break;
         }
       }

@@ -435,8 +435,10 @@
   };
 
   class FighterModel {
-    constructor(scene, color, skin, idx) {
+    // opts.ref: dressed as the referee (shirt, slacks, shoes, nitrile gloves) instead of a fighter
+    constructor(scene, color, skin, idx, opts) {
       this.idx = idx;
+      const isRef = this.isRef = !!(opts && opts.ref);
       // ---- segment frames (world-space groups), one per physics body, plus a foot hinged on each shin
       this.segs = {}; this.feet = {};
       for (const name of SEG_ORDER) { const g = new THREE.Group(); scene.add(g); this.segs[name] = g; }
@@ -473,15 +475,19 @@
         hipX: HIP_XX, kneeY: Sg.rShin.position.y + R.shin[0] + 0.03,
         ankleY: Sg.rShin.position.y + ANKLE_PIVOT[1], ankleZ: ANKLE_PIVOT[2], footY: Sg.rShin.position.y + R.footPos[1], footZ: R.footPos[2]
       };
-      const MATS = ['body', 'head', 'legs', 'shorts', 'band', 'trim', 'hair'];
+      const MATS = ['body', 'head', 'legs', 'shorts', 'band', 'trim', 'hair', 'sleeve', 'arm', 'feet'];
       const skinOpts = { roughness: 0.62, metalness: 0.0, skinning: true };
       const bodyMat = new THREE.MeshStandardMaterial(Object.assign({ color: skin }, skinOpts));
       const headMat = bodyMat.clone(), legMat = bodyMat.clone(), skinMat = bodyMat.clone();
       const shortsMat = new THREE.MeshStandardMaterial({ color, roughness: 0.55, skinning: true, side: THREE.DoubleSide });
       const bandSkinMat = new THREE.MeshStandardMaterial({ color: 0x15151a, roughness: 0.85, skinning: true });
       const trimSkinMat = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.7, skinning: true });
-      const hairMat = new THREE.MeshStandardMaterial({ color: 0x1a1210, roughness: 0.95, skinning: true });
-      const gloveMat = new THREE.MeshStandardMaterial({ color: idx === 0 ? 0xc62828 : 0x1e5bd6, roughness: 0.4, metalness: 0.05 });
+      const hairMat = new THREE.MeshStandardMaterial({ color: isRef ? 0x8a8a8e : 0x1a1210, roughness: 0.95, skinning: true });
+      const gloveMat = new THREE.MeshStandardMaterial({ color: isRef ? 0x4f8fe0 : idx === 0 ? 0xc62828 : 0x1e5bd6, roughness: 0.4, metalness: 0.05 });
+      // the referee: the 'body' (torso) and 'sleeve' groups are his shirt, 'legs' / 'shorts' his slacks, 'feet' his shoes
+      const shirtMat = isRef ? new THREE.MeshStandardMaterial({ color: 0x1e2028, roughness: 0.8, skinning: true }) : null;
+      const pantsMat = isRef ? new THREE.MeshStandardMaterial({ color: 0x2c2d33, roughness: 0.75, skinning: true, side: THREE.DoubleSide }) : null;
+      const shoeMat = isRef ? new THREE.MeshStandardMaterial({ color: 0x0c0c0e, roughness: 0.45, skinning: true }) : null;
       const darkMat = new THREE.MeshStandardMaterial({ color: 0x1c1c22, roughness: 0.9 });
       const bandMat = new THREE.MeshStandardMaterial({ color: 0x15151a, roughness: 0.85 });
       const eyeWhite = new THREE.MeshStandardMaterial({ color: 0xf4f0ea, roughness: 0.4 });
@@ -550,8 +556,9 @@
             r(fistY + 0.09, 0.038, 0.036, W1(fa)),
             r(fistY + 0.06, 0.036, 0.034, W1(fa))
           ];
+          for (let i = 0; i < 5; i++) A[i].mat = 'sleeve'; // shoulder to mid upper arm: a short sleeve on the referee
           const d = dome(A[A.length - 1], [0, -1, 0], 0.04);
-          B.loft(A.concat(d.rings), 24, 'body', [[sx * (shX - 0.03), shY + 0.075, 0], d.pole]);
+          B.loft(A.concat(d.rings), 24, 'arm', [[sx * (shX - 0.03), shY + 0.075, 0], d.pole]);
         }
         // -- leg: glute / quad, knee, calf, ankle
         {
@@ -585,7 +592,7 @@
             f(-0.105, 0.03, 0.026), f(-0.08, 0.042, 0.034), f(-0.04, 0.047, 0.038, { zf: 1.1 }), f(0.0, 0.05, 0.036, { zf: 1.06 }),
             f(0.05, 0.053, 0.031), f(0.09, 0.054, 0.025), f(0.115, 0.045, 0.018)
           ];
-          B.loft(F, 20, 'legs', [[x, sole + 0.02, footZ - 0.115], [x, sole + 0.012, footZ + 0.126]]);
+          B.loft(F, 20, 'feet', [[x, sole + 0.02, footZ - 0.115], [x, sole + 0.012, footZ + 0.126]]);
         }
         // -- shorts leg: a loose tube from inside the trunk to just above the knee, with a hem stripe
         {
@@ -616,7 +623,9 @@
         ], 36, 'shorts', [null, [0, hipY - 0.07, 0]]);
       }
       const bones = BONES.map((n) => n === 'lFoot' ? this.feet.l : n === 'rFoot' ? this.feet.r : this.segs[n]);
-      const skinMesh = new THREE.SkinnedMesh(B.build(MATS), [bodyMat, headMat, legMat, shortsMat, bandSkinMat, trimSkinMat, hairMat]);
+      const skinMesh = new THREE.SkinnedMesh(B.build(MATS), isRef
+        ? [shirtMat, headMat, pantsMat, pantsMat, bandSkinMat, pantsMat, hairMat, shirtMat, skinMat, shoeMat]
+        : [bodyMat, headMat, legMat, shortsMat, bandSkinMat, trimSkinMat, hairMat, bodyMat, bodyMat, legMat]);
       skinMesh.castShadow = true; skinMesh.receiveShadow = true; skinMesh.frustumCulled = false;
       scene.add(skinMesh);
       skinMesh.bind(new THREE.Skeleton(bones));
@@ -638,6 +647,11 @@
       // MMA gloves: padded fist with a squared knuckle block, thumb and a wrist strap, on the forearm frame
       for (const side of ['l', 'r']) {
         const sx = side === 'l' ? -1 : 1, g = this.segs[side + 'Forearm'], GB = new MeshBuilder(), fy = R.fistY, w = [[0, 1]];
+        if (isRef) { // the referee's gloved hand: an open hand, not a fist
+          addMesh(g, new THREE.SphereGeometry(0.045, 14, 10), gloveMat, [0, fy + 0.01, 0.004], [0.75, 1.45, 0.62]);
+          addMesh(g, new THREE.SphereGeometry(0.018, 10, 8), gloveMat, [-sx * 0.035, fy + 0.03, 0.02], [0.8, 1.5, 0.8]);
+          continue;
+        }
         const r = (y, rx, rz, o) => Object.assign({ c: [0, y, 0.004], rx, rz, w }, o || {});
         GB.loft([
           r(fy + 0.095, 0.046, 0.044, { mat: 'band' }), r(fy + 0.08, 0.057, 0.053, { mat: 'band' }), r(fy + 0.065, 0.058, 0.054, { mat: 'glove' }),
@@ -665,7 +679,7 @@
       this.scene = scene;
       this.pose = copyPose(POSES.idle);
       this.px = 0; this.pz = 0; this.yaw = 0; this.initialized = false; this.physMode = false;
-      this.flash = 0; this.stepPhase = 0;
+      this.flash = 0; this.stepPhase = 0; this.vx = 0; this.vz = 0;
       this._v = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
       this._pole = new THREE.Vector3();
       this._tipV = new THREE.Vector3();
@@ -699,10 +713,16 @@
       this.scene.remove(this.skinMesh); this.skinMesh.geometry.dispose();
     }
 
+    setVisible(v) {
+      for (const n in this.segs) this.segs[n].visible = v;
+      this.skinMesh.visible = v; this.blob.visible = v;
+    }
+
     setColors(color, skin) { this.mats.shortsMat.color.setHex(color); this.skinBase.setHex(skin); for (const k of ['skinMat', 'headMat', 'bodyMat', 'legMat']) this.mats[k].color.setHex(skin); this.faceMat.color.setHex(skin); }
 
     // bruising + blood per damage region
     updateDamage(f) {
+      if (this.isRef) return;
       const B = this.skinBase, fl = Math.max(0, this.flash);
       const tint = (mat, d) => {
         // reddens first (0-45), then darkens towards purple-blue bruising (45-100)
@@ -847,9 +867,12 @@
       this.feet.l.rotation.x = 0; this.feet.r.rotation.x = 0;
     }
 
+    // this.forced = { x, z, yaw, pose, moving, speed } places and poses the model directly instead of from the sim
+    // state (the referee always, the fighters for the post-fight hand raise). this.snap jumps straight there.
     update(f, S, opp, dt, time, groundAxis, posLerp) {
+      const forced = this.forced;
       // ---- live ragdoll: copy every segment straight from the sim snapshot
-      if (f.pose && f.pose.length >= SEG_ORDER.length * 7 && !f.ground) {
+      if (!forced && f.pose && f.pose.length >= SEG_ORDER.length * 7 && !f.ground) {
         this._applySnapshot(f.pose, dt, posLerp && posLerp < 15 ? 14 : 40); // guests smooth between snapshots
         const pv = this.segs.pelvis.position;
         this.px = pv.x; this.pz = pv.z;
@@ -868,7 +891,9 @@
 
       // ---- position & facing ----
       let tx = f.x, tz = f.z, tyaw;
-      if (S.ground && f.ground) {
+      if (forced) {
+        tx = forced.x; tz = forced.z; tyaw = forced.yaw;
+      } else if (S.ground && f.ground) {
         const ax = groundAxis.x, az = groundAxis.z;
         // top keeps facing +axis; bottom lies with head towards +axis (local -Z after lying back)
         const pos = S.ground.pos || 'guard';
@@ -888,18 +913,20 @@
       } else {
         tyaw = Math.atan2(opp.x - f.x, opp.z - f.z);
       }
-      if (!this.initialized) { this.px = tx; this.pz = tz; this.yaw = tyaw; this.initialized = true; }
-      const k = posLerp || 18;
+      const snap = this.snap; this.snap = false;
+      if (!this.initialized || snap) { this.px = tx; this.pz = tz; this.yaw = tyaw; this.initialized = true; this.vx = 0; this.vz = 0; }
+      const k = posLerp || 18, opx = this.px, opz = this.pz;
       this.px += (tx - this.px) * expo(dt, k); this.pz += (tz - this.pz) * expo(dt, k);
+      if (dt > 0) { const ev = expo(dt, 10); this.vx += ((this.px - opx) / dt - this.vx) * ev; this.vz += ((this.pz - opz) / dt - this.vz) * ev; }
       let dy = tyaw - this.yaw; while (dy > Math.PI) dy -= Math.PI * 2; while (dy < -Math.PI) dy += Math.PI * 2;
       this.yaw += dy * expo(dt, 10);
-      const moving = f.act.type === 'move' && !f.ground;
+      const moving = forced ? !!forced.moving : f.act.type === 'move' && !f.ground;
 
       // ---- pose ----
-      const target = this.targetPose(f, S, this._tp);
+      const target = forced ? copyPose(forced.pose, this._tp) : this.targetPose(f, S, this._tp);
       this._tp = target;
-      const speed = (f.act.type === 'strike' || f.act.type === 'hit' || f.act.type === 'dodge' || f.act.type === 'push') ? 26 : 12;
-      if (wasPhys) copyPose(target, this.pose); // coming off the ragdoll: start from the new pose, not a stale one
+      const speed = forced ? (forced.speed || 12) : (f.act.type === 'strike' || f.act.type === 'hit' || f.act.type === 'dodge' || f.act.type === 'push') ? 26 : 12;
+      if (wasPhys || snap) copyPose(target, this.pose); // coming off the ragdoll: start from the new pose, not a stale one
       else lerpPose(this.pose, target, expo(dt, speed), this.pose);
       // overrides (striking limb, lunge) are applied to a per-frame copy so they never feed back into the smoothing
       const p = copyPose(this.pose, this._rp); this._rp = p;
@@ -907,9 +934,9 @@
       // procedural: breathing bob, rocked wobble, footwork
       const bob = Math.sin(time * 2.1 + f.idx) * 0.012;
       let wob = 0;
-      if (f.rocked > 0 && !f.ground && f.act.type !== 'down') wob = Math.sin(time * 7) * 0.12 * Math.min(1, f.rocked) + Math.sin(time * 3.3) * 0.08;
+      if (!forced && f.rocked > 0 && !f.ground && f.act.type !== 'down') wob = Math.sin(time * 7) * 0.12 * Math.min(1, f.rocked) + Math.sin(time * 3.3) * 0.08;
 
-      const ov = this._limbOverride(f, p);
+      const ov = forced ? null : this._limbOverride(f, p);
       this.root.position.set(this.px, 0, this.pz);
       this.root.rotation.set(0, this.yaw, 0);
       this.body.position.set(p.ox, p.h + bob, p.oz);
@@ -956,9 +983,16 @@
         let lfx = p.lf[0], lfz = p.lf[1], rfx = p.rf[0], rfz = p.rf[1];
         let lfy = p.lfy, rfy = p.rfy;
         if (moving) {
+          // stride along the way he's actually travelling, in his own frame: forward / back the feet pass heel to toe,
+          // sideways it's a step-and-close (the stance opens and closes, the feet never cross). Each foot is lifted
+          // while it moves the way he's going and planted while the body passes over it.
           this.stepPhase += dt * 9;
           const s = Math.sin(this.stepPhase), c = Math.cos(this.stepPhase);
-          lfz += s * 0.12; rfz -= s * 0.12;
+          const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw), sp = Math.hypot(this.vx, this.vz);
+          let ux = 0, uz = 1;
+          if (sp > 0.15) { ux = (this.vx * cy - this.vz * sy) / sp; uz = (this.vx * sy + this.vz * cy) / sp; }
+          const A = 0.12 - 0.03 * Math.abs(ux);
+          lfx += ux * A * s; lfz += uz * A * s; rfx -= ux * A * s; rfz -= uz * A * s;
           lfy += Math.max(0, c) * 0.08; rfy += Math.max(0, -c) * 0.08;
         }
         const ch = Math.cos(p.hipYaw), sh = Math.sin(p.hipYaw);
@@ -986,6 +1020,376 @@
 
     headWorld(out) { return out.copy(this.segs.head.position); }
     torsoWorld(out) { return out.copy(this.segs.chest.position); }
+  }
+
+  // ---------- referee ----------
+  // Not part of the simulation: the renderer steers him from the sim state alone, so a guest sees the same ref as
+  // the host without any of it going over the wire. During the fight he keeps a T to the fighters on the far side
+  // from the camera, circling with them (sidestepping, never cutting between them). In a striking-only match he
+  // rushes in over a knockdown (holds the attacker off with an outstretched arm, then bends over the downed man and
+  // waves him up if he stays down the full count); with grappling allowed he stays out of it, since the fight may
+  // well go on on the mat. He waves off a stoppage, and finally stands in the centre between the two fighters and
+  // raises the winner's hand.
+  const KD_T = (root.MMASim && root.MMASim.KD) || { STAY: 4.0 };
+  const REF_CAGE = 3.9;   // he stays this far inside the cage centre
+  const KD_HOLD = 1.5;    // seconds he holds the attacker off once he's in between them
+  const REF_SPEED = 1.3;  // scales all his walking speeds
+  const REF_ROOM = 1.7;   // he keeps at least this much room to either fighter when picking his spot
+  const LUNGE_V = 5.2, LUNGE_T = 0.28, LUNGE_CD = 0.9; // the hop out of the way: speed, duration, cooldown
+  // distance on the mat from (x, z) to the segment a-b
+  function segDist(x, z, ax, az, bx, bz) {
+    const vx = bx - ax, vz = bz - az, l2 = vx * vx + vz * vz;
+    const u = l2 > 1e-6 ? clamp(((x - ax) * vx + (z - az) * vz) / l2, 0, 1) : 0;
+    return Math.hypot(x - ax - vx * u, z - az - vz * u);
+  }
+  const RP = (o) => P(Object.assign({ yaw: 0, hy: 0, hp: 0.05, lean: 0.06, elbowOut: 0.3, lf: [-0.15, 0.02], rf: [0.15, -0.02] }, o));
+  const REF_POSES = {
+    // off to the side of the action: knees soft, hands up in front, ready to jump in
+    watch: RP({ h: HIP_H - 0.05, lean: 0.2, hp: -0.12, lh: [-0.17, 0.2, 0.26], rh: [0.17, 0.2, 0.26], lf: [-0.2, 0.06], rf: [0.2, -0.06] }),
+    // crouched over a ground fight
+    ground: RP({ h: HIP_H - 0.16, lean: 0.55, hp: -0.1, lh: [-0.18, 0.02, 0.33], rh: [0.18, 0.02, 0.33], lf: [-0.24, 0.08], rf: [0.24, -0.08] }),
+    ready: RP({ lean: 0.04, lh: [-0.06, 0.08, 0.2], rh: [0.06, 0.08, 0.2] }),
+    // "fight!": both hands out between them
+    go: RP({ lean: 0.15, lh: [-0.12, 0.4, 0.5], rh: [0.12, 0.4, 0.5] }),
+    // over a knockdown, facing the attacker: one arm straight out to hold him off
+    stop: RP({ h: HIP_H - 0.03, lean: 0.1, lh: [-0.18, 0.2, 0.25], rh: [0.08, 0.52, 0.56], elbowOut: 0.15 }),
+    // bent over the downed fighter, watching him
+    kdWatch: RP({ h: HIP_H - 0.12, lean: 0.5, hp: 0.2, lh: [-0.17, 0.12, 0.34], rh: [0.17, 0.12, 0.34], lf: [-0.2, 0.1], rf: [0.2, -0.1] }),
+    waveUp: RP({ h: HIP_H - 0.1, lean: 0.42, hp: 0.15, elbowOut: 0.2 }),
+    waveOff: RP({ lean: 0.08, hp: -0.05, elbowOut: 0.6 }),
+    // the announcement: a wrist in each hand ...
+    hold: RP({ lean: 0.02, hp: 0, lh: [-0.4, 0.14, 0.08], rh: [0.4, 0.14, 0.08] })
+  };
+  // ... then up goes the winner's (the fighter on the -x side is on the ref's left; both on a draw)
+  REF_POSES.raiseL = Object.assign(copyPose(REF_POSES.hold), { lh: [-0.36, 1.02, 0.08], hp: -0.1 });
+  REF_POSES.raiseR = Object.assign(copyPose(REF_POSES.hold), { rh: [0.36, 1.02, 0.08], hp: -0.1 });
+  REF_POSES.raiseBoth = Object.assign(copyPose(REF_POSES.hold), { lh: [-0.36, 1.02, 0.08], rh: [0.36, 1.02, 0.08], hp: -0.1 });
+  // the fighters in the line-up, authored for the one on the ref's left (his right hand is in the ref's grip);
+  // the other fighter uses mirrored copies
+  const FL = (o) => P(Object.assign({ yaw: 0, hy: 0, lean: 0.02, hp: 0.05, elbowOut: 0.2, lf: [-0.14, 0.02], rf: [0.14, -0.02], lh: [-0.26, -0.07, 0.05], rh: [0.3, 0.13, 0.08] }, o));
+  const LINE_POSES = {
+    stand: FL({}),
+    lose: FL({ hp: 0.38, lean: 0.08 }),
+    raised: FL({ hp: -0.1, rh: [0.24, 1.04, 0.08] }),                                 // hand raised by the ref (a draw)
+    win: FL({ hp: -0.18, lean: -0.04, rh: [0.24, 1.04, 0.08], lh: [-0.3, 0.98, 0.12] }) // ... and the other one up too
+  };
+  const LINE_POSES_M = {};
+  for (const k in LINE_POSES) LINE_POSES_M[k] = mirrorPose(LINE_POSES[k], false);
+  const LINE_X = 0.78;    // fighters stand this far either side of the ref
+
+  // post-fight timeline, seconds after the result: fade out, cut to the line-up, hand goes up, end screen
+  function ceremonyTimes(res) {
+    const stoppage = !!res && !/Decision|Draw/.test(res.method);
+    const fade = stoppage ? 3.0 : 1.2; // a stoppage gets waved off first
+    return { stoppage, fade, cut: fade + 0.45, raise: fade + 1.9, end: fade + 4.8 };
+  }
+
+  // a comic speech bubble that floats over the ref's head; redrawn only when the line changes
+  class SpeechBubble {
+    constructor(scene) {
+      this.canvas = document.createElement('canvas');
+      this.canvas.width = 512; this.canvas.height = 192;
+      this.g = this.canvas.getContext('2d');
+      this.tex = new THREE.CanvasTexture(this.canvas);
+      this.sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.tex, transparent: true, depthTest: false, depthWrite: false }));
+      this.sprite.renderOrder = 10;
+      this.sprite.visible = false;
+      this.text = null;
+      scene.add(this.sprite);
+    }
+    show(text, x, y, z) {
+      if (!text) { this.sprite.visible = false; return; }
+      if (text !== this.text) this._draw(text);
+      this.sprite.position.set(x, y, z);
+      this.sprite.visible = true;
+    }
+    hide() { this.sprite.visible = false; }
+    _draw(text) {
+      this.text = text;
+      const g = this.g, W = this.canvas.width, H = this.canvas.height;
+      let fs = 64;
+      g.font = 'bold ' + fs + 'px Arial, sans-serif';
+      while (fs > 28 && g.measureText(text).width > W - 70) { fs -= 4; g.font = 'bold ' + fs + 'px Arial, sans-serif'; }
+      const tw = Math.min(W - 20, g.measureText(text).width + 60), bh = 120, bx = (W - tw) / 2, by = 8, r = 34;
+      g.clearRect(0, 0, W, H);
+      g.beginPath();
+      g.moveTo(bx + r, by); g.lineTo(bx + tw - r, by); g.quadraticCurveTo(bx + tw, by, bx + tw, by + r);
+      g.lineTo(bx + tw, by + bh - r); g.quadraticCurveTo(bx + tw, by + bh, bx + tw - r, by + bh);
+      g.lineTo(W / 2 + 22, by + bh); g.lineTo(W / 2 - 4, H - 10); g.lineTo(W / 2 - 18, by + bh); // the tail, down to his head
+      g.lineTo(bx + r, by + bh); g.quadraticCurveTo(bx, by + bh, bx, by + bh - r);
+      g.lineTo(bx, by + r); g.quadraticCurveTo(bx, by, bx + r, by);
+      g.closePath();
+      g.fillStyle = '#fff'; g.fill();
+      g.lineWidth = 7; g.strokeStyle = '#111'; g.stroke();
+      g.fillStyle = '#111'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(text, W / 2, by + bh / 2 + 2);
+      this.tex.needsUpdate = true;
+      this.sprite.scale.set(1.5, 1.5 * H / W, 1);
+    }
+  }
+
+  class Referee {
+    constructor(scene) {
+      this.model = new FighterModel(scene, 0x1e2028, 0xc99a74, 2, { ref: true });
+      this.bubble = new SpeechBubble(scene);
+      this._head = new THREE.Vector3();
+      this.f = { idx: 2, x: 0, z: 0, act: { type: 'idle', name: '', t: 0 }, ground: null, rocked: 0, pose: null };
+      this.pose = copyPose(REF_POSES.watch);
+      this.reset();
+    }
+    reset() {
+      this.x = 0; this.z = -1.5; this.vx = 0; this.vz = 0; this.goal = null; this.yaw = 0;
+      this.overT = -1; this.cut = false; this.ceremony = false; this.fade = 0;
+      this.lungeT = 0; this.lungeCD = 0; this.lvx = 0; this.lvz = 0;
+      this.kd = [{ downT: 0, phase: null, forced: false, arrive: -1 }, { downT: 0, phase: null, forced: false, arrive: -1 }];
+      this.model.initialized = false;
+      this.model.forced = null;
+    }
+    setVisible(v) { this.model.setVisible(v); if (!v) this.bubble.hide(); }
+
+    // neutral spot, the "T": about `D` out from the middle of the action, square to the line between the fighters so
+    // both stay in his view. He prefers the side away from the camera so he doesn't block the shot; when the fence
+    // is in the way he angles off square or comes in closer rather than drifting onto the fighters' line, and only
+    // as a last resort crosses to the camera side. Sticks with the current spot until it has gone bad.
+    _neutral(mx, mz, camSide, D, models) {
+      const m0 = models[0], m1 = models[1];
+      const ux = m1.px - m0.px, uz = m1.pz - m0.pz, gap = Math.hypot(ux, uz);
+      let nx = -camSide.x, nz = -camSide.z;
+      if (gap > 0.3) { nx = -uz / gap; nz = ux / gap; if (nx * camSide.x + nz * camSide.z > 0) { nx = -nx; nz = -nz; } }
+      const ra = Math.atan2(this.z - mz, this.x - mx);
+      let best = null, bestS = -1e9;
+      for (const side of [1, -1]) for (const ang of [0, 0.3, -0.3, 0.6, -0.6, 0.9, -0.9]) for (const dd of [D, D * 0.8, Math.max(1.4, D * 0.6)]) {
+        const c = Math.cos(ang), s = Math.sin(ang);
+        let px = mx + (nx * c - nz * s) * side * dd, pz = mz + (nx * s + nz * c) * side * dd;
+        const r = Math.hypot(px, pz);
+        let score = -Math.abs(ang) * 1.2 - (1 - dd / D) * 2.5 - (side < 0 ? 3.5 : 0) - Math.max(0, r - REF_CAGE) * 6;
+        if (r > REF_CAGE) { px *= REF_CAGE / r; pz *= REF_CAGE / r; }
+        for (const m of models) { const d = Math.hypot(px - m.px, pz - m.pz); if (d < REF_ROOM) score -= (REF_ROOM - d) * 6; }
+        // how far round the action he'd have to walk to get there
+        let da = Math.atan2(pz - mz, px - mx) - ra; while (da > Math.PI) da -= Math.PI * 2; while (da < -Math.PI) da += Math.PI * 2;
+        score -= Math.abs(da) * 0.5;
+        if (this.goal) score -= Math.hypot(px - this.goal[0], pz - this.goal[1]) * 0.6; // stick with the current spot
+        if (score > bestS) { bestS = score; best = [px, pz]; }
+      }
+      if (!this.goal || Math.hypot(best[0] - this.goal[0], best[1] - this.goal[1]) > 0.4) this.goal = best;
+      return this.goal;
+    }
+
+    // he walks round the fighters, never through them: when the straight line to (tx, tz) passes close to either man
+    // or the gap between them, he heads for a point further round an arc about the middle of the action instead,
+    // going the short way unless that way runs him into the fence
+    _route(tx, tz, mx, mz, models) {
+      const m0 = models[0], m1 = models[1], half = Math.hypot(m1.px - m0.px, m1.pz - m0.pz) / 2;
+      let near = 1e9;
+      for (let i = 0; i <= 8; i++) {
+        const u = i / 8, x = this.x + (tx - this.x) * u, z = this.z + (tz - this.z) * u;
+        near = Math.min(near, segDist(x, z, m0.px, m0.pz, m1.px, m1.pz));
+      }
+      if (near > 1.0) return [tx, tz];
+      const ra = Math.atan2(this.z - mz, this.x - mx);
+      let da = Math.atan2(tz - mz, tx - mx) - ra; while (da > Math.PI) da -= Math.PI * 2; while (da < -Math.PI) da += Math.PI * 2;
+      const R = Math.max(Math.hypot(this.x - mx, this.z - mz), half + 1.2, 1.6), step = Math.min(Math.abs(da) + 0.15, 0.7);
+      const way = (dir) => {
+        const a = ra + dir * step, x = mx + Math.cos(a) * R, z = mz + Math.sin(a) * R;
+        return [x, z, Math.max(0, Math.hypot(x, z) - REF_CAGE)];
+      };
+      let w = way(da >= 0 ? 1 : -1); const w2 = way(da >= 0 ? -1 : 1);
+      if (w[2] > w2[2] + 0.3) w = w2;
+      const r = Math.hypot(w[0], w[1]);
+      return r > REF_CAGE ? [w[0] * REF_CAGE / r, w[1] * REF_CAGE / r] : [w[0], w[1]];
+    }
+
+    // backed up near the fence with a fighter close: rather than getting pinned, he slides round the inside of the
+    // cage, whichever way takes him further from the fighters (and, all else equal, toward where he wanted to go)
+    _escapeArc(tx, tz, models) {
+      const m0 = models[0], m1 = models[1];
+      const R = REF_CAGE - 0.25, ra = Math.atan2(this.z, this.x);
+      let best = null, bestS = -1e9;
+      for (const dir of [1, -1]) {
+        const a = ra + dir * 0.75, x = Math.cos(a) * R, z = Math.sin(a) * R;
+        let s = segDist(x, z, m0.px, m0.pz, m1.px, m1.pz) * 2 - Math.hypot(tx - x, tz - z) * 0.3;
+        for (const m of models) s += Math.min(2.5, Math.hypot(x - m.px, z - m.pz));
+        if (s > bestS) { bestS = s; best = [x, z]; }
+      }
+      return best;
+    }
+
+    // the lunge: a quick hop in whichever direction gets him clear of both fighters without cutting between them
+    // or running into the fence
+    _lungeDir(models) {
+      const m0 = models[0], m1 = models[1], L = LUNGE_V * LUNGE_T;
+      let best = null, bestS = -1e9;
+      for (let i = 0; i < 16; i++) {
+        const a = i / 16 * Math.PI * 2, ux = Math.cos(a), uz = Math.sin(a);
+        let ex = this.x + ux * L, ez = this.z + uz * L, s = 0;
+        const r = Math.hypot(ex, ez);
+        if (r > REF_CAGE) { s -= (r - REF_CAGE) * 8; ex *= REF_CAGE / r; ez *= REF_CAGE / r; }
+        let line = 1e9;
+        for (let k = 1; k <= 4; k++) {
+          const u = k / 4;
+          line = Math.min(line, segDist(this.x + (ex - this.x) * u, this.z + (ez - this.z) * u, m0.px, m0.pz, m1.px, m1.pz));
+        }
+        s += Math.min(line, 1.5) * 3;
+        for (const m of models) s += Math.min(2.0, Math.hypot(ex - m.px, ez - m.pz)) * 2;
+        if (s > bestS) { bestS = s; best = [ux, uz]; }
+      }
+      return best;
+    }
+
+    // plans the frame, poses the fighters' models for the line-up, then moves and poses the ref
+    update(S, models, camSide, dt, time, groundAxis) {
+      const m0 = models[0], m1 = models[1];
+      const mx = (m0.px + m1.px) / 2, mz = (m0.pz + m1.pz) / 2;
+      let tx = this.x, tz = this.z, fx = mx, fz = mz, maxSp = 1.8, repR = 1.15, speed = 10;
+      let pose = REF_POSES.watch, lineup = false, route = false, say = null;
+      const p = this.pose;
+      this.fade = 0; this.ceremony = false;
+      this.overT = S.phase === 'over' && S.result ? (this.overT < 0 ? 0 : this.overT + dt) : -1;
+      if (this.overT < 0 && this.cut) { this.cut = false; m0.forced = null; m1.forced = null; }
+      if (S.phase !== 'fight') this.goal = null;
+      // knockdown bookkeeping: did he get up on his own, or did the count run out?
+      for (let i = 0; i < 2; i++) {
+        const a = S.f[i].act, k = this.kd[i];
+        const ph = a && a.type === 'kd' ? a.name : null;
+        if (ph === 'fall' && k.phase !== 'fall') k.arrive = -1;
+        if (ph === 'down') k.downT = a.t;
+        if (ph === 'rise' && k.phase !== 'rise') k.forced = k.downT >= KD_T.STAY - 0.15;
+        k.phase = ph;
+      }
+      // only a striking-only match is his to step into: with grappling on, the attacker may follow him down
+      const kdI = S.phase === 'fight' && S.grappling === false ? S.f.findIndex(f => f.act && f.act.type === 'kd') : -1;
+
+      if (this.overT >= 0) {
+        const T = ceremonyTimes(S.result), t = this.overT, res = S.result;
+        if (t < T.cut) {
+          const loser = res.winner == null ? -1 : 1 - res.winner;
+          if (T.stoppage && loser >= 0) {
+            // jump in between them and wave it off
+            const lm = models[loser], wm = models[1 - loser];
+            let ux = wm.px - lm.px, uz = wm.pz - lm.pz; const l = Math.hypot(ux, uz) || 1; ux /= l; uz /= l;
+            tx = lm.px + ux * 0.85; tz = lm.pz + uz * 0.85; fx = lm.px; fz = lm.pz; maxSp = 4.5; repR = 0.55; speed = 24;
+            const u = 0.5 + 0.5 * Math.sin(time * 9);
+            pose = copyPose(REF_POSES.waveOff, p);
+            pose.lh = [-0.45 + 0.6 * u, 0.86, 0.32]; pose.rh = [0.45 - 0.6 * u, 0.86, 0.24];
+          } else {
+            const g = this._neutral(mx, mz, camSide, 1.5, models); tx = g[0]; tz = g[1]; pose = REF_POSES.ready; route = true;
+          }
+          this.fade = clamp((t - T.fade) / (T.cut - T.fade), 0, 1);
+        } else {
+          // the line-up in the centre of the cage, everyone facing the camera
+          lineup = true; this.ceremony = true;
+          this.fade = 1 - clamp((t - T.cut) / 0.5, 0, 1);
+          if (!this.cut) {
+            this.cut = true;
+            this.x = 0; this.z = 0; this.vx = 0; this.vz = 0; this.model.snap = true; m0.snap = true; m1.snap = true;
+          }
+          tx = 0; tz = 0; fx = 0; fz = 5; speed = 9;
+          const up = t >= T.raise, w = res.winner;
+          pose = !up ? REF_POSES.hold : w == null ? REF_POSES.raiseBoth : w === 0 ? REF_POSES.raiseL : REF_POSES.raiseR;
+          if (up) say = w == null ? "It's a draw!" : (S.f[w].name || 'Fighter ' + (w + 1)) + ' Wins!';
+          for (let i = 0; i < 2; i++) {
+            const set = i === 0 ? LINE_POSES : LINE_POSES_M;
+            const fp = w != null && w !== i ? set.lose : !up ? set.stand : w == null ? set.raised : set.win;
+            models[i].forced = { x: i === 0 ? -LINE_X : LINE_X, z: 0, yaw: 0, pose: fp, moving: false, speed: 9 };
+          }
+        }
+      } else if (kdI >= 0) {
+        // knockdown: he rushes in between them and holds the attacker off with an outstretched arm, then turns and
+        // bends over the downed fighter; near the end of the count he waves him up, and keeps waving while he rises
+        const a = S.f[kdI].act, k = this.kd[kdI], dm = models[kdI], am = models[1 - kdI];
+        let ux = am.px - dm.px, uz = am.pz - dm.pz; const l = Math.hypot(ux, uz) || 1; ux /= l; uz /= l;
+        // a little to the side of the line, on the far side from the camera, so he doesn't hide the downed man
+        let px = -uz, pz = ux; if (px * camSide.x + pz * camSide.z > 0) { px = -px; pz = -pz; }
+        maxSp = 4.6; repR = 0.55;
+        const wave = (a.name === 'down' && a.t > KD_T.STAY - 1.0) || (a.name === 'rise' && k.forced);
+        const holding = !wave && a.name !== 'rise' && (k.arrive < 0 || time - k.arrive < KD_HOLD);
+        if (holding) {
+          // in between: square to the attacker, arm out
+          const along = Math.min(1.1, l * 0.55);
+          tx = dm.px + ux * along + px * 0.3; tz = dm.pz + uz * along + pz * 0.3;
+          if (k.arrive < 0 && Math.hypot(tx - this.x, tz - this.z) < 0.5) k.arrive = time;
+          fx = am.px; fz = am.pz; pose = REF_POSES.stop; speed = 20; say = 'Back up!';
+        } else {
+          // over the downed man
+          tx = dm.px + ux * 0.8 + px * 0.5; tz = dm.pz + uz * 0.8 + pz * 0.5; maxSp = 2.5;
+          fx = dm.px; fz = dm.pz;
+          if (wave) {
+            // "up you get": both hands, palms up, lifting
+            speed = 22;
+            const u = 0.5 + 0.5 * Math.sin(time * 8);
+            pose = copyPose(REF_POSES.waveUp, p);
+            pose.lh = [-0.2, 0.05 + 0.6 * u, 0.46 - 0.1 * u]; pose.rh = [0.2, 0.05 + 0.6 * u, 0.46 - 0.1 * u];
+          } else pose = a.name === 'rise' ? REF_POSES.watch : REF_POSES.kdWatch;
+        }
+      } else if (S.phase === 'break') {
+        tx = 0; tz = 0; fx = camSide.x * 5; fz = camSide.z * 5; pose = REF_POSES.ready;
+      } else if (S.phase === 'intro') {
+        // between them for the instructions, then "fight!"
+        tx = mx - camSide.x * 0.8; tz = mz - camSide.z * 0.8;
+        pose = S.phaseT > 2.6 ? REF_POSES.go : REF_POSES.ready;
+      } else if (S.ground) {
+        const g = this._neutral(mx, mz, camSide, 2.2, models); tx = g[0]; tz = g[1]; pose = REF_POSES.ground; repR = 1.0; route = true;
+      } else {
+        const d = Math.hypot(m1.px - m0.px, m1.pz - m0.pz);
+        const g = this._neutral(mx, mz, camSide, clamp(2.5 + d * 0.4, 2.7, 3.3), models); tx = g[0]; tz = g[1];
+        maxSp = 2.2; route = true;
+        // a fighter down with grappling on: he stays out of it, crouched and ready for it to go to the mat
+        if (S.f.some(f => f.act && f.act.type === 'kd')) pose = REF_POSES.ground;
+      }
+      // how boxed in he is: the nearest fighter, and whether his back is to the fence
+      const rr = Math.hypot(this.x, this.z), nearFence = rr > REF_CAGE - 0.6;
+      const near = Math.min(Math.hypot(this.x - m0.px, this.z - m0.pz), Math.hypot(this.x - m1.px, this.z - m1.pz));
+      if (route) {
+        if (nearFence && near < 1.8) { const w = this._escapeArc(tx, tz, models); tx = w[0]; tz = w[1]; maxSp = Math.max(maxSp, 2.6); }
+        else { const w = this._route(tx, tz, mx, mz, models); tx = w[0]; tz = w[1]; }
+      }
+
+      // walk there: eased speed, a dead zone so he isn't forever shuffling, and he steps away from anyone too close
+      let vx = 0, vz = 0;
+      const dx = tx - this.x, dz = tz - this.z, d = Math.hypot(dx, dz);
+      if (d > (Math.hypot(this.vx, this.vz) > 0.2 ? 0.06 : 0.3)) { const sp = Math.min(maxSp, d * 2.6) * REF_SPEED; vx = dx / d * sp; vz = dz / d * sp; }
+      if (!lineup) {
+        for (const m of models) {
+          const rx = this.x - m.px, rz = this.z - m.pz, rd = Math.hypot(rx, rz) || 0.001;
+          if (rd < repR) {
+            const push = (repR - rd) * 5 * REF_SPEED;
+            let ux = rx / rd, uz = rz / rd;
+            if (nearFence && rr > 0.01) {
+              // a push into the fence becomes a slide along it
+              const ox = this.x / rr, oz = this.z / rr, out = ux * ox + uz * oz;
+              if (out > 0) { ux -= ox * out; uz -= oz * out; const l = Math.hypot(ux, uz); if (l > 0.05) { ux /= l; uz /= l; } else { ux = -oz; uz = ox; } }
+            }
+            vx += ux * push; vz += uz * push;
+          }
+        }
+      }
+      // lunge clear when a fighter is right on top of him, or he's caught between one and the fence
+      this.lungeCD = Math.max(0, this.lungeCD - dt);
+      if (route && this.lungeT <= 0 && this.lungeCD <= 0 && (near < 0.75 || (nearFence && near < 1.15))) {
+        const u = this._lungeDir(models);
+        this.lvx = u[0] * LUNGE_V; this.lvz = u[1] * LUNGE_V; this.lungeT = LUNGE_T; this.lungeCD = LUNGE_CD;
+      }
+      if (this.lungeT > 0) {
+        this.lungeT -= dt;
+        this.vx = this.lvx; this.vz = this.lvz;
+      } else {
+        const e = expo(dt, 8);
+        this.vx += (vx - this.vx) * e; this.vz += (vz - this.vz) * e;
+      }
+      if (lineup) { this.vx = 0; this.vz = 0; this.lungeT = 0; }
+      this.x += this.vx * dt; this.z += this.vz * dt;
+      const r = Math.hypot(this.x, this.z);
+      if (r > REF_CAGE) { this.x *= REF_CAGE / r; this.z *= REF_CAGE / r; }
+      const fdx = fx - this.x, fdz = fz - this.z;
+      if (Math.hypot(fdx, fdz) > 0.2) this.yaw = Math.atan2(fdx, fdz);
+
+      if (pose !== p) copyPose(pose, p);
+      this.model.forced = { x: this.x, z: this.z, yaw: this.yaw, pose: p, moving: Math.hypot(this.vx, this.vz) > 0.3, speed: this.lungeT > 0 ? Math.max(speed, 22) : speed };
+      this.f.x = this.x; this.f.z = this.z;
+      this.model.update(this.f, S, null, dt, time, groundAxis, 1000);
+      if (say && this.model.skinMesh.visible) { const h = this.model.headWorld(this._head); this.bubble.show(say, h.x, h.y + 0.5, h.z); }
+      else this.bubble.hide();
+    }
   }
 
   // ---------- arena ----------
@@ -1138,6 +1542,12 @@
 
       this.arena = buildArena(this.scene);
       this.models = [];
+      this.ref = new Referee(this.scene);
+      this.ref.setVisible(false);
+      // black card in front of the lens for the cut to the post-fight line-up
+      this.fadeCard = new THREE.Mesh(new THREE.PlaneGeometry(4, 4), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0, depthTest: false, depthWrite: false, fog: false }));
+      this.fadeCard.position.z = -0.15; this.fadeCard.renderOrder = 999; this.fadeCard.visible = false;
+      this.camera.add(this.fadeCard); this.scene.add(this.camera);
       this.groundAxis = new THREE.Vector3(1, 0, 0);
       this.lastGround = false;
       this.fx = [];
@@ -1168,6 +1578,7 @@
     // the career gym (js/gym.js) borrows the scene: hide the cage, crowd and arena lighting while it is up
     setArenaVisible(v) {
       this.arena.visible = v;
+      this.ref.setVisible(v && this.models.length > 0);
       for (const l of this.arenaLights) l.visible = v;
     }
 
@@ -1175,6 +1586,8 @@
       for (const m of this.models) m.dispose();
       this.models = S.f.map((f, i) => new FighterModel(this.scene, f.color, f.skin, i));
       this.lastGround = false;
+      this.ref.reset();
+      this.ref.setVisible(this.arena.visible);
       if (this.blood) this.blood.clear();
     }
 
@@ -1280,6 +1693,8 @@
         this.groundAxis.set(Math.sin(mt.yaw), 0, Math.cos(mt.yaw)).normalize();
       }
       this.lastGround = !!S.ground;
+      // the ref goes first: in the post-fight line-up he also places the fighters
+      this.ref.update(S, this.models, this.camSide, dt, this.time, this.groundAxis);
       for (let i = 0; i < 2; i++) {
         this.models[i].inputHint = inputs ? inputs[i] : 0;
         this.models[i].update(F[i], S, F[1 - i], dt, this.time, this.groundAxis, this.posLerp);
@@ -1311,6 +1726,12 @@
       this.camPos.x += (tx - this.camPos.x) * expo(dt, 4); this.camPos.z += (tz - this.camPos.z) * expo(dt, 4); this.camPos.y += (height - this.camPos.y) * expo(dt, 4);
       this.camTarget.x += (mx - this.camTarget.x) * expo(dt, 5); this.camTarget.z += (mz - this.camTarget.z) * expo(dt, 5);
       this.camTarget.y += ((ground ? 0.45 : 0.95) - this.camTarget.y) * expo(dt, 4);
+      if (this.ref.ceremony) {
+        // the line-up: straight on, a little below head height
+        this.camPos.set(0, 1.45, 5.0); this.camTarget.set(0, 1.08, 0); this.camSide.set(0, 0, 1); this.shake = 0;
+      }
+      this.fadeCard.visible = this.ref.fade > 0.001;
+      this.fadeCard.material.opacity = this.ref.fade;
       // fade the cage segments that sit between the camera and the action
       const cl = Math.hypot(this.camPos.x, this.camPos.z) || 1, cx = this.camPos.x / cl, cz = this.camPos.z / cl;
       const outside = cl > 3.6;
@@ -1335,5 +1756,7 @@
     }
   }
 
-  root.MMARender = { Renderer, FighterModel, POSES };
+  // seconds from the end of the fight until the hand raise is over (the end screen waits for it)
+  const ceremonyEnd = (res) => ceremonyTimes(res).end;
+  root.MMARender = { Renderer, FighterModel, POSES, ceremonyEnd };
 })(typeof window !== 'undefined' ? window : globalThis);

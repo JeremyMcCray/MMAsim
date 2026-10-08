@@ -117,6 +117,14 @@ works from any camera angle.
   fighter can press the takedown key to **dive on him** — side control if he
   is lying flat, half guard if he was already getting up — or back off and
   keep it standing.
+* **The referee** is in the cage with you (drawn by the renderer from the fight
+  state, so online guests see him too). He keeps a T to the fighters on the far
+  side from the camera, circling with them and walking round, never between them.
+  In a striking-only match he jumps in over a knockdown — holding the other
+  fighter off, then bending over the downed man and waving him up if he stays
+  down the full count; with grappling on he stays out of it, since the fight may
+  go to the mat. He waves off a stoppage. When the fight is over he stands in the centre with a fighter on each
+  side and raises the winner's hand (both on a draw) before the result screen.
 * **Ground positions** — closed guard → half guard → side control → mount,
   plus back control. The top fighter advances with **takedown key + W**
   (pass / take mount); the bottom fighter works with **takedown key + a

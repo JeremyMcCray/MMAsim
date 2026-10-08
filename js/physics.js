@@ -637,9 +637,14 @@
       const moving = !this.ko && spd > 0.05 && !this.override;
       if (moving) this.walkPhase += dt * (5 + 5 * Math.min(1, spd));
       const amp = moving ? Math.min(1, spd) * 26 : 0;
+      // the stride follows the direction of travel: forward / back swings the thighs; sideways is a step-and-close
+      // (the leg on the side he's heading to steps out, the other closes up to it, rotZ + is towards +X), with the
+      // stance held a little wider so the feet never cross. move[0] + carries him towards local -X.
+      const fw = moving ? Math.abs(this.move[1]) / spd : 0, lat = moving ? -this.move[0] / spd : 0;
+      const sw = Math.sin(this.walkPhase), wide = Math.abs(lat) * 0.22, shinAmp = amp * (1.3 - 0.35 * Math.abs(lat));
       const walk = amp ? {
-        lThigh: [Math.sin(this.walkPhase) * amp, 0, 0], rThigh: [-Math.sin(this.walkPhase) * amp, 0, 0],
-        lShin: [Math.max(0, Math.sin(this.walkPhase + 1.3)) * amp * 1.3, 0, 0], rShin: [Math.max(0, -Math.sin(this.walkPhase + 1.3)) * amp * 1.3, 0, 0]
+        lThigh: [sw * amp * fw, 0, (sw * lat * 0.55 - wide) * amp], rThigh: [-sw * amp * fw, 0, (-sw * lat * 0.55 + wide) * amp],
+        lShin: [Math.max(0, Math.sin(this.walkPhase + 1.3)) * shinAmp, 0, 0], rShin: [Math.max(0, -Math.sin(this.walkPhase + 1.3)) * shinAmp, 0, 0]
       } : null;
       for (const j of JOINTS) {
         if (inStrike.indexOf(j) >= 0) continue;
