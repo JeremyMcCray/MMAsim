@@ -328,6 +328,8 @@
       ownEdge: false,
       ownPocket: false,
       blockTap: -9,       // sim time of the last BLOCK press (double tap = push)
+      fwdTap: -9, backTap: -9, // sim time of the last FWD / BACK press (double tap = lunge in / out)
+      lungeReady: -9,     // sim time the next lunge may start
       kickReady: -9,      // sim time the kicking foot is back on the mat: no kick can start before it
       restT: 0,           // seconds since he last blocked or threw: stamina regen ramps up the longer this runs
       rocked: 0,          // seconds remaining rocked
@@ -380,6 +382,13 @@
   const PUSH_SHOVE = 2.8;   // impulse per kg given to the opponent (cf. PHYS_PUSH for a teep)
   const PUSH_DUR = 0.38;    // seconds the pusher is committed
   const PUSH_STUN_DIST = PUSH_DIST * 0.5; // stumble / stagger applies only inside this range; beyond it the push just shoves
+  // lunge: FWD or BACK tapped twice quickly bursts in or out to close / make distance
+  const LUNGE_TAP_T = 0.28;  // the second tap has to come within this many seconds of the first
+  const LUNGE_DUR = 0.32;    // seconds the burst lasts (it tapers off over the back half)
+  const LUNGE_IN = 3.2;      // extra speed (m/s) on top of his step, lunging in
+  const LUNGE_OUT = 2.7;     // ... and backing out
+  const LUNGE_COST = 4;      // stamina
+  const LUNGE_CD = 0.55;     // seconds from one lunge to the next
   // stamina economy
   const MISS_PENALTY = 0.30;   // a whiffed strike costs this much extra (fraction of its cost)
   const CLEAN_REFUND = 0.33;   // an unblocked landing gives this much of its cost back
@@ -732,6 +741,10 @@
         // BLOCK tapped twice quickly = push (the taps are remembered even mid-strike, the push waits until he is free)
         let push = false;
         if (pressed & IN.BLOCK) { push = S.t - f.blockTap <= PUSH_TAP_T; f.blockTap = push ? -9 : S.t; }
+        // FWD / BACK tapped twice quickly = lunge in / out
+        let lunge = 0;
+        if (pressed & IN.FWD) { if (S.t - f.fwdTap <= LUNGE_TAP_T) { lunge = 1; f.fwdTap = -9; } else f.fwdTap = S.t; f.backTap = -9; }
+        if (pressed & IN.BACK) { if (S.t - f.backTap <= LUNGE_TAP_T) { lunge = -1; f.backTap = -9; } else f.backTap = S.t; f.fwdTap = -9; }
         const rag = this.phys.fighters[i];
         rag.move[0] = 0; rag.move[1] = 0;
 
@@ -751,6 +764,11 @@
           rag.move[0] = rx; rag.move[1] = rz; rag.moveSpeed = spd / 1.9;
           if (rx || rz) { if (!busy) f.act = { type: 'move', name: '', t: 0, dur: 0, hit: false }; }
           else if (f.act.type === 'move') f.act = idleAct();
+          if (lunge && S.t >= f.lungeReady && f.stam > LUNGE_COST && f.rocked <= 0) {
+            f.stam -= LUNGE_COST; f.restT = 0; f.lungeReady = S.t + LUNGE_CD;
+            const legs = 1 - f.dmg.legs / 140;
+            rag.dash((lunge > 0 ? LUNGE_IN : -LUNGE_OUT) * (0.85 + f.stats.spd * 0.3) * legs, LUNGE_DUR);
+          }
         }
 
         if (!busy) {

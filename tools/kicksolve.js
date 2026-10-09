@@ -2,7 +2,8 @@
 // foot of each leg should be (fighter frame: origin at the hips, +Z toward the opponent, +X the fighter's right,
 // +Y up, metres) plus a heading for a planted foot, and this solves the thigh / shin Euler angles that put them
 // there under that frame's torso pose. Prints the frames in the RAW strike format.
-//   node tools/kicksolve.js            prints all three kicks
+//   node tools/kicksolve.js            prints all the kicks
+//   node tools/kicksolve.js rl_knee    prints just the named ones (comma separated)
 const P = require('../js/physics.js');
 const m = P.math;
 const H = P.HOVER_HEIGHT;
@@ -173,20 +174,50 @@ const KICKS = {
         kick: { knee: [0.22, -0.34, 0.34], foot: [0.38, -0.74, 0.12] }, sup: { knee: [-0.22, -0.54, 0.12], foot: [-0.26, -1.02, 0.10], heading: -70 } },
       { t: 0.55, yaw: -16, tilt: [0, 0, 4], chest: [6, 4, -2], head: [8, 6, 0], lUA: [-76, 3, 12], ankle: 8, rUA: [-28, -14, 8], rFA: [-134, 0, -20],
         kick: { knee: [0.18, -0.50, 0.02], foot: [0.24, -0.98, -0.16] }, sup: { knee: [-0.20, -0.55, 0.20], foot: [-0.24, -1.03, 0.20], heading: -30 } },
-      { t: 0.70, S: true }] }
+      { t: 0.70, S: true }] },
+  // rear-leg Muay Thai straight knee (khao trong):
+  //   load    weight onto the lead foot, rear heel up, the rear knee starts forward; the lead glove reaches out
+  //           to frame the opponent's head and the rear arm starts to drop
+  //   drive   the knee rises up the centre line with the shin folded tight under it and the toes pointed down
+  //   impact  knee above the belt, driven up and forward into the solar plexus; hips thrust through and the
+  //           torso leans back behind them, up on the ball of the straight support leg, rear arm swung down
+  //           and back past the hip as the counterweight, lead arm out at head height
+  //   return  the knee drops straight back down and the foot returns to stance
+  rl_knee: { side: 'r', dur: 0.62, active: [0.15, 0.32],
+    frames: [
+      { t: 0.00, S: true },
+      { t: 0.08, yaw: 2, tilt: [-4, 0, 2], chest: [6, 10, 0], head: [12, -4, 0], ankle: 25, lFist: [-0.14, 0.58, 0.44], rUA: [-52, -6, -4], rFA: [-130, 0, -16],
+        kick: { knee: [0.13, -0.52, 0.14], foot: [0.18, -0.92, -0.22] }, sup: { knee: [-0.10, -0.53, 0.18], foot: [-0.11, -1.02, 0.18], heading: 8 } },
+      { t: 0.15, yaw: -22, tilt: [-14, 0, 4], chest: [-6, 22, 0], head: [22, -4, 0], ankle: 50, lFist: [-0.12, 0.52, 0.42], rUA: [-18, -4, 4], rFA: [-132, 0, -12], lift: 0.03,
+        kick: { knee: [0.04, -0.04, 0.47], foot: [0.06, -0.48, 0.23] }, sup: { knee: [-0.10, -0.53, 0.10], foot: [-0.11, -1.00, 0.08], heading: 4 } },
+      { t: 0.22, yaw: -36, tilt: [-22, 0, 6], chest: [-14, 30, 0], head: [34, -6, 0], ankle: 60, lFist: [-0.08, 0.46, 0.34], rUA: [14, 0, 10], rFA: [-134, 0, -10], lift: 0.05,
+        kick: { knee: [0.00, 0.20, 0.47], foot: [0.02, -0.24, 0.27] }, sup: { knee: [-0.10, -0.52, 0.02], foot: [-0.11, -0.99, -0.02], heading: 0 } },
+      { t: 0.30, yaw: -38, tilt: [-24, 0, 6], chest: [-14, 30, 0], head: [36, -6, 0], ankle: 60, lFist: [-0.08, 0.45, 0.34], rUA: [18, 0, 10], rFA: [-134, 0, -10], lift: 0.05,
+        kick: { knee: [0.00, 0.23, 0.48], foot: [0.02, -0.21, 0.27] }, sup: { knee: [-0.10, -0.52, 0.00], foot: [-0.11, -0.99, -0.04], heading: 0 } },
+      { t: 0.40, yaw: -12, tilt: [-8, 0, 3], chest: [0, 18, 0], head: [16, -6, 0], ankle: 35, lFist: [-0.14, 0.56, 0.42], rUA: [-24, -6, 4], rFA: [-132, 0, -14], lift: 0.02,
+        kick: { knee: [0.07, -0.32, 0.40], foot: [0.11, -0.76, 0.12] }, sup: { knee: [-0.10, -0.53, 0.10], foot: [-0.11, -1.01, 0.08], heading: 6 } },
+      { t: 0.50, yaw: 8, tilt: [-2, 0, 1], chest: [4, 14, 0], head: [10, -10, 0], ankle: 10, lFist: [-0.16, 0.56, 0.40], rUA: [-30, -14, 6], rFA: [-136, 0, -20],
+        kick: { knee: [0.13, -0.50, -0.04], foot: [0.17, -0.99, -0.20] }, sup: { knee: [-0.09, -0.52, 0.18], foot: [-0.11, -1.02, 0.20], heading: 10 } },
+      { t: 0.62, S: true }] }
 };
 
 if (require.main === module) {
+  const only = process.argv[2] ? process.argv[2].split(',') : null;
   for (const key in KICKS) {
+    if (only && !only.includes(key)) continue;
     const K = KICKS[key], side = K.side, osd = side === 'r' ? 'l' : 'r';
     const armKeyed = K.frames.some(f => f.rFist || f.rFA); // this kick animates the kicking-side forearm too
-    const lines = []; let refK = null, refS = null, refA = null;
+    const leadKeyed = K.frames.some(f => f.lFist); // ...and the lead forearm
+    const lines = []; let refK = null, refS = null, refA = null, refL = [-76, 3, 12, -128]; // lead arm seeded from the guard so the elbow stays down in front
     console.log(`// ${key}  active ${JSON.stringify(K.active)}`);
     for (const f of K.frames) {
-      if (f.S) { lines.push(`        { t: ${f.t.toFixed(2)}, pelvisYaw: S, pelvisTilt: S, chest: S, head: S, ${side}Thigh: S, ${side}Shin: S, ${osd}Thigh: S, ${osd}Shin: S, lUpperArm: S, rUpperArm: S, ${armKeyed ? 'rForearm: S, ' : ''}lift: 0, ${side}Ankle: 0 }`); continue; }
+      if (f.S) { lines.push(`        { t: ${f.t.toFixed(2)}, pelvisYaw: S, pelvisTilt: S, chest: S, head: S, ${side}Thigh: S, ${side}Shin: S, ${osd}Thigh: S, ${osd}Shin: S, lUpperArm: S, rUpperArm: S, ${armKeyed ? 'rForearm: S, ' : ''}${leadKeyed ? 'lForearm: S, ' : ''}lift: 0, ${side}Ankle: 0 }`); continue; }
       const torso = { pelvisYaw: f.yaw, pelvisTilt: f.tilt, chest: f.chest, head: f.head, lUpperArm: f.lUA, rUpperArm: f.rUA }; torso[side + 'Ankle'] = f.ankle;
       let rUA = f.rUA, rFA = f.rFA, armNote = '';
       if (f.rFist) { const a = solveArm(torso, 'r', { fist: f.rFist, ref: refA }); rUA = a.ua; rFA = a.fa; refA = a.ua.concat(a.fa[0]); armNote = ` | fist err ${(a.err * 100).toFixed(1)}cm`; }
+      let lUA = f.lUA, lFA = null;
+      if (f.lFist) { const a = solveArm(torso, 'l', { fist: f.lFist, ref: refL }); lUA = a.ua; lFA = a.fa; refL = a.ua.concat(a.fa[0]); armNote += ` | lead fist err ${(a.err * 100).toFixed(1)}cm`; }
+      torso.lUpperArm = lUA; if (lFA) torso.lForearm = lFA;
       torso.rUpperArm = rUA; if (rFA) torso.rForearm = rFA;
       const k = solveLeg(torso, side, Object.assign({ ref: refK }, f.kick));
       const s = solveLeg(torso, osd, Object.assign({ ref: refS }, f.sup));
@@ -194,7 +225,7 @@ if (require.main === module) {
       const D = (v) => '(' + v.map(x => x.toFixed(2)).join(',') + ')';
       console.error(`  t=${f.t.toFixed(2)} kick foot err ${(k.err * 100).toFixed(1)}cm knee err ${(k.errK * 100).toFixed(1)}cm knee bend ${k.shin[0]} face ${D(k.got.face)} toes ${D(k.got.toes)} | support foot err ${(s.err * 100).toFixed(1)}cm heading ${s.heading.toFixed(0)} (want ${f.sup.heading})${armNote}`);
       const E = (v) => `[${v.join(', ')}]`;
-      lines.push(`        { t: ${+f.t.toFixed(3)}, pelvisYaw: ${f.yaw}, pelvisTilt: ${E(f.tilt)}, chest: ${E(f.chest)}, head: ${E(f.head)}, ${side}Thigh: ${E(k.thigh)}, ${side}Shin: ${E(k.shin)}, ${osd}Thigh: ${E(s.thigh)}, ${osd}Shin: ${E(s.shin)}, lUpperArm: ${E(f.lUA)}, rUpperArm: ${E(rUA)}, ${armKeyed ? `rForearm: ${E(rFA)}, ` : ''}lift: ${f.lift || 0}, ${side}Ankle: ${f.ankle} }`);
+      lines.push(`        { t: ${+f.t.toFixed(3)}, pelvisYaw: ${f.yaw}, pelvisTilt: ${E(f.tilt)}, chest: ${E(f.chest)}, head: ${E(f.head)}, ${side}Thigh: ${E(k.thigh)}, ${side}Shin: ${E(k.shin)}, ${osd}Thigh: ${E(s.thigh)}, ${osd}Shin: ${E(s.shin)}, lUpperArm: ${E(lUA)}, rUpperArm: ${E(rUA)}, ${armKeyed ? `rForearm: ${E(rFA)}, ` : ''}${leadKeyed ? `lForearm: ${E(lFA)}, ` : ''}lift: ${f.lift || 0}, ${side}Ankle: ${f.ankle} }`);
     }
     console.log(lines.join(',\n') + ']');
   }

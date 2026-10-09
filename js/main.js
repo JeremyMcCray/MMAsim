@@ -16,8 +16,8 @@
 
   // ---------- controls (rebindable, saved in localStorage) ----------
   const ACTIONS = [
-    { id: 'fwd', label: 'Move in', bit: IN.FWD, def: ['KeyW', 'ArrowUp'] },
-    { id: 'back', label: 'Back off', bit: IN.BACK, def: ['KeyS', 'ArrowDown'] },
+    { id: 'fwd', label: 'Move in · lunge in (tap twice)', bit: IN.FWD, def: ['KeyW', 'ArrowUp'] },
+    { id: 'back', label: 'Back off · lunge out (tap twice)', bit: IN.BACK, def: ['KeyS', 'ArrowDown'] },
     { id: 'left', label: 'Circle left', bit: IN.LEFT, def: ['KeyA', 'ArrowLeft'] },
     { id: 'right', label: 'Circle right', bit: IN.RIGHT, def: ['KeyD', 'ArrowRight'] },
     { id: 'lh', label: 'Left hand', bit: IN.LHAND, def: ['KeyU', ''] },
@@ -565,7 +565,7 @@
     const kind = k => KIND_LABEL[k].toLowerCase();
     const row = m => (m === 'none' ? 'no modifier' : 'hold ' + B(m)) + ': ' + LIMBS.map(l => kind(ms[m][l])).join(' / ');
     $('#controlsHint').innerHTML =
-      '<div class="ctl-row">' + [B('fwd'), B('left'), B('back'), B('right')].join(' ') + ' move / circle (stepping into a shot adds power, backing off takes it away) · ' + B('lh') + ' left hand · ' + B('rh') + ' right hand · ' + B('ll') + ' left leg · ' + B('rl') + ' right leg</div>' +
+      '<div class="ctl-row">' + [B('fwd'), B('left'), B('back'), B('right')].join(' ') + ' move / circle (stepping into a shot adds power, backing off takes it away), tap ' + B('fwd') + ' or ' + B('back') + ' twice to lunge in / out · ' + B('lh') + ' left hand · ' + B('rh') + ' right hand · ' + B('ll') + ' left leg · ' + B('rl') + ' right leg</div>' +
       '<div class="ctl-row">' + MODS.map(row).join(' · ') + '</div>' +
       '<div class="ctl-row">' + B('block') + ' hold: block / sprawl (+ ' + B('mod3') + ' drops into a shell that covers the body), tap twice: push them off · ' + B('grapple') + ' takedown / dive on a downed opponent · ' + B('dodge') + ' slip · knocked down: a direction or ' + B('dodge') + ' gets up, or stay down to recover · ground: hands & legs strike, ' + B('grapple') + ' submission / sweep, ' + B('block') + ' posture / cover, ' + B('dodge') + ' let up · <b>Enter</b> chat · <b>ESC</b> options · <b>H</b> hide this · <b>M</b> mute' +
       (App.extras && App.extras.pocket ? ' · <b>G</b> draw' : '') + '</div>';
