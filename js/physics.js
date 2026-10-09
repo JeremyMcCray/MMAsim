@@ -189,7 +189,11 @@
     lUpperArm: [-100, -30, 65], lForearm: [-130, -40, -50],
     rUpperArm: [-55, -6, 12], rForearm: [-110, 0, -8]
   });
-  const POSES = { STANCE, GUARD, GUARD_LOW, LIMP, SLIP, SHOOT, SPRAWL, PUSH, STUMBLE, CELEBRATE, WOBBLE, GETUP, KD_FALL_FWD, KD_TURTLE, KD_FALL_BACK, KD_GUARD, EDGE_GUARD };
+  // check (CHECK held): the lead knee comes up and turns out so the shin meets an incoming low kick, hands stay up
+  const CHECK_LEGS = { lThigh: [-68, 0, -14], lShin: [74, 0, 0], rThigh: [8, 0, 6], rShin: [10, 0, 0] };
+  const CHECK = Object.assign({}, STANCE, CHECK_LEGS);
+  const CHECK_GUARD = Object.assign({}, GUARD, CHECK_LEGS); // checking with BLOCK held too
+  const POSES = { STANCE, GUARD, GUARD_LOW, CHECK, CHECK_GUARD, LIMP, SLIP, SHOOT, SPRAWL, PUSH, STUMBLE, CELEBRATE, WOBBLE, GETUP, KD_FALL_FWD, KD_TURTLE, KD_FALL_BACK, KD_GUARD, EDGE_GUARD };
 
   // ---------------------------------------------------------------- strikes
   // keys: joints a strike animates. Every keyframe must give each of those joints (or 'stance').
@@ -444,6 +448,36 @@
     for (const k in RANGE) if (STRIKES[k]) STRIKES[k].range = RANGE[k];
   })();
 
+  // ---------------------------------------------------------------- southpaw
+  // Southpaw is the whole body mirrored left-right: every pose and strike above is authored orthodox, and a
+  // southpaw ragdoll plays the mirror image (limbs swapped, yaw / roll negated). Timing, ranges and costs are
+  // unchanged; only which side of the body does the work flips.
+  function mirrorFrame(f) {
+    const o = {};
+    for (const k in f) {
+      const v = f[k];
+      if (k === 't' || k === 'lift') o[k] = v;
+      else if (k === 'pelvisYaw') o.pelvisYaw = v === S ? S : -v;
+      else if (k === 'pelvisTilt') o.pelvisTilt = mirrorEuler(v);
+      else if (k === 'lAnkle' || k === 'rAnkle') o[MIRROR[k]] = v;
+      else if (MIRROR[k]) o[MIRROR[k]] = mirrorEuler(v);
+      else o[k] = v;
+    }
+    return o;
+  }
+  const flipSide = (name) => (name[0] === 'l' ? 'r' : 'l') + name.slice(1);
+  const SOUTHPAW_POSE = new Map(); // orthodox pose -> its mirror
+  for (const k in POSES) if (k !== 'EDGE_GUARD') SOUTHPAW_POSE.set(POSES[k], mirrorFrame(POSES[k])); // the blade stays in the left hand
+  for (const k in STRIKES) {
+    const d = STRIKES[k];
+    d.southpaw = Object.assign({}, d, {
+      keys: d.keys.map(j => MIRROR[j] || j),
+      weapon: flipSide(d.weapon), weapons: d.weapons.map(flipSide),
+      turnover: d.turnover ? mirrorEuler(d.turnover) : undefined,
+      frames: d.frames.map(mirrorFrame)
+    });
+  }
+
   // ---------------------------------------------------------------- Rapier helpers
   const GROUP_FIGHTER = [0b0001, 0b0010];
   const GROUP_WORLD = 0b0100;
@@ -462,6 +496,7 @@
       this.moveSpeed = 1;       // multiplier on MOVE_SPEED
       this.guard = false;
       this.guardLow = false;    // with guard: cover the body instead of the head
+      this.check = false;       // lead leg lifted to check low kicks
       this.override = null;     // pose name: SLIP | SHOOT | SPRAWL | PUSH | STUMBLE | CELEBRATE | WOBBLE
       this.ko = false;
       this.downT = 0; this.downTotal = 1; this.riseT = 0; this.riseTotal = 1; // knocked down: catching himself, then climbing back up
@@ -474,6 +509,7 @@
       this.dashT = 0; this.dashDur = 1; this.dashSpeed = 0; this.dashSide = 0; // lunge: a burst of speed along his facing (+ in, - out) and to his right (+) / left (-)
       this.wobble = 0;          // rocked wobble intensity
       this.strike = null;       // { def, t, tf, speedMult, hit, glanced }
+      this.southpaw = false;    // right foot forward: poses and strikes play mirrored (set by the sim)
       this.ankle = { l: 0, r: 0 }; // current plantar-flexion of each foot collider (rad)
       this.walkPhase = 0;
       this.faceOpponent = true;
@@ -558,7 +594,7 @@
         b.resetForces(true); b.resetTorques(true);
       }
       this.strike = null; this.override = null; this.ko = false; this.downT = 0; this.riseT = 0; this.lying = false; this.kdDir = 'back'; this.gainMult = 1; this.gainTarget = 1;
-      this.staggerT = 0; this.stunT = 0; this.wobble = 0; this.move[0] = this.move[1] = 0; this.guard = false;
+      this.staggerT = 0; this.stunT = 0; this.wobble = 0; this.move[0] = this.move[1] = 0; this.guard = false; this.check = false;
     }
 
     setSleeping(on) {
@@ -572,6 +608,7 @@
 
     // ---- control API (called by the sim)
     startStrike(def, tf) {
+      if (this.southpaw && def.southpaw) def = def.southpaw;
       this.strike = { def, t: 0, tf: tf || 1, hit: false, glanced: false };
     }
     cancelStrike() { this.strike = null; }
@@ -633,6 +670,10 @@
     }
 
     #basePose() {
+      const p = this.#orthodoxPose();
+      return this.southpaw ? (SOUTHPAW_POSE.get(p) || p) : p;
+    }
+    #orthodoxPose() {
       if (this.ko) return LIMP;
       if (this.downT > 0 || this.lying) {
         const fwd = this.kdDir === 'fwd';
@@ -643,6 +684,7 @@
       if (this.riseT > 0 && this.riseProgress() < 0.55) return GETUP;
       if (this.override && POSES[this.override]) return POSES[this.override];
       if (this.wobble > 0.3 && !this.strike) return WOBBLE;
+      if (this.check && !this.strike) return this.guard ? CHECK_GUARD : CHECK;
       return this.guard && !this.strike ? (this.guardLow ? GUARD_LOW : GUARD) : STANCE;
     }
 
@@ -937,7 +979,7 @@
     knockOut() { this.ko = true; this.strike = null; }
     // go down for `fall` seconds, catching himself — forward onto hands and knees ('fwd') or back onto the mat ('back') —
     // and then stay there until getUp() is called
-    knockDown(fall, dir) { this.dashT = 0; this.downT = fall; this.downTotal = fall; this.kdDir = dir === 'fwd' ? 'fwd' : 'back'; this.lying = true; this.riseT = 0; this.strike = null; this.guard = false; }
+    knockDown(fall, dir) { this.dashT = 0; this.downT = fall; this.downTotal = fall; this.kdDir = dir === 'fwd' ? 'fwd' : 'back'; this.lying = true; this.riseT = 0; this.strike = null; this.guard = false; this.check = false; }
     // climb back to the stance over `rise` seconds
     getUp(rise) { this.lying = false; this.downT = 0; this.riseT = rise; this.riseTotal = rise; }
     isDown() { return this.downT > 0 || this.lying; }
@@ -973,7 +1015,7 @@
       this.opponent = null;
       this.yaw = 0;
       this.move = [0, 0]; this.moveSpeed = 1;
-      this.guard = false; this.guardLow = false; this.override = null; this.ko = false;
+      this.guard = false; this.guardLow = false; this.check = false; this.override = null; this.ko = false;
       this.wobble = 0; this.gainTarget = 1; this.strike = null; this.sleeping = false;
       this.faceOpponent = false; this.faceYaw = null;
       const mid = (cfg.top + cfg.bot) / 2, halfLen = (cfg.top - cfg.bot) / 2;

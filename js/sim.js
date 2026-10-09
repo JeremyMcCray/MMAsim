@@ -22,7 +22,9 @@
     FWD: 1, BACK: 2, LEFT: 4, RIGHT: 8,
     LHAND: 16, RHAND: 32, LLEG: 64, RLEG: 128,
     MOD1: 256, MOD2: 512, MOD3: 1024,
-    BLOCK: 2048, GRAPPLE: 4096, DODGE: 8192
+    BLOCK: 2048, GRAPPLE: 4096, DODGE: 8192,
+    STANCE: 1 << 16, // switch orthodox / southpaw (bits 14 and 15 are the app's own)
+    CHECK: 1 << 17   // lift the lead leg to check low kicks (hold)
   };
   const LIMB_BITS = IN.LHAND | IN.RHAND | IN.LLEG | IN.RLEG;
   const DIR_BITS = IN.FWD | IN.BACK | IN.LEFT | IN.RIGHT;
@@ -54,6 +56,9 @@
     }
     return out;
   }
+  // right foot forward? (a fighter with the lead prop or pocket item out stays orthodox: it lives in the left hand)
+  function isSouthpaw(f) { return !!f.southpaw && !f.edge && !f.pocket; }
+  const OTHER_SIDE = { lh: 'rh', rh: 'lh', ll: 'rl', rl: 'll' };
   function modOf(held) { return (held & IN.MOD3) ? 'mod3' : (held & IN.MOD2) ? 'mod2' : (held & IN.MOD1) ? 'mod1' : 'none'; }
 
   // ---------- Roster ----------
@@ -322,7 +327,10 @@
       act: { type: 'idle', name: '', t: 0, dur: 0, hit: false },
       buf: null,          // buffered strike {key, t}
       combo: 0, comboT: 0, // strikes chained without a pause
+      lastStrike: '', repeatN: 0, // key of the last strike thrown and how many times in a row (see REPEAT_FREE)
       blocking: false,
+      checking: false,    // lead leg lifted to check low kicks (CHECK held)
+      southpaw: false,   // stance: right foot forward (see isSouthpaw)
       edge: false,        // lead prop out
       pocket: false,      // pocket item out; it replaces the lead prop
       ownEdge: false,
@@ -333,6 +341,7 @@
       kickReady: -9,      // sim time the kicking foot is back on the mat: no kick can start before it
       restT: 0,           // seconds since he last blocked or threw: stamina regen ramps up the longer this runs
       rocked: 0,          // seconds remaining rocked
+      rockLight: false,   // the current rock is a brief stun (slight wobble) rather than a heavy, leaning-back daze
       tdCd: 0,            // seconds until he may shoot again after a failed takedown
       wobble: 0,          // visual wobble intensity
       kdCount: 0,
@@ -406,14 +415,24 @@
   // Blocking or throwing anything resets it (f.restT).
   const REST_DOUBLE_T = 1.2;
   const REST_MAX = 4;
+  const CHECK_DMG = 0.10;      // a checked low kick does this share of its damage to the defender's legs...
+  const CHECK_SELF_DMG = 0.15; // ...and this share of it to the kicker's own legs
   const KICK_CANCEL_DMG = 2.8; // min damage of a clean hand strike that cancels the opponent's kick in flight
   const KICK_CANCEL_BONUS = 1.3; // damage multiplier for that kick-cancelling strike
   const KICK_CANCEL_STUN = 0.3; // extra seconds of hit-stun for being caught on one leg
+  // spamming: the same strike thrown more than REPEAT_FREE times in a row loses half its power per extra throw
+  // (3rd = x0.5, 4th = x0.25, ...); any different strike resets the count
+  const REPEAT_FREE = 2;
+  // hitstun halves the same way (3rd = x0.5, 4th = x0.25) and is gone from the throw after STUN_REPEAT_MAX on
+  const STUN_REPEAT_MAX = 4;
   const KICK_PLANT_T = 0.2;     // seconds after a kick ends before the foot is planted enough to kick again
   const TEEP_PLANT_T = 0.2;     // same, after a teep
   // rocked / knockdown tuning
   const ROCK_TIME_MULT = 0.35;  // scales every rocked duration
   const ROCK_T0 = 1.3, ROCK_PER_DMG = 0.05; // seconds rocked = (ROCK_T0 + dmg * ROCK_PER_DMG) * ROCK_TIME_MULT
+  const ROCK_HEAVY_P = 0.15;    // chance a rocking shot is a heavy daze (wobble pose, leans back); otherwise a brief stun
+  const ROCK_LIGHT_T = 0.35;    // seconds rocked by a light (stun) rock
+  const ROCK_LIGHT_WOBBLE = 0.15; // ragdoll wobble during a light rock: below the WOBBLE pose threshold, just small shoves
   const KD_THR_MIN = 3.4;       // weakest head shot that drops an already-rocked fighter
   const KD_THR_FRAC = 0.62;     // ...or this fraction of his rock threshold, whichever is higher
   const KD_FLASH_FRAC = 1.9;    // a shot this many times the rock threshold drops him outright
@@ -626,6 +645,7 @@
       for (const f of F) {
         if (f.tdCd > 0) f.tdCd = Math.max(0, f.tdCd - dt);
         if (f.rocked > 0) { f.rocked -= dt * (f.act.type === 'kd' && f.act.name === 'down' ? KD_DOWN_RECOVER : 1); if (f.rocked < 0) f.rocked = 0; }
+        if (f.rocked <= 0) f.rockLight = false;
         f.wobble = Math.max(0, f.wobble - dt * 0.8);
         if (f.blocking) f.restT = 0; else f.restT += dt;
         let regen = 2.2 + f.stats.car * 4.5;
@@ -741,6 +761,7 @@
         const lx = -fz, lz = fx;
 
         f.blocking = !busy && !!(held & IN.BLOCK) && f.rocked <= 0.4;
+        f.checking = !busy && !striking && !!(held & IN.CHECK) && f.rocked <= 0.4;
         // BLOCK tapped twice quickly = push (the taps are remembered even mid-strike, the push waits until he is free)
         let push = false;
         if (pressed & IN.BLOCK) { push = S.t - f.blockTap <= PUSH_TAP_T; f.blockTap = push ? -9 : S.t; }
@@ -759,7 +780,7 @@
 
         // movement — allowed while striking at half speed, so you can step into (or away from) shots
         if (!busy || striking) {
-          const slow = (1 - f.dmg.legs / 140) * (f.rocked > 0 ? 0.45 : 1) * (0.7 + f.stam / 330) * (f.blocking ? 0.8 : 1);
+          const slow = (1 - f.dmg.legs / 140) * (f.rocked > 0 ? 0.45 : 1) * (0.7 + f.stam / 330) * (f.blocking ? 0.8 : 1) * (f.checking ? 0.5 : 1);
           const spd = (1.9 + f.stats.spd * 1.0) * slow;
           // hand the ragdoll a local move vector (x = its right, z = toward the opponent)
           let rx = 0, rz = 0;
@@ -780,6 +801,10 @@
           }
         }
 
+        if (!busy && (pressed & IN.STANCE)) {
+          f.southpaw = !f.southpaw;
+          this._emit({ k: 'stance', i, southpaw: f.southpaw });
+        }
         if (!busy) {
           // actions (press-triggered)
           if (push && f.stam > PUSH_COST && f.rocked <= 0) {
@@ -788,7 +813,8 @@
             f.stam -= 5;
             f.act = { type: 'dodge', name: '', t: 0, dur: 0.45, hit: false };
             f.blocking = false;
-            rag.shove(lx * 0.4 - fx * 0.3, lz * 0.4 - fz * 0.3, 1.1); // slip outside the lead shoulder
+            const out = isSouthpaw(f) ? -0.4 : 0.4;
+            rag.shove(lx * out - fx * 0.3, lz * out - fz * 0.3, 1.1); // slip outside the lead shoulder
           } else if (pressed & IN.GRAPPLE && S.grappling && this._canFollow(f, F[1 - i], dist)) {
             // dive on a knocked-down opponent: flat on his back he gives up side control, half guard if he was already rising
             const o = F[1 - i];
@@ -877,8 +903,11 @@
         return limb + '_' + kind;
       }
       const kind = f.moveset[mod][limb];
-      const key = limb + '_' + kind;
-      return STRIKES[key] ? key : limb + '_' + DEFAULT_MOVESET[mod][limb];
+      // strike keys are lead / rear (orthodox: left leads). Southpaw, the button's own hand or leg is the other
+      // side's strike, which the mirrored ragdoll throws with that same hand or leg.
+      const side = isSouthpaw(f) ? OTHER_SIDE[limb] : limb;
+      const key = side + '_' + kind;
+      return STRIKES[key] ? key : side + '_' + DEFAULT_MOVESET[mod][limb];
     }
 
     _startStrike(f, key, chained) {
@@ -889,14 +918,7 @@
         return;
       }
       let tf = (1.15 - f.stats.spd * 0.3) * (1 + (1 - f.stam / 100) * 0.4) * (f.rocked > 0 ? 1.3 : 1);
-      if (chained) {
-        // a strike sets up the one from the OTHER side of the body (jab -> cross, left hook -> right hook,
-        // cross -> left hook, kick -> opposite-hand punch): that follow-up comes out quicker. Same side: no bonus.
-        f.combo = Math.min(3, f.combo + 1);
-        const prevLimb = f.act.type === 'strike' ? STRIKES[f.act.name].limb : null;
-        const prevSide = prevLimb ? prevLimb[0] : null; // 'l' or 'r'
-        tf *= prevSide && prevSide !== st.limb[0] ? 0.85 : 1.0;
-      } else f.combo = 0;
+      f.combo = chained ? Math.min(3, f.combo + 1) : 0;
       f.comboT = 0.45;
       f.buf = null;
       const drawn = !!f.pocket;
@@ -917,6 +939,10 @@
       } else {
         f.act = { type: 'strike', name: key, t: 0, dur: (edgeSwing ? 0.66 : (st.w + st.a + st.r)) * tf, tf, hit: false, tip: null, tipT: null, slipped: false, chained: !!chained, cost, cancelAt: (edgeSwing ? 0.40 : (st.w + st.a)) * tf, pop: popFire, edge: edgeSwing };
       }
+      f.repeatN = key === f.lastStrike ? f.repeatN + 1 : 1;
+      f.lastStrike = key;
+      f.act.powMul = Math.pow(0.5, Math.max(0, f.repeatN - REPEAT_FREE));
+      f.act.stunMul = f.repeatN > STUN_REPEAT_MAX ? 0 : f.act.powMul;
       f.blocking = false; f.restT = 0;
       f.rs.thrown++;
       // the next kick waits until this one's foot has planted (see kickInFlight)
@@ -1162,8 +1188,10 @@
       if (!W.active) W.setActive(true);
       for (let i = 0; i < 2; i++) {
         const f = F[i], rag = W.fighters[i], a = f.act;
+        rag.southpaw = isSouthpaw(f);
         rag.guard = f.blocking && a.type !== 'strike';
         rag.guardLow = rag.guard && !!(this.inputs[i].held & IN.MOD3);
+        rag.check = f.checking && a.type !== 'strike';
         // body language from the action
         let ov = null;
         if (a.type === 'dodge') ov = a.t < 0.32 ? 'SLIP' : null;
@@ -1175,9 +1203,9 @@
         if (!ov && f.edge && !f.pocket && f.blocking && a.type !== 'strike') ov = 'EDGE_GUARD';
         rag.override = ov;
         if (a.type === 'down' && !rag.ko) rag.knockOut();
-        rag.wobble = f.rocked > 0 ? Math.min(1, 0.4 + f.rocked * 0.25) : 0;
-        rag.gainTarget = f.rocked > 0 ? 0.72 : (f.stam < 15 ? 0.85 : 1);
-        if (S.phase !== 'fight' || a.type === 'hit' || a.type === 'down' || a.type === 'kd') { rag.move[0] = 0; rag.move[1] = 0; rag.guard = false; }
+        rag.wobble = f.rocked > 0 ? (f.rockLight ? ROCK_LIGHT_WOBBLE : Math.min(1, 0.4 + f.rocked * 0.25)) : 0;
+        rag.gainTarget = f.rocked > 0 ? (f.rockLight ? 0.85 : 0.72) : (f.stam < 15 ? 0.85 : 1);
+        if (S.phase !== 'fight' || a.type === 'hit' || a.type === 'down' || a.type === 'kd') { rag.move[0] = 0; rag.move[1] = 0; rag.guard = false; rag.check = false; }
         // the sim may have replaced a strike (hit reaction, takedown landed): keep the ragdoll honest
         if (a.type !== 'strike' && rag.strike) rag.cancelStrike();
       }
@@ -1210,10 +1238,15 @@
     _landPhys(f, o, def, h) {
       const PH = root.MMAPhys;
       const rag = this.phys.fighters[o.idx];
-      const res = PH.impactDamage(def, h, f, o.blocking, o.blocking && !!(this.inputs[o.idx].held & IN.MOD3));
+      // a low kick into a lifted lead leg is checked: the shin-on-shin hurts the kicker more than the defender
+      const checked = o.checking && def.isKick && def.part === 'legs' && h.region === 'legs';
+      // scored as the clean thigh shot it would have been; CHECK_DMG / CHECK_SELF_DMG then split it
+      const res = PH.impactDamage(def, checked ? Object.assign({}, h, { partName: 'thigh' }) : h, f, o.blocking && !checked, o.blocking && !!(this.inputs[o.idx].held & IN.MOD3));
+      if (checked) { res.blocked = true; res.region = 'legs'; }
       const part = res.region;
       const counter = o.act.type === 'strike' && !o.act.hit;
       let dmg = res.dmg * (0.7 + f.stats.pow * 0.6) * lerp(0.9, 1.1, this.rand());
+      if (f.act.powMul != null) dmg *= f.act.powMul;
       if (counter) dmg *= 1.35;
       if (o.rocked > 0) dmg *= 1.25;
       if (f.rocked > 0) dmg *= 0.7;
@@ -1223,13 +1256,17 @@
       if (kickCancel) dmg *= KICK_CANCEL_BONUS;
       const at = [Math.round(h.point.x * 100) / 100, Math.round(h.point.y * 100) / 100, Math.round(h.point.z * 100) / 100];
       const fwd = this._frame(f, o);
+      if (checked) {
+        f.dmg.legs = clamp(f.dmg.legs + dmg * CHECK_SELF_DMG * (PART_TOUGHNESS.legs || 1), 0, 100);
+        dmg *= CHECK_DMG;
+      }
       o.dmg[part] = clamp(o.dmg[part] + dmg * (PART_TOUGHNESS[part] || 1), 0, 100);
       f.rs.landed++;
       f.rs.sig += dmg;
       rag.takeHit(h, dmg, res.blocked);
       if (res.blocked) {
         if (o.blocking) o.stam = Math.min(o.stamMax, o.stam + def.cost * BLOCK_REWARD); // a stray arm in the way is free, a real block is rewarded
-        this._emit({ k: 'block', i: f.idx, j: o.idx, name: def.name, part, at, passive: !o.blocking, vn: Math.round(h.vn * 10) / 10 });
+        this._emit({ k: 'block', i: f.idx, j: o.idx, name: def.name, part, at, passive: !o.blocking && !checked, checked, vn: Math.round(h.vn * 10) / 10 });
         if (def.push) rag.shove(fwd.fx, fwd.fz, PHYS_PUSH * 0.5);
         return;
       }
@@ -1237,8 +1274,10 @@
       if (kickCancel) this._missCost(o, o.act);
       o.hitChain = (o.act.type === 'hit' && this.state.t - (o.lastHitT || -9) < 0.7) ? (o.hitChain || 0) + 1 : 0;
       o.lastHitT = this.state.t;
-      const stun = (0.2 + dmg * 0.025) * 0.6 * Math.pow(0.6, o.hitChain) + (kickCancel ? KICK_CANCEL_STUN : 0);
-      if (def.name !== 'jab') { // the jab scores damage without hitstun
+      // repeat penalty: stun is scaled by stunMul off the unpenalised damage, so the power cut doesn't count twice
+      const pm = f.act.powMul || 1, sm = f.act.stunMul != null ? f.act.stunMul : 1;
+      const stun = ((0.2 + dmg / pm * 0.025) * 0.6 * Math.pow(0.6, o.hitChain) + (kickCancel ? KICK_CANCEL_STUN : 0)) * sm;
+      if (def.name !== 'jab' && sm > 0) { // the jab scores damage without hitstun
         o.act = { type: 'hit', name: part, t: 0, dur: stun, hit: false };
         o.blocking = false;
       }
@@ -1394,8 +1433,16 @@
         if (o.rocked > 0 && dmg >= kdThr && !onGround) {
           this._knockdown(f, o);
         } else if (dmg >= thr) {
-          o.rocked = Math.max(o.rocked, (ROCK_T0 + dmg * ROCK_PER_DMG) * ROCK_TIME_MULT);
-          o.wobble = 1;
+          // most rocks are a short stun; now and then (or on a shot that nearly drops him) he's properly dazed
+          if (this.rand() < ROCK_HEAVY_P || dmg >= thr * KD_FLASH_FRAC) {
+            o.rocked = Math.max(o.rocked, (ROCK_T0 + dmg * ROCK_PER_DMG) * ROCK_TIME_MULT);
+            o.rockLight = false;
+            o.wobble = 1;
+          } else {
+            if (o.rocked <= 0) o.rockLight = true; // never downgrade a heavy daze still running
+            o.rocked = Math.max(o.rocked, ROCK_LIGHT_T);
+            o.wobble = Math.max(o.wobble, 0.3);
+          }
           ev.rocked = true;
           this._emit({ k: 'rocked', i: f.idx, j: o.idx });
           if (!onGround && dmg >= thr * KD_FLASH_FRAC) this._knockdown(f, o);
@@ -1414,6 +1461,7 @@
       if (!S.ground) return;
       const posMul = f.ground === 'top' ? POS_STRIKE[S.ground.pos] : 0.5;
       let dmg = st.dmg * posMul * (0.7 + f.stats.pow * 0.6) * (0.6 + 0.4 * f.stam / 100) * lerp(0.85, 1.15, this.rand());
+      if (f.act.powMul != null) dmg *= f.act.powMul;
       if (o.rocked > 0) dmg *= 1.25;
       if (f.rocked > 0) dmg *= 0.7;
       let blocked = false;
@@ -1422,8 +1470,9 @@
       f.rs.landed++; f.rs.sig += dmg;
       if (blocked) { this._emit({ k: 'block', i: f.idx, j: o.idx, name: st.name, part: st.part }); return; }
       this._cleanRefund(f, f.act);
-      const stun = (0.2 + dmg * 0.025) * 0.5;
-      o.act = { type: 'hit', name: st.part, t: 0, dur: stun, hit: false };
+      const pm = f.act.powMul || 1, sm = f.act.stunMul != null ? f.act.stunMul : 1;
+      const stun = (0.2 + dmg / pm * 0.025) * 0.5 * sm;
+      if (sm > 0) o.act = { type: 'hit', name: st.part, t: 0, dur: stun, hit: false };
       S.ground.idleT = 0;
       const ev = this._emit({ k: 'hit', i: f.idx, j: o.idx, name: st.name, kind: st.kind, part: st.part, intended: st.part, dmg: Math.round(dmg * 10) / 10, counter: false, big: dmg >= 3.6, ground: true });
       this._afterHit(f, o, st.part, dmg, ev, true);
@@ -1433,7 +1482,7 @@
       const S = this.state;
       if (S.ground) return;
       vic.kdCount++; att.rs.kd++;
-      vic.rocked = Math.max(vic.rocked, 3 * ROCK_TIME_MULT);
+      vic.rocked = Math.max(vic.rocked, 3 * ROCK_TIME_MULT); vic.rockLight = false;
       if (vic.dmg.head >= 84) { this._emit({ k: 'kd', i: att.idx, j: vic.idx, standing: !S.grappling }); vic.dmg.head = 100; return; } // flash KO, caught by stoppage check
       this._emit({ k: 'kd', i: att.idx, j: vic.idx });
       if (this.phys) {
@@ -1709,6 +1758,7 @@
     switch (ev.k) {
       case 'bell': return ev.end ? 'End of round ' + ev.round + '.' : 'Round ' + ev.round + ' — FIGHT!';
       case 'round': return 'Round ' + ev.round + ' coming up.';
+      case 'stance': return n(ev.i) + ' switches to ' + (ev.southpaw ? 'southpaw' : 'orthodox') + '.';
       case 'hit': {
         if (ev.pop) return n(ev.i) + ' connects on ' + n(ev.j) + '!';
         if (ev.edge) return n(ev.i) + ' cuts ' + n(ev.j) + ' clean!';
@@ -1724,7 +1774,7 @@
         if (ev.jammed) return n(ev.i) + "'s " + ev.name + ' is smothered' + where + ' — no room on it.';
         return n(ev.i) + ' lands a ' + ev.name + where + '.';
       }
-      case 'block': return ev.parry ? 'They lock — neither one gets through.' : ev.passive ? n(ev.i) + "'s " + ev.name + ' is picked off by the arms.' : n(ev.j) + ' blocks the ' + ev.name + '.';
+      case 'block': return ev.checked ? n(ev.j) + ' checks the ' + ev.name + '!' : ev.parry ?'They lock — neither one gets through.' : ev.passive ? n(ev.i) + "'s " + ev.name + ' is picked off by the arms.' : n(ev.j) + ' blocks the ' + ev.name + '.';
       case 'push': return ev.ok ? n(ev.i) + ' shoves ' + n(ev.j) + ' off.' : n(ev.i) + ' pushes at air.';
       case 'miss': return ev.slipped ? n(ev.j) + ' slips the ' + ev.name + '.' : n(ev.i) + ' misses with the ' + ev.name + '.';
       case 'rocked': return null;
@@ -1758,7 +1808,7 @@
 
   const API = { IN, STRIKES, ROSTER, SUBS, POS_NAME, MOVES, SUBS_BY, BOTTOM_CAN_STRIKE, Sim, describe, CAGE_R, DT, BREAK_T,
     KD: { FALL: KD_FALL, STAY: KD_STAY, RISE: KD_RISE, FOLLOW_DIST: KD_FOLLOW_DIST },
-    LIMBS, LIMB_BIT, LIMB_NAME, MODS, MOD_BIT, HAND_KINDS, LEG_KINDS, KIND_LABEL, KIND_STATS, DEFAULT_MOVESET, normalizeMoveset, modOf, strikeTip, TIP_R, recovering };
+    LIMBS, LIMB_BIT, LIMB_NAME, MODS, MOD_BIT, HAND_KINDS, LEG_KINDS, KIND_LABEL, KIND_STATS, DEFAULT_MOVESET, normalizeMoveset, modOf, isSouthpaw, strikeTip, TIP_R, recovering };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   root.MMASim = API;
 })(typeof window !== 'undefined' ? window : globalThis);

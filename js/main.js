@@ -30,10 +30,12 @@
     { id: 'block', label: 'Block / sprawl / cover (hold) · push (tap twice)', bit: IN.BLOCK, def: ['KeyL', 'Semicolon'] },
     { id: 'grapple', label: 'Takedown / submission / sweep', bit: IN.GRAPPLE, def: ['Space', ''] },
     { id: 'dodge', label: 'Slip / stand up', bit: IN.DODGE, def: ['ShiftLeft', 'ShiftRight'] },
+    { id: 'stance', label: 'Switch stance (orthodox / southpaw)', bit: IN.STANCE, def: ['KeyX', ''] },
+    { id: 'check', label: 'Check low kicks: lift the lead leg (hold)', bit: IN.CHECK, def: ['KeyO', ''] },
     { id: 'interact', label: 'Use (gym: computer, whiteboard, desk)', bit: 1 << 14, def: ['Enter', 'KeyF'] },
     { id: 'lock', label: 'Lock on to the heavy bag (gym)', bit: 1 << 15, def: ['KeyT', ''] }
   ];
-  const IN_INTERACT = 1 << 14, IN_LOCK = 1 << 15, SIM_MASK = 0x3fff; // interact/lock are app-only bits; mask with SIM_MASK before input reaches the sim
+  const IN_INTERACT = 1 << 14, IN_LOCK = 1 << 15, SIM_MASK = 0x3fff | IN.STANCE | IN.CHECK; // interact/lock are app-only bits; mask with SIM_MASK before input reaches the sim
   const Controls = { binds: {}, moveset: null, keyMap: {} };
   const KEY_NAMES = { ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Space: 'SPACE', ShiftLeft: 'L-SHIFT', ShiftRight: 'R-SHIFT', ControlLeft: 'L-CTRL', ControlRight: 'R-CTRL', AltLeft: 'L-ALT', AltRight: 'R-ALT', Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/', BracketLeft: '[', BracketRight: ']', Backslash: '\\', Minus: '-', Equal: '=', Enter: 'ENTER', Tab: 'TAB', Backspace: 'BKSP', CapsLock: 'CAPS', Backquote: '`', NumpadEnter: 'NUM ENTER', NumpadAdd: 'NUM +', NumpadSubtract: 'NUM -', NumpadMultiply: 'NUM *', NumpadDivide: 'NUM /', NumpadDecimal: 'NUM .' };
   function keyName(code) {
@@ -377,13 +379,13 @@
       const text = describe(ev, S);
       switch (ev.k) {
         case 'hit': A.hit(ev.big || ev.rocked, ev.part); feed(text, ev.big || ev.rocked || ev.counter); break;
-        case 'block': A.block(); if (Math.random() < 0.35) feed(text); break;
+        case 'block': A.block(); if (ev.checked || Math.random() < 0.35) feed(text); break;
         case 'push': if (ev.ok) { A.block(); feed(text); } else A.whiff(); break;
         case 'miss': A.whiff(); if (ev.slipped) feed(text); break;
         case 'kd': A.slam(); centerMsg('KNOCKDOWN!', 1400); feed(text, true); break;
         case 'line': break;
         case 'follow': A.slam(); feed(text, true); break;
-        case 'getup': feed(text); break;
+        case 'getup': case 'stance': feed(text); break;
         case 'td': A.slam(); feed(text, true); break;
         case 'sweep': A.slam(); feed(text, true); break;
         case 'tdfail': case 'shoot': case 'standup': case 'subfail': feed(text); break;
@@ -567,7 +569,7 @@
     $('#controlsHint').innerHTML =
       '<div class="ctl-row">' + [B('fwd'), B('left'), B('back'), B('right')].join(' ') + ' move / circle (stepping into a shot adds power, backing off takes it away), tap any direction twice to lunge that way · ' + B('lh') + ' left hand · ' + B('rh') + ' right hand · ' + B('ll') + ' left leg · ' + B('rl') + ' right leg</div>' +
       '<div class="ctl-row">' + MODS.map(row).join(' · ') + '</div>' +
-      '<div class="ctl-row">' + B('block') + ' hold: block / sprawl (+ ' + B('mod3') + ' drops into a shell that covers the body), tap twice: push them off · ' + B('grapple') + ' takedown / dive on a downed opponent · ' + B('dodge') + ' slip · knocked down: a direction or ' + B('dodge') + ' gets up, or stay down to recover · ground: hands & legs strike, ' + B('grapple') + ' submission / sweep, ' + B('block') + ' posture / cover, ' + B('dodge') + ' let up · <b>Enter</b> chat · <b>ESC</b> options · <b>H</b> hide this · <b>M</b> mute' +
+      '<div class="ctl-row">' + B('block') + ' hold: block / sprawl (+ ' + B('mod3') + ' drops into a shell that covers the body), tap twice: push them off · ' + B('grapple') + ' takedown / dive on a downed opponent · ' + B('dodge') + ' slip · ' + B('stance') + ' switch stance · knocked down: a direction or ' + B('dodge') + ' gets up, or stay down to recover · ground: hands & legs strike, ' + B('grapple') + ' submission / sweep, ' + B('block') + ' posture / cover, ' + B('dodge') + ' let up · <b>Enter</b> chat · <b>ESC</b> options · <b>H</b> hide this · <b>M</b> mute' +
       (App.extras && App.extras.pocket ? ' · <b>G</b> draw' : '') + '</div>';
   }
 

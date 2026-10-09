@@ -934,7 +934,7 @@
       // procedural: breathing bob, rocked wobble, footwork
       const bob = Math.sin(time * 2.1 + f.idx) * 0.012;
       let wob = 0;
-      if (!forced && f.rocked > 0 && !f.ground && f.act.type !== 'down') wob = Math.sin(time * 7) * 0.12 * Math.min(1, f.rocked) + Math.sin(time * 3.3) * 0.08;
+      if (!forced && f.rocked > 0 && !f.ground && f.act.type !== 'down') wob = (Math.sin(time * 7) * 0.12 * Math.min(1, f.rocked) + Math.sin(time * 3.3) * 0.08) * (f.rockLight ? 0.3 : 1);
 
       const ov = forced ? null : this._limbOverride(f, p);
       this.root.position.set(this.px, 0, this.pz);

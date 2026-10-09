@@ -24,7 +24,7 @@
   const LOCK_RANGE = 3.2;                             // how close to the bag you can lock on
   const ROOM_FOV = 50, FIGHT_FOV = 42;                // camera lens walking the room / locked on (the fight camera's)
   const DIRS = IN.FWD | IN.BACK | IN.LEFT | IN.RIGHT;
-  const SIM_BITS = 0x3fff;                            // input bits the sim reads (the gym's interact / lock bits sit above)
+  const SIM_BITS = 0x3fff | IN.STANCE;                            // input bits the sim reads (the gym's interact / lock bits sit above)
 
   // the interaction spots. `tab` is the hub panel the station opens; the bag has none (you just hit it).
   const STATIONS = [
@@ -453,13 +453,14 @@
       obs.push({ x: ds.x, z: ds.z + 0.75, r: 0.9 });
       // wall of fame on the right wall: frames (one per fight, up to 12) + a record board
       const fs = STATIONS[3];
-      this.fameMat = M(0xffffff, { roughness: 0.6 }); this.fame = plane(g, 1.4, 0.9, this.fameMat, W - 0.06, 1.9, fs.z, -Math.PI / 2);
-      box(g, 0.04, 0.96, 1.46, m.gold, W - 0.04, 1.9, fs.z);
+      // board sits above the top row of frames, its face 1cm proud of the gold backing (was coplanar -> z-fighting)
+      this.fameMat = M(0xffffff, { roughness: 0.6 }); this.fame = plane(g, 1.4, 0.9, this.fameMat, W - 0.07, 2.2, fs.z, -Math.PI / 2);
+      box(g, 0.04, 0.96, 1.46, m.gold, W - 0.04, 2.2, fs.z);
       this.frames = [];
       for (let i = 0; i < 12; i++) {
         const row = Math.floor(i / 6), col = i % 6;
         const z = fs.z - 1.25 + col * 0.5, y = 1.05 + row * 0.42;
-        const f = box(g, 0.03, 0.34, 0.42, m.black, W - 0.05, y, z); const inner = plane(g, 0.36, 0.28, M(0x444448, { roughness: 0.9 }), W - 0.065, y, z, -Math.PI / 2);
+        const f = box(g, 0.03, 0.34, 0.42, m.black, W - 0.05, y, z); const inner = plane(g, 0.36, 0.28, M(0x444448, { roughness: 0.9 }), W - 0.075, y, z, -Math.PI / 2);
         f.visible = inner.visible = false; this.frames.push({ f, inner });
       }
 
@@ -720,7 +721,8 @@
       S.hits++; S.combo = (this.time - S.lastT < 1.4) ? S.combo + 1 : 1; S.bestCombo = Math.max(S.bestCombo, S.combo); S.lastT = this.time;
       const speed = ev.vn || 0;
       S.hardest = Math.max(S.hardest, speed);
-      const name = st ? (st.limb[0] === 'l' ? 'Left ' : 'Right ') + KIND_LABEL[st.kind].toLowerCase() : (ev.name || 'Strike');
+      const left = st && (st.limb[0] === 'l') !== root.MMASim.isSouthpaw(this.sim.state.f[0]); // southpaw throws the mirrored strike
+      const name = st ? (left ? 'Left ' : 'Right ') + KIND_LABEL[st.kind].toLowerCase() : (ev.name || 'Strike');
       S.last = { name, speed, dmg, label: dmg >= 6 ? 'MONSTER' : big ? 'HEAVY' : dmg >= 2 ? 'SOLID' : 'LIGHT', big };
       S.lastStamp = this.time;
     }
