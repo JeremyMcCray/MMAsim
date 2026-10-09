@@ -801,7 +801,7 @@
     if (S.hits && (st && st.id === 'bag' || G.time - (S.lastStamp || -9) < 4)) {
       const L = S.last;
       bag = (L ? '<div class="last' + (L.big ? ' big' : '') + '">' + esc(L.name) + ' <b>' + L.speed.toFixed(1) + ' m/s</b> <i>' + L.label + '</i></div>' : '') +
-        '<div class="tot">' + S.hits + ' hit' + (S.hits === 1 ? '' : 's') + (S.combo > 1 ? ' · <b>' + S.combo + ' combo</b>' : '') + ' · best combo ' + S.bestCombo + ' · hardest ' + S.hardest.toFixed(1) + '</div>';
+        '<div class="tot">' + S.hits + ' hit' + (S.hits === 1 ? '' : 's') + (S.combo > 1 ? ' · <b>' + S.combo + ' combo</b>' : '') + ' · best combo ' + S.bestCombo + ' · hardest ' + S.hardest.toFixed(1) + ' m/s</div>';
     }
     if (bag !== GymHUD.bag) { GymHUD.bag = bag; const el = $('#gBag'); el.innerHTML = bag; el.classList.toggle('show', !!bag); }
   }

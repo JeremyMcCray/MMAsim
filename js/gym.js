@@ -1,13 +1,15 @@
 /* ============================================================
    Cage Rules — the career gym as a walkable 3D room, rebuilt from the save.
-   Stations: heavy bag (pendulum + hit-force readout), computer (offers),
-   whiteboard (training week), front desk (upgrades), wall of fame (history).
+   Stations: heavy bag (hit readout), computer (offers), whiteboard (training
+   week), front desk (upgrades), wall of fame (history).
    Each facility level adds furniture; the total level sets the room tier
-   (garage -> elite). Pure Three.js on js/render.js's fighter rig, no physics.
+   (garage -> elite). Walking, striking and the bag run on the fight engine:
+   a training Sim (js/sim.js) whose fighter 1 is a heavy bag hung in the
+   physics World (js/physics.js), so the gym plays exactly like a fight.
    ============================================================ */
 (function (root) {
   'use strict';
-  const { STRIKES, strikeTip, IN, TIP_R, modOf, DEFAULT_MOVESET, KIND_LABEL, LIMB_BIT, LIMBS } = root.MMASim;
+  const { STRIKES, IN, DEFAULT_MOVESET, KIND_LABEL, Sim } = root.MMASim;
   const { FighterModel } = root.MMARender;
   const Career = root.MMACareer;
 
@@ -19,7 +21,10 @@
   const ROOM = { hw: 7.5, hd: 5.5, h: 3.6 };          // half width (x), half depth (z), ceiling height
   const BAG = { x: 0.6, z: -0.6, r: 0.18, top: 1.95, bot: 0.72, pivot: 2.95 };
   const SPAWN = { x: 3.4, z: 1.7, yaw: Math.PI + 0.25 };     // facing -z, into the room
-  const PLAYER_R = 0.32, WALK = 2.3, LOCK_RANGE = 3.2;   // how close to the bag you can lock on
+  const LOCK_RANGE = 3.2;                             // how close to the bag you can lock on
+  const ROOM_FOV = 50, FIGHT_FOV = 42;                // camera lens walking the room / locked on (the fight camera's)
+  const DIRS = IN.FWD | IN.BACK | IN.LEFT | IN.RIGHT;
+  const SIM_BITS = 0x3fff;                            // input bits the sim reads (the gym's interact / lock bits sit above)
 
   // the interaction spots. `tab` is the hub panel the station opens; the bag has none (you just hit it).
   const STATIONS = [
@@ -285,11 +290,12 @@
       this.active = false; this.paused = false;
       this.group = null; this.player = null; this.coach = null; this.obstacles = [];
       this.sig = null; this.C = null; this.controls = null;
-      this.cam = { yaw: Math.PI, pos: new THREE.Vector3(), tgt: new THREE.Vector3(), init: false };
-      this.bag = { tx: 0, tz: 0, wx: 0, wz: 0, squash: 0 };
+      this.cam = { yaw: Math.PI, pos: new THREE.Vector3(), tgt: new THREE.Vector3(), side: new THREE.Vector3(0, 0, 1), fight: false, init: false };
+      this.sim = null;      // the training Sim: you (fighter 0) and the heavy bag (fighter 1)
+      this.bagSquash = 0;
       this.session = { hits: 0, combo: 0, bestCombo: 0, hardest: 0, last: '', lastT: -9, comboT: 0 };
       this.prompt = ''; this.station = null; this.fx = []; this.locked = false;
-      this.time = 0; this._tip = [0, 0, 0]; this._tipPrev = null; this._tmp = new THREE.Vector3();
+      this.time = 0;
       this.moveset = null;
       this._saved = null;
     }
@@ -300,9 +306,10 @@
       if (!this.active) {
         this.active = true;
         this._saved = { fog: this.scene.fog, bg: this.scene.background, fov: this.R.camera.fov };
-        this.scene.fog = null; this.R.camera.fov = 50; this.R.camera.updateProjectionMatrix();
+        this.scene.fog = null; this.R.camera.fov = ROOM_FOV; this.R.camera.updateProjectionMatrix();
         if (this.R.setArenaVisible) this.R.setArenaVisible(false);
-        this.player = { x: SPAWN.x, z: SPAWN.z, yaw: SPAWN.yaw, face: SPAWN.yaw, act: { type: 'idle', t: 0 }, blocking: false, buf: null, moving: false };
+        // mirrors the sim's fighter 0 each frame (stations, lock-on and the camera read it)
+        this.player = { x: SPAWN.x, z: SPAWN.z, yaw: SPAWN.yaw, act: { type: 'idle', t: 0 }, blocking: false, stam: 100 };
         this.model = new FighterModel(this.scene, C.color, C.skin, 0);
         this.cam.init = false; this.locked = false;
         this.session = { hits: 0, combo: 0, bestCombo: 0, hardest: 0, last: '', lastT: -9, comboT: 0 };
@@ -314,6 +321,7 @@
       if (!this.active) return;
       this.active = false; this.paused = false;
       if (this.group) { this.scene.remove(this.group); this.group = null; }
+      if (this.sim) { this.sim.destroy(); this.sim = null; }
       if (this.model) { this.model.dispose(); this.model = null; }
       if (this.coach) { this.coach.dispose(); this.coach = null; }
       for (const e of this.fx) this.scene.remove(e.m);
@@ -326,7 +334,12 @@
     refresh(C) {
       this.C = C;
       const sig = Career.FACILITIES.map(f => C.gym[f.id] || 0).join(',') + '|' + C.color;
-      if (sig !== this.sig) { this.sig = sig; this.build(C); }
+      if (sig !== this.sig) { this.sig = sig; this.build(C); if (this.sim) this.sim.phys.setObstacles(this._physObstacles()); }
+      if (this.sim) { // training changes your stats, the options panel your moveset
+        const f = this.sim.state.f[0];
+        for (const k in f.stats) if (typeof C.stats[k] === 'number') f.stats[k] = clamp(C.stats[k], 0, 1);
+        f.moveset = root.MMASim.normalizeMoveset(this.moveset);
+      }
       this.model.setColors(C.color, C.skin);
       this.redrawScreens(C);
     }
@@ -409,8 +422,8 @@
       if (pow < 1) for (let i = 0; i < 3; i++) { const t = cyl(bagGrp, BAG.r * 1.03, BAG.r * 1.03, 0.07, M(0x9a9a9a, { roughness: 1 }), 0, bagMid - 0.35 + i * 0.3, 0, 24); } // duct tape
       sph(bagGrp, 0.05, m.chrome, 0, 0, 0); // swivel
       this.bagGroup = bagGrp; this.bagMesh = bag;
-      obs.push({ x: BAG.x, z: BAG.z, r: BAG.r + 0.12 });
-      this.bag = { tx: 0, tz: 0, wx: 0, wz: 0, squash: 0 };
+      obs.push({ x: BAG.x, z: BAG.z, r: BAG.r + 0.12, bag: true }); // the bag is its own physics body (see _ensureSim)
+      this.bagSquash = 0;
 
       // -- stations
       // computer: desk, monitor, chair (a folding table + an old monitor in the garage; a proper office corner later)
@@ -522,85 +535,88 @@
       if (this.canLock()) this.locked = true;
     }
 
+    // the furniture as physics obstacles (the bag hangs in the world as its own body)
+    _physObstacles() { return this.obstacles.filter(o => !o.bag); }
+    // the training Sim, built once the physics engine has loaded (it streams in after the page)
+    _ensureSim() {
+      if (this.sim || !this.C || !root.MMAPhys || !root.MMAPhys.ready()) return this.sim;
+      const C = this.C, P = this.player;
+      this.sim = new Sim({
+        training: true, grappling: false, seed: (Math.random() * 1e9) | 0, spawn: { x: P.x, z: P.z },
+        players: [{ fighter: C.base, name: C.name, stats: C.stats, color: C.color, skin: C.skin, moveset: this.moveset }, { name: 'Heavy bag' }],
+        world: { room: { hw: ROOM.hw, hd: ROOM.hd }, bag: { x: BAG.x, z: BAG.z, r: BAG.r, top: BAG.top, bot: BAG.bot, pivot: BAG.pivot }, obstacles: this._physObstacles() }
+      });
+      const rag = this.sim.phys.fighters[0];
+      rag.teleport(P.x, P.z, P.yaw);
+      rag.faceOpponent = this.locked; rag.faceYaw = P.yaw;
+      return this.sim;
+    }
+    // put the fighter somewhere (dev tools / tests), standing still
+    teleport(x, z, yaw) {
+      const P = this.player; if (!P) return;
+      P.x = x; P.z = z; if (yaw != null) P.yaw = yaw;
+      if (this.sim) {
+        const f = this.sim.state.f[0], rag = this.sim.phys.fighters[0];
+        f.x = x; f.z = z; f.pose = null;
+        rag.teleport(x, z, P.yaw); rag.faceYaw = P.yaw;
+      }
+    }
+
     update(dt, held, pressed, interactBit, lockBit) {
       if (!this.active) return;
       this.time += dt;
       const P = this.player, C = this.C, R = this.R;
       const live = !this.paused;
-      // ----- lock-on: face the bag and strafe around it -----
+      const sim = this._ensureSim();
+      // ----- lock-on: face the bag and move around it exactly as you would an opponent -----
       if (live && lockBit && (pressed & lockBit)) this.toggleLock();
       if (this.locked && (!live && this.station && this.station.tab || Math.hypot(BAG.x - P.x, BAG.z - P.z) > LOCK_RANGE + 1.2)) this.locked = false;
       const locked = this.locked;
-      const bdx = BAG.x - P.x, bdz = BAG.z - P.z, bagDist = Math.hypot(bdx, bdz);
-      const lockYaw = Math.atan2(bdx, bdz);
-      // ----- movement -----
-      let mx = 0, mz = 0;
-      if (live) {
-        if (held & IN.FWD) mz += 1; if (held & IN.BACK) mz -= 1; if (held & IN.LEFT) mx -= 1; if (held & IN.RIGHT) mx += 1;
-      }
-      const striking = P.act.type === 'strike';
-      const st = striking ? STRIKES[P.act.name] : null;
-      const inRecovery = striking && P.act.t >= (st.w + st.a) * P.act.tf;
-      const canMove = !striking || inRecovery;
-      P.moving = false;
-      if ((mx || mz) && canMove) {
-        // free: W/A/S/D are screen directions (the camera does not swing round while you walk).
-        // locked: W/S close in on / back off the bag, A/D circle it.
-        const cy = locked ? lockYaw : this.cam.yaw; // forward = (sin cy, cos cy), right = (cos cy, -sin cy)
-        const fx = Math.sin(cy), fz = Math.cos(cy), rx = Math.cos(cy), rz = -Math.sin(cy);
-        let dx = fx * mz + rx * mx, dz = fz * mz + rz * mx;
-        const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
-        const sp = WALK * (striking ? 0.5 : 1) * (locked ? 0.8 : 1);
-        P.x += dx * sp * dt; P.z += dz * sp * dt;
-        if (!locked) P.face = Math.atan2(dx, dz);
-        P.moving = true;
-      }
-      // keep inside the room and out of the furniture
-      P.x = clamp(P.x, -ROOM.hw + 0.45, ROOM.hw - 0.45); P.z = clamp(P.z, -ROOM.hd + 0.45, ROOM.hd - 0.45);
-      for (const o of this.obstacles) {
-        const dx = P.x - o.x, dz = P.z - o.z, d = Math.hypot(dx, dz), min = o.r + PLAYER_R;
-        if (d < min && d > 1e-4) { P.x = o.x + dx / d * min; P.z = o.z + dz / d * min; }
-      }
-      // ----- facing: locked on, always the bag (re-measured after the walk) -----
-      const nearBag = locked || bagDist < 1.75;
-      if (locked) P.face = Math.atan2(BAG.x - P.x, BAG.z - P.z);
-      let dy = P.face - P.yaw; while (dy > Math.PI) dy -= Math.PI * 2; while (dy < -Math.PI) dy += Math.PI * 2;
-      P.yaw += dy * expo(dt, striking ? 6 : 12);
+      const lockYaw = Math.atan2(BAG.x - P.x, BAG.z - P.z);
 
-      // ----- strikes / block -----
-      if (live) {
-        const limbPressed = pressed & (IN.LHAND | IN.RHAND | IN.LLEG | IN.RLEG);
-        if (limbPressed) {
-          const key = this._strikeKey(limbPressed, held);
-          if (key) { if (!striking || inRecovery) this._startStrike(key, held, striking); else P.buf = { key, held }; }
+      // ----- the fight engine: movement, strikes, guard, stamina, the bag -----
+      if (sim) {
+        const rag = sim.phys.fighters[0];
+        let h = live ? held & SIM_BITS : 0;
+        const p = live ? pressed & SIM_BITS : 0;
+        rag.faceOpponent = locked;
+        if (!locked && (h & DIRS)) {
+          // free: W/A/S/D are screen directions (the camera does not swing round while you walk); he turns to the
+          // way he is going and steps forward, at the fight's own footwork speed
+          let mx = 0, mz = 0;
+          if (h & IN.FWD) mz += 1; if (h & IN.BACK) mz -= 1; if (h & IN.LEFT) mx -= 1; if (h & IN.RIGHT) mx += 1;
+          h &= ~DIRS;
+          if (mx || mz) {
+            const cy = this.cam.yaw; // forward = (sin cy, cos cy); screen right = forward x up = (-cos cy, sin cy)
+            rag.faceYaw = Math.atan2(Math.sin(cy) * mz - Math.cos(cy) * mx, Math.cos(cy) * mz + Math.sin(cy) * mx);
+            // turn first, then step: walking while still swinging round would curve the path
+            let dy = rag.faceYaw - rag.yaw; while (dy > Math.PI) dy -= Math.PI * 2; while (dy < -Math.PI) dy += Math.PI * 2;
+            if (Math.abs(dy) < 1.0) h |= IN.FWD;
+          }
         }
-        if (!striking) P.blocking = !!(held & IN.BLOCK);
-        else P.blocking = false;
-      } else P.blocking = false;
-      if (P.act.type === 'strike') {
-        const a = P.act; a.t += dt;
-        this._traceBag(a, dt);
-        if (a.t >= a.dur) { P.act = { type: 'idle', t: 0 }; this._tipPrev = null; if (P.buf && live) { const b = P.buf; P.buf = null; this._startStrike(b.key, b.held, true); } }
-        else if (P.buf && live && a.t >= (STRIKES[a.name].w + STRIKES[a.name].a) * a.tf) { const b = P.buf; P.buf = null; this._startStrike(b.key, b.held, true); }
-      } else P.act = { type: P.moving ? 'move' : 'idle', t: 0 };
+        sim.setInput(0, h, p); sim.setInput(1, 0, 0);
+        sim.step(dt);
+        for (const ev of sim.drainEvents()) this._onEvent(ev);
+        const f = sim.state.f[0];
+        P.x = f.x; P.z = f.z; P.yaw = rag.yaw; P.act = f.act; P.blocking = f.blocking; P.stam = f.stam;
+        // the bag hangs from its pivot: the group turns with the physics body
+        const q = sim.phys.fighters[1].rotation();
+        this.bagGroup.quaternion.set(q.x, q.y, q.z, q.w);
+      }
       if (this.session.combo && this.time - this.session.lastT > 1.4) this.session.combo = 0;
-
-      // ----- bag pendulum -----
-      const B = this.bag, L = BAG.pivot - (BAG.top + BAG.bot) / 2, G = 9.81;
-      B.wx += (-(G / L) * Math.sin(B.tx) - B.wx * 0.9) * dt; B.wz += (-(G / L) * Math.sin(B.tz) - B.wz * 0.9) * dt;
-      B.tx += B.wx * dt; B.tz += B.wz * dt;
-      this.bagGroup.rotation.set(-B.tz, 0, B.tx);  // a hanging point swings to +x under rotation.z > 0 and to +z under rotation.x < 0
-      B.squash = Math.max(0, B.squash - dt * 6);
-      this.bagMesh.scale.set(1 + B.squash * 0.12, 1 - B.squash * 0.08, 1 + B.squash * 0.12);
+      this.bagSquash = Math.max(0, this.bagSquash - dt * 6);
+      this.bagMesh.scale.set(1 + this.bagSquash * 0.12, 1 - this.bagSquash * 0.08, 1 + this.bagSquash * 0.12);
       // the speed bag idles with a little wobble
       const sb = this.group.userData.speedBag; if (sb) sb.position.x = 4.6 + Math.sin(this.time * 9) * 0.004;
 
-      // ----- the fighter model -----
-      const f = { idx: 0, x: P.x, z: P.z, act: P.act, dmg: { head: 0, body: 0, legs: 0 }, rocked: 0, ground: null, blocking: P.blocking, stam: 100 };
-      const opp = { x: P.x + Math.sin(P.yaw) * 3, z: P.z + Math.cos(P.yaw) * 3 };
-      const S = { phase: 'fight', ground: null, result: null, f: [f, opp] };
-      this.model.inputHint = live ? held : 0;
-      this.model.update(f, S, opp, dt, this.time, R.groundAxis, 30);
+      // ----- the fighter model: the ragdoll's pose, as in a fight -----
+      this.model.inputHint = live ? held & SIM_BITS : 0;
+      if (sim) this.model.update(sim.state.f[0], sim.state, sim.state.f[1], dt, this.time, R.groundAxis, 30);
+      else { // physics still loading: stand at the spawn
+        const f = { idx: 0, x: P.x, z: P.z, act: P.act, dmg: { head: 0, body: 0, legs: 0 }, rocked: 0, ground: null, blocking: false, stam: 100 };
+        const opp = { x: P.x + Math.sin(P.yaw) * 3, z: P.z + Math.cos(P.yaw) * 3 };
+        this.model.update(f, { phase: 'fight', ground: null, result: null, f: [f, opp] }, opp, dt, this.time, R.groundAxis, 30);
+      }
       if (this.coach) {
         const cs = this.coachState; const co = { x: P.x, z: P.z }; // the coach watches you
         this.coach.inputHint = 0; this.coach.update(cs, { phase: 'fight', ground: null, result: null, f: [cs, co] }, co, dt, this.time, R.groundAxis, 18);
@@ -623,18 +639,49 @@
       // ----- camera: third person, behind the fighter -----
       const cam = this.cam;
       if (!cam.init) { cam.yaw = P.yaw; cam.init = true; cam.pos.set(clamp(P.x - Math.sin(P.yaw) * 4.2, -ROOM.hw + 0.35, ROOM.hw - 0.35), 2.5, clamp(P.z - Math.cos(P.yaw) * 4.2, -ROOM.hd + 0.35, ROOM.hd - 0.35)); cam.tgt.set(P.x, 1.0, P.z); }
-      // camera yaw turns only while locked on (swings to look past you at the bag), which keeps free-walk W/A/S/D screen-relative
+      // cam.yaw (the free-walk heading W/A/S/D read) follows the bag while locked, so unlocking leaves the camera behind you
       if (locked) { let d = lockYaw - cam.yaw; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; cam.yaw += d * expo(dt, 7); }
-      const back = locked ? 3.2 : 4.0, up = locked ? 1.8 : 2.2, side = locked ? 1.1 : 0.35; // over the right shoulder
-      let cx = P.x - Math.sin(cam.yaw) * back + Math.cos(cam.yaw) * side, cz = P.z - Math.cos(cam.yaw) * back - Math.sin(cam.yaw) * side;
-      cx = clamp(cx, -ROOM.hw + 0.35, ROOM.hw - 0.35); cz = clamp(cz, -ROOM.hd + 0.35, ROOM.hd - 0.35);
-      cam.pos.x += (cx - cam.pos.x) * expo(dt, 8); cam.pos.z += (cz - cam.pos.z) * expo(dt, 8); cam.pos.y += (up - cam.pos.y) * expo(dt, 3);
-      const tx = (locked ? (P.x + BAG.x) / 2 : P.x) + Math.cos(cam.yaw) * side * 0.5, tz = (locked ? (P.z + BAG.z) / 2 : P.z) - Math.sin(cam.yaw) * side * 0.5;
-      cam.tgt.x += (tx - cam.tgt.x) * expo(dt, 8); cam.tgt.z += (tz - cam.tgt.z) * expo(dt, 8); cam.tgt.y += ((locked ? 1.2 : 1.0) - cam.tgt.y) * expo(dt, 4);
+      if (locked) {
+        // the fight camera (Renderer.update): side-on to you and the bag, centred between you, and it never swaps sides
+        const dx = BAG.x - P.x, dz = BAG.z - P.z, dist = Math.hypot(dx, dz) || 0.001;
+        const mx = (P.x + BAG.x) / 2, mz = (P.z + BAG.z) / 2;
+        let sx = -dz / dist, sz = dx / dist; // the fight's opening side: you on the left, the bag on the right
+        if (!cam.fight) {
+          // a fight has a whole arena to stand back in; here take the other side if a wall is much closer on this one
+          if (this._camReach(mx, mz, sx, sz) < 3.5 && this._camReach(mx, mz, -sx, -sz) > this._camReach(mx, mz, sx, sz) + 0.5) { sx = -sx; sz = -sz; }
+          cam.side.set(sx, 0, sz); cam.fight = true;
+        }
+        if (sx * cam.side.x + sz * cam.side.z < 0) { sx = -sx; sz = -sz; }
+        cam.side.x += (sx - cam.side.x) * expo(dt, 3); cam.side.z += (sz - cam.side.z) * expo(dt, 3); cam.side.normalize();
+        const want = Math.min(clamp(4.4 + dist * 1.1, 4.8, 7.6), this._camReach(mx, mz, cam.side.x, cam.side.z));
+        const height = 2.55 + dist * 0.15;
+        const cx = mx + cam.side.x * want, cz = mz + cam.side.z * want;
+        cam.pos.x += (cx - cam.pos.x) * expo(dt, 4); cam.pos.z += (cz - cam.pos.z) * expo(dt, 4); cam.pos.y += (height - cam.pos.y) * expo(dt, 4);
+        cam.tgt.x += (mx - cam.tgt.x) * expo(dt, 5); cam.tgt.z += (mz - cam.tgt.z) * expo(dt, 5); cam.tgt.y += (0.95 - cam.tgt.y) * expo(dt, 4);
+      } else {
+        cam.fight = false;
+        const back = 4.0, up = 2.2, side = 0.35; // over the right shoulder
+        let cx = P.x - Math.sin(cam.yaw) * back + Math.cos(cam.yaw) * side, cz = P.z - Math.cos(cam.yaw) * back - Math.sin(cam.yaw) * side;
+        cx = clamp(cx, -ROOM.hw + 0.35, ROOM.hw - 0.35); cz = clamp(cz, -ROOM.hd + 0.35, ROOM.hd - 0.35);
+        cam.pos.x += (cx - cam.pos.x) * expo(dt, 8); cam.pos.z += (cz - cam.pos.z) * expo(dt, 8); cam.pos.y += (up - cam.pos.y) * expo(dt, 3);
+        const tx = P.x + Math.cos(cam.yaw) * side * 0.5, tz = P.z - Math.sin(cam.yaw) * side * 0.5;
+        cam.tgt.x += (tx - cam.tgt.x) * expo(dt, 8); cam.tgt.z += (tz - cam.tgt.z) * expo(dt, 8); cam.tgt.y += (1.0 - cam.tgt.y) * expo(dt, 4);
+      }
+      // the fight's lens while locked on, a wider one for walking the room
+      const fov = locked ? FIGHT_FOV : ROOM_FOV;
+      if (Math.abs(R.camera.fov - fov) > 0.01) { R.camera.fov += (fov - R.camera.fov) * expo(dt, 4); R.camera.updateProjectionMatrix(); }
       R.camera.position.copy(cam.pos);
       if (R.shake > 0) { R.camera.position.x += (Math.random() - 0.5) * 0.05 * R.shake; R.camera.position.y += (Math.random() - 0.5) * 0.05 * R.shake; R.shake = Math.max(0, R.shake - dt * 4); }
       R.camera.lookAt(cam.tgt);
       R.renderer.render(this.scene, R.camera);
+    }
+
+    // how far the camera can stand back from (x, z) along (dx, dz) before it meets a wall
+    _camReach(x, z, dx, dz) {
+      const lx = ROOM.hw - 0.35, lz = ROOM.hd - 0.35;
+      const tx = dx > 1e-4 ? (lx - x) / dx : dx < -1e-4 ? (-lx - x) / dx : Infinity;
+      const tz = dz > 1e-4 ? (lz - z) / dz : dz < -1e-4 ? (-lz - z) / dz : Infinity;
+      return Math.max(0, Math.min(tx, tz));
     }
 
     _promptFor(s, C) {
@@ -648,74 +695,33 @@
       return '';
     }
 
-    // ---- striking the bag ----
-    _strikeKey(pressedLimbs, held) {
-      let limb = null;
-      for (const l of LIMBS) if (pressedLimbs & LIMB_BIT[l]) { limb = l; break; }
-      if (!limb) return null;
-      const kind = (this.moveset[modOf(held)] || DEFAULT_MOVESET[modOf(held)])[limb];
-      const key = limb + '_' + kind;
-      return STRIKES[key] ? key : limb + '_' + DEFAULT_MOVESET[modOf(held)][limb];
-    }
-    _startStrike(key, held, chained) {
-      const st = STRIKES[key], C = this.C, P = this.player;
-      let tf = 1.15 - (C.stats.spd || 0.4) * 0.3;
-      if (chained && P.act.type === 'strike') { const prev = STRIKES[P.act.name]; if (prev.limb[0] !== st.limb[0]) tf *= 0.85; }
-      P.act = { type: 'strike', name: key, t: 0, dur: (st.w + st.a + st.r) * tf, tf, hit: false, chained: !!chained };
-      P.blocking = false; P.buf = null; this._tipPrev = null;
-    }
-    // sweep the striking tip against the bag this frame
-    _traceBag(a, dt) {
-      const st = STRIKES[a.name]; if (!st.path) return;
-      const P = this.player;
-      const tip = strikeTip(st, a.t, a.tf, this._tip);          // [fwd, side(left), height]
-      const fwd = tip[0], side = tip[1], h = tip[2];
-      const wx = P.x + Math.sin(P.yaw) * fwd - Math.cos(P.yaw) * side, wz = P.z + Math.cos(P.yaw) * fwd + Math.sin(P.yaw) * side;
-      const prev = this._tipPrev; this._tipPrev = [wx, h, wz];
-      if (a.hit || !prev) return;
-      const w = st.w * a.tf, act = (st.w + st.a) * a.tf;
-      if (a.t < w * 0.8 || a.t > act + 0.05) return;
-      // bag axis under the swing
-      const B = this.bag, px = BAG.x, pz = BAG.z, py = BAG.pivot;
-      const sx = Math.sin(B.tx), sz = Math.sin(B.tz), cy = Math.cos(Math.max(Math.abs(B.tx), Math.abs(B.tz)));
-      // closest approach between the bag (a hanging capsule) and the tip's path since last frame, sampled
-      // along the segment so fast strikes and low frame rates still register
-      let best = 1e9, bestS = 0, hx = wx, hz = wz;
-      for (let k = 0; k <= 4; k++) {
-        const u = k / 4, tx = prev[0] + (wx - prev[0]) * u, ty = prev[1] + (h - prev[1]) * u, tz = prev[2] + (wz - prev[2]) * u;
-        for (let s = py - BAG.top; s <= py - BAG.bot; s += 0.1) {
-          const bx = px + s * sx, by = py - s * cy, bz = pz + s * sz;
-          const d = Math.hypot(tx - bx, ty - by, tz - bz);
-          if (d < best) { best = d; bestS = s; hx = tx; hz = tz; }
-        }
+    // ---- the sim's events: sound, impact flash and the bag readout ----
+    _onEvent(ev) {
+      if (ev.i !== 0) return;
+      const A = this.audio;
+      switch (ev.k) {
+        case 'miss': A.whiff(); return;
+        case 'push': if (ev.ok) A.block(); else A.whiff(); return;
+        case 'block': A.block(); return;
+        case 'hit': break;
+        default: return;
       }
-      if (best > BAG.r + TIP_R[st.tip] + 0.1) return;   // the bag gives a little
-      // contact: how fast was the tip going, and how much of that was into the bag
-      const vx = (wx - prev[0]) / dt, vz = (wz - prev[2]) / dt, vy = (h - prev[1]) / dt;
-      const bx = px + bestS * sx, bz = pz + bestS * sz;
-      let nx = bx - hx, nz = bz - hz; const nl = Math.hypot(nx, nz) || 1; nx /= nl; nz /= nl;
-      const into = Math.max(0, vx * nx + vz * nz) + Math.abs(vy) * 0.55;   // uppercuts and knees come up through the bag
-      const speed = Math.hypot(vx, vy, vz);
-      a.hit = true;
-      if (into < 0.8) { this.audio.block(); return; }   // a brush, not a hit
-      const pow = this.C.stats.pow || 0.4;
-      const kick = st.tip !== 'hand';
-      const force = into * (0.45 + pow * 0.75) * (kick ? 1.25 : 1) * (st.kind === 'knee' ? 0.85 : 1);
-      // impulse on the pendulum: hit low on the bag and it swings more
-      const lever = bestS / (BAG.pivot - (BAG.top + BAG.bot) / 2);
-      B.wx = clamp(B.wx + nx * force * 0.2 * lever, -4, 4); B.wz = clamp(B.wz + nz * force * 0.2 * lever, -4, 4);
-      B.squash = Math.min(1, force / 12);
-      const big = force > 10;
-      this.audio.hit(big, st.part === 'legs' ? 'body' : st.part);
-      // fx + readout
-      const col = big ? 0xff5533 : force > 6 ? 0xffb347 : 0xffe9b0;
+      // a landed shot: dmg is the fight's damage number for it, vn the fist / shin speed into the bag (m/s)
+      const st = STRIKES[ev.name] || null, dmg = ev.dmg || 0, big = !!ev.big;
+      A.hit(big, 'body');
+      this.bagSquash = Math.min(1, dmg / 6);
+      const col = big ? 0xff5533 : dmg >= 2 ? 0xffb347 : 0xffe9b0;
       const geo = new THREE.SphereGeometry(big ? 0.2 : 0.12, 10, 8), mat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.9 });
-      const m = new THREE.Mesh(geo, mat); m.position.set(hx + nx * 0.05, h, hz + nz * 0.05); this.scene.add(m); this.fx.push({ m, t: 0, dur: big ? 0.32 : 0.2 });
+      const m = new THREE.Mesh(geo, mat);
+      if (ev.at) m.position.set(ev.at[0], ev.at[1], ev.at[2]); else m.position.set(BAG.x, 1.3, BAG.z);
+      this.scene.add(m); this.fx.push({ m, t: 0, dur: big ? 0.32 : 0.2 });
       if (big) this.R.shake = Math.min(1, this.R.shake + 0.35);
       const S = this.session;
       S.hits++; S.combo = (this.time - S.lastT < 1.4) ? S.combo + 1 : 1; S.bestCombo = Math.max(S.bestCombo, S.combo); S.lastT = this.time;
-      S.hardest = Math.max(S.hardest, force);
-      S.last = { name: (st.limb[0] === 'l' ? 'Left ' : 'Right ') + KIND_LABEL[st.kind].toLowerCase(), speed, force, label: force > 15 ? 'MONSTER' : big ? 'HEAVY' : force > 6 ? 'SOLID' : 'LIGHT', big };
+      const speed = ev.vn || 0;
+      S.hardest = Math.max(S.hardest, speed);
+      const name = st ? (st.limb[0] === 'l' ? 'Left ' : 'Right ') + KIND_LABEL[st.kind].toLowerCase() : (ev.name || 'Strike');
+      S.last = { name, speed, dmg, label: dmg >= 6 ? 'MONSTER' : big ? 'HEAVY' : dmg >= 2 ? 'SOLID' : 'LIGHT', big };
       S.lastStamp = this.time;
     }
   }

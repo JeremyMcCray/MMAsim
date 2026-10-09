@@ -45,7 +45,7 @@ const server = http.createServer((req, res) => {
   await page.keyboard.down('KeyA'); await page.waitForTimeout(500); await page.keyboard.up('KeyA');
   console.log('after walk', JSON.stringify(await st()));
   // go to the bag and hit it with everything
-  await page.evaluate(() => { const G = window.CageRules.gym; G.player.x = 0.75; G.player.z = 0.45; G.player.face = Math.PI; });
+  await page.evaluate(() => { const G = window.CageRules.gym; G.teleport(0.75, 0.45, Math.PI); });
   await page.waitForTimeout(600);
   // deterministic 60 Hz strikes through the dev hook: every limb, every modifier
   const IN = { LHAND: 16, RHAND: 32, LLEG: 64, RLEG: 128, MOD1: 256, MOD2: 512, MOD3: 1024 };
@@ -53,11 +53,11 @@ const server = http.createServer((req, res) => {
   for (const mod of [0, IN.MOD1, IN.MOD2, IN.MOD3]) for (const limb of [IN.LHAND, IN.RHAND, IN.LLEG, IN.RLEG]) {
     res.push(await page.evaluate(([mod, limb]) => {
       const A = window.CageRules, G = A.gym;
-      G.player.x = 0.75; G.player.z = 0.45; G.player.yaw = G.player.face = Math.PI;
+      G.teleport(0.75, 0.45, Math.PI);
       const before = G.session.hits;
       A.gymTick(1, mod, limb); const name = G.player.act.name; A.gymTick(70, mod, 0);
-      const out = name + ':' + (G.session.hits - before) + (G.session.last ? '@' + G.session.last.force.toFixed(1) : '');
-      G.bag.wx = G.bag.wz = G.bag.tx = G.bag.tz = 0; return out;
+      const out = name + ':' + (G.session.hits - before) + (G.session.last ? '@' + G.session.last.speed.toFixed(1) + 'm/s' : '');
+      if (G.sim) G.sim.phys.fighters[1].teleport(); return out;
     }, [mod, limb]));
   }
   console.log('strike hits', res.join('  '));
@@ -66,7 +66,7 @@ const server = http.createServer((req, res) => {
   await page.keyboard.down('KeyQ'); await page.keyboard.press('KeyI'); await page.waitForTimeout(700); await page.keyboard.press('KeyK'); await page.waitForTimeout(900); await page.keyboard.up('KeyQ');
   await page.keyboard.down('KeyE'); await page.keyboard.press('KeyU'); await page.waitForTimeout(300); await page.keyboard.press('KeyI'); await page.waitForTimeout(700); await page.keyboard.press('KeyK'); await page.waitForTimeout(1000); await page.keyboard.up('KeyE');
   await page.keyboard.down('KeyR'); await page.keyboard.press('KeyI'); await page.waitForTimeout(700); await page.keyboard.press('KeyJ'); await page.waitForTimeout(1000); await page.keyboard.up('KeyR');
-  const bag = await page.evaluate(() => { const G = window.CageRules.gym; return { session: G.session, bag: { tx: G.bag.tx, tz: G.bag.tz }, bagEl: document.querySelector('#gBag').textContent }; });
+  const bag = await page.evaluate(() => { const G = window.CageRules.gym; return { session: G.session, bag: G.sim && G.sim.phys.fighters[1].rotation(), bagEl: document.querySelector('#gBag').textContent }; });
   console.log('bag', JSON.stringify(bag));
   await page.keyboard.press('KeyI'); await page.waitForTimeout(150);
   await shot('02-bag-hit');
@@ -76,7 +76,7 @@ const server = http.createServer((req, res) => {
   // stations
   const stations = [['computer', -5.6, -3.0], ['board', -1.9, -3.9], ['desk', 5.5, 2.6], ['fame', 5.8, -1.2]];
   for (const [id, x, z] of stations) {
-    await page.evaluate(([x, z]) => { const G = window.CageRules.gym; G.player.x = x; G.player.z = z; }, [x, z]);
+    await page.evaluate(([x, z]) => { const G = window.CageRules.gym; G.teleport(x, z); }, [x, z]);
     await page.waitForTimeout(700);
     const s = await st(); console.log(id, 'prompt:', s.prompt, 'hud prompt:', await page.evaluate(() => document.querySelector('#gPrompt').textContent));
     await shot('04-' + id);
@@ -93,7 +93,7 @@ const server = http.createServer((req, res) => {
   }
 
   // accept an offer through the computer panel
-  await page.evaluate(() => { const G = window.CageRules.gym; G.player.x = -5.6; G.player.z = -3.0; });
+  await page.evaluate(() => { const G = window.CageRules.gym; G.teleport(-5.6, -3.0); });
   await page.waitForTimeout(500); await page.keyboard.press('Enter'); await page.waitForTimeout(400);
   const nOffers = await page.evaluate(() => document.querySelectorAll('#tabOffers button[data-offer]').length);
   console.log('offers on screen', nOffers);
@@ -112,16 +112,16 @@ const server = http.createServer((req, res) => {
       Career.save(C);
       G.refresh(C);
     }, lvl);
-    await page.evaluate(() => { const G = window.CageRules.gym; G.player.x = 3.0; G.player.z = 3.4; G.player.face = Math.PI; G.cam.init = false; });
+    await page.evaluate(() => { const G = window.CageRules.gym; G.teleport(3.0, 3.4, Math.PI); G.cam.init = false; });
     await page.waitForTimeout(900);
     await shot('07-' + name + '-a');
-    await page.evaluate(() => { const G = window.CageRules.gym; G.player.x = -3.5; G.player.z = -2.0; G.player.face = Math.PI * 0.8; G.cam.init = false; });
+    await page.evaluate(() => { const G = window.CageRules.gym; G.teleport(-3.5, -2.0, Math.PI * 0.8); G.cam.init = false; });
     await page.waitForTimeout(900);
     await shot('07-' + name + '-b');
     console.log(name, await page.evaluate(() => { const G = window.CageRules.gym; return G.tierName(G.C) + ' total ' + G.totalLevel(G.C) + ' obstacles ' + G.obstacles.length; }));
   }
   // the whole loop: train on the whiteboard until fight week, fight from the computer, come back to the gym
-  await page.evaluate(() => { const G = window.CageRules.gym; G.player.x = -1.9; G.player.z = -3.9; });
+  await page.evaluate(() => { const G = window.CageRules.gym; G.teleport(-1.9, -3.9); });
   await page.waitForTimeout(500); await page.keyboard.press('Enter'); await page.waitForTimeout(400);
   for (let i = 0; i < 12; i++) {
     const ready = await page.evaluate(() => !!document.querySelector('#btnCareerFight'));
@@ -131,7 +131,7 @@ const server = http.createServer((req, res) => {
   console.log('fight ready:', await page.evaluate(() => !!document.querySelector('#btnCareerFight')), 'week', await page.evaluate(() => window.CageRules.gym.C.week));
   await page.click('#btnCareerGym'); await page.waitForTimeout(500);
   await shot('10-fight-week');
-  console.log('prompt at computer:', await page.evaluate(() => { const G = window.CageRules.gym; G.player.x = -5.6; G.player.z = -3.0; return G._promptFor(window.MMAGym.STATIONS[0], G.C); }));
+  console.log('prompt at computer:', await page.evaluate(() => { const G = window.CageRules.gym; G.teleport(-5.6, -3.0); return G._promptFor(window.MMAGym.STATIONS[0], G.C); }));
   await page.waitForTimeout(400); await page.keyboard.press('Enter'); await page.waitForTimeout(400);
   await page.click('#btnCareerFight');
   await page.waitForTimeout(500);

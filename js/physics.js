@@ -468,6 +468,7 @@
       this.ankle = { l: 0, r: 0 }; // current plantar-flexion of each foot collider (rad)
       this.walkPhase = 0;
       this.faceOpponent = true;
+      this.faceYaw = null;      // with faceOpponent off: the heading he turns toward
       this.sleeping = false;
       this.#build(x, z, yaw);
     }
@@ -607,6 +608,13 @@
         while (d > Math.PI) d -= Math.PI * 2;
         while (d < -Math.PI) d += Math.PI * 2;
         const maxTurn = 7 * dt;
+        this.yaw += clamp(d, -maxTurn, maxTurn);
+      } else if (!down && !this.faceOpponent && this.faceYaw != null) {
+        // free facing (the career gym off the bag): turn toward faceYaw, the direction he is walking
+        let d = this.faceYaw - this.yaw;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        const maxTurn = 10 * dt;
         this.yaw += clamp(d, -maxTurn, maxTurn);
       }
       const pose = this.#computePose(dt);
@@ -839,7 +847,7 @@
         pv.lin.x = l.x; pv.lin.y = l.y; pv.lin.z = l.z; pv.ang.x = a.x; pv.ang.y = a.y; pv.ang.z = a.z; pv.pos.x = p.x; pv.pos.y = p.y; pv.pos.z = p.z;
       }
     }
-    #velAt(name, point) {
+    velAt(name, point) {
       const pv = this.preVel[name];
       return vAdd(pv.lin, vCross(pv.ang, vSub(point, pv.pos)));
     }
@@ -867,7 +875,7 @@
           let point;
           if (manifold.numSolverContacts() > 0) { const sp = manifold.solverContactPoint(0); point = V(sp.x, sp.y, sp.z); }
           else point = V(wp.x, wp.y, wp.z);
-            const vRel = vSub(this.#velAt(weapon.seg, point), opp.#velAt(pc.seg, point));
+            const vRel = vSub(this.velAt(weapon.seg, point), opp.velAt(pc.seg, point));
             const vn = vDot(vRel, n), speed = vLen(vRel);
             if (vn < 1.0) return; // touching or pulling away, not a blow
             result = { partName: pc.part, region: REGION[pc.part], seg: pc.seg, n, point, vn, speed, clean: speed > 0.01 ? vn / speed : 0, weapon: wname };
@@ -932,7 +940,79 @@
     }
   }
 
+  // ---------------------------------------------------------------- HeavyBag
+  // The career gym's heavy bag: one dynamic capsule hung from a fixed point by a ball joint. It stands in for
+  // fighter 1 in a World built with opts.bag, so fighter 0's strikes land on it through the same contact test
+  // (Ragdoll.checkHits) as on a person. It answers the parts of the Ragdoll API the sim touches.
+  // cfg: { x, z, r, top, bot, pivot, mass } (metres / kg; top / bot = the bag's ends above the floor). The mass is
+  // heavier than a real bag on purpose: the ragdoll's motor-driven fist keeps pushing through the follow-through,
+  // which a real arm does not, so a 40 kg bag swings 45 degrees off a jab.
+  const BAG_DEFAULT_MASS = 110, BAG_SWING_DAMPING = 3;
+  class HeavyBag {
+    constructor(world, cfg) {
+      this.world = world;
+      this.index = 1;
+      this.cfg = cfg;
+      this.opponent = null;
+      this.yaw = 0;
+      this.move = [0, 0]; this.moveSpeed = 1;
+      this.guard = false; this.guardLow = false; this.override = null; this.ko = false;
+      this.wobble = 0; this.gainTarget = 1; this.strike = null; this.sleeping = false;
+      this.faceOpponent = false; this.faceYaw = null;
+      const mid = (cfg.top + cfg.bot) / 2, halfLen = (cfg.top - cfg.bot) / 2;
+      this.mid = mid;
+      this.anchor = world.createRigidBody(R.RigidBodyDesc.fixed().setTranslation(cfg.x, cfg.pivot, cfg.z));
+      const body = world.createRigidBody(R.RigidBodyDesc.dynamic().setTranslation(cfg.x, mid, cfg.z).setLinearDamping(0.5).setAngularDamping(BAG_SWING_DAMPING).setCcdEnabled(true));
+      const col = world.createCollider(R.ColliderDesc.capsule(Math.max(0.05, halfLen - cfg.r), cfg.r).setMass(cfg.mass || BAG_DEFAULT_MASS).setFriction(0.6).setRestitution(0.05), body);
+      col.setCollisionGroups(groups(GROUP_FIGHTER[1], GROUP_FIGHTER[0]));
+      world.createImpulseJoint(R.JointData.spherical(V(0, 0, 0), V(0, cfg.pivot - mid, 0)), this.anchor, body, true);
+      this.body = body;
+      // every body the sim may read (facing, vitals, the lead-prop blade) is the bag itself
+      this.bodies = { pelvis: body, chest: body, head: body, lForearm: body };
+      this.colliders = { bag: { collider: col, part: 'chest', seg: 'bag' } };
+      this.partColliders = [this.colliders.bag];
+      this.totalMass = cfg.mass || BAG_DEFAULT_MASS;
+      this.preVel = { lin: V(0, 0, 0), ang: V(0, 0, 0), pos: V(0, mid, 0) };
+    }
+    // hang straight and still
+    teleport() {
+      const b = this.body;
+      b.setTranslation(V(this.cfg.x, this.mid, this.cfg.z), true); b.setRotation(Q(0, 0, 0, 1), true);
+      b.setLinvel(V(0, 0, 0), true); b.setAngvel(V(0, 0, 0), true);
+    }
+    setSleeping(on) { this.sleeping = on; this.body.setEnabled(!on); }
+    update() { }
+    recordVelocities() {
+      const b = this.body, l = b.linvel(), a = b.angvel(), p = b.translation(), pv = this.preVel;
+      pv.lin.x = l.x; pv.lin.y = l.y; pv.lin.z = l.z; pv.ang.x = a.x; pv.ang.y = a.y; pv.ang.z = a.z; pv.pos.x = p.x; pv.pos.y = p.y; pv.pos.z = p.z;
+    }
+    velAt(name, point) { const pv = this.preVel; return vAdd(pv.lin, vCross(pv.ang, vSub(point, pv.pos))); }
+    checkHits() { return null; }
+    // a blow drives the bag along the contact normal at the point it landed, so a low shot swings it more
+    takeHit(hit, dmg) {
+      const imp = 4 + Math.min(dmg, DMG_CAP) * 3.2;
+      this.body.applyImpulseAtPoint(V(hit.n.x * imp, hit.n.y * imp * 0.3, hit.n.z * imp), hit.point, true);
+    }
+    shove(dirX, dirZ, amount) { this.body.applyImpulse(V(dirX * amount * this.totalMass * 0.5, 0, dirZ * amount * this.totalMass * 0.5), true); }
+    stagger() { }
+    stun() { }
+    cancelStrike() { }
+    knockOut() { }
+    knockDown() { }
+    getUp() { }
+    isDown() { return false; }
+    riseProgress() { return 1; }
+    position() { return this.body.translation(); }
+    velocity() { return this.body.linvel(); }
+    headPosition() { return this.body.translation(); }
+    rotation() { return this.body.rotation(); }
+    snapshot() { return null; }
+  }
+
   // ---------------------------------------------------------------- World
+  // opts.room = { hw, hd }: a rectangular room (half width along x, half depth along z) walled in place of the cage.
+  // opts.bag = HeavyBag cfg: fighter 1 is a heavy bag instead of a ragdoll.
+  // opts.obstacles = [{ x, z, r }]: fixed upright cylinders (furniture); see setObstacles.
   class World {
     constructor(opts) {
       if (!R) throw new Error('MMAPhys.init(RAPIER) has not been called');
@@ -941,25 +1021,50 @@
       this.world.timestep = PHYS_DT;
       try { this.world.integrationParameters.numSolverIterations = 8; } catch (e) { /* older API */ }
       this.rand = opts.rand || Math.random;
+      const wallGroups = groups(GROUP_WORLD, GROUP_FIGHTER[0] | GROUP_FIGHTER[1]);
       // floor
+      const room = opts.room;
+      const fhx = room ? room.hw + 1 : CAGE_APOTHEM + 4, fhz = room ? room.hd + 1 : CAGE_APOTHEM + 4;
       const ground = this.world.createRigidBody(R.RigidBodyDesc.fixed().setTranslation(0, -0.5, 0));
-      const gc = this.world.createCollider(R.ColliderDesc.cuboid(CAGE_APOTHEM + 4, 0.5, CAGE_APOTHEM + 4).setFriction(0.35), ground);
-      gc.setCollisionGroups(groups(GROUP_WORLD, GROUP_FIGHTER[0] | GROUP_FIGHTER[1]));
-      // octagon fence
-      const sides = 8, sideLen = 2 * CAGE_APOTHEM * Math.tan(Math.PI / sides);
-      for (let i = 0; i < sides; i++) {
-        const a = (i / sides) * Math.PI * 2 + Math.PI / sides;
-        const body = this.world.createRigidBody(R.RigidBodyDesc.fixed().setTranslation(Math.cos(a) * (CAGE_APOTHEM + 0.05), 1.0, Math.sin(a) * (CAGE_APOTHEM + 0.05)).setRotation(qYaw(-a + Math.PI / 2)));
-        const col = this.world.createCollider(R.ColliderDesc.cuboid(sideLen / 2 + 0.1, 1.0, 0.05).setFriction(0.3).setRestitution(0.15), body);
-        col.setCollisionGroups(groups(GROUP_WORLD, GROUP_FIGHTER[0] | GROUP_FIGHTER[1]));
+      const gc = this.world.createCollider(R.ColliderDesc.cuboid(fhx, 0.5, fhz).setFriction(0.35), ground);
+      gc.setCollisionGroups(wallGroups);
+      if (room) {
+        // four walls
+        for (const [x, z, hx, hz] of [[0, -room.hd - 0.1, room.hw + 0.2, 0.1], [0, room.hd + 0.1, room.hw + 0.2, 0.1], [-room.hw - 0.1, 0, 0.1, room.hd + 0.2], [room.hw + 0.1, 0, 0.1, room.hd + 0.2]]) {
+          const body = this.world.createRigidBody(R.RigidBodyDesc.fixed().setTranslation(x, 1.5, z));
+          this.world.createCollider(R.ColliderDesc.cuboid(hx, 1.5, hz).setFriction(0.3).setRestitution(0.1), body).setCollisionGroups(wallGroups);
+        }
+      } else {
+        // octagon fence
+        const sides = 8, sideLen = 2 * CAGE_APOTHEM * Math.tan(Math.PI / sides);
+        for (let i = 0; i < sides; i++) {
+          const a = (i / sides) * Math.PI * 2 + Math.PI / sides;
+          const body = this.world.createRigidBody(R.RigidBodyDesc.fixed().setTranslation(Math.cos(a) * (CAGE_APOTHEM + 0.05), 1.0, Math.sin(a) * (CAGE_APOTHEM + 0.05)).setRotation(qYaw(-a + Math.PI / 2)));
+          const col = this.world.createCollider(R.ColliderDesc.cuboid(sideLen / 2 + 0.1, 1.0, 0.05).setFriction(0.3).setRestitution(0.15), body);
+          col.setCollisionGroups(wallGroups);
+        }
       }
+      this._obstacles = [];
+      if (opts.obstacles) this.setObstacles(opts.obstacles);
       const p = opts.positions || [[-1.3, 0], [1.3, 0]];
       this.fighters = [new Ragdoll(this.world, 0, p[0][0], p[0][1], Math.atan2(p[1][0] - p[0][0], p[1][1] - p[0][1])),
-                       new Ragdoll(this.world, 1, p[1][0], p[1][1], Math.atan2(p[0][0] - p[1][0], p[0][1] - p[1][1]))];
+                       opts.bag ? new HeavyBag(this.world, opts.bag) : new Ragdoll(this.world, 1, p[1][0], p[1][1], Math.atan2(p[0][0] - p[1][0], p[0][1] - p[1][1]))];
       this.fighters[0].opponent = this.fighters[1];
       this.fighters[1].opponent = this.fighters[0];
       this.active = true;
       this.steps = 0;
+    }
+
+    // replace the fixed furniture: [{ x, z, r }] -> upright cylinders the fighters walk into
+    setObstacles(list) {
+      for (const b of this._obstacles) this.world.removeRigidBody(b);
+      this._obstacles = [];
+      const cg = groups(GROUP_WORLD, GROUP_FIGHTER[0] | GROUP_FIGHTER[1]);
+      for (const o of list) {
+        const body = this.world.createRigidBody(R.RigidBodyDesc.fixed().setTranslation(o.x, 1.0, o.z));
+        this.world.createCollider(R.ColliderDesc.cylinder(1.0, o.r).setFriction(0.3), body).setCollisionGroups(cg);
+        this._obstacles.push(body);
+      }
     }
 
     // stand both fighters at their sim positions, facing each other
@@ -1063,6 +1168,6 @@
   const EDGE_MOVES = { straight: EDGE_LUNGE, hook: EDGE_SWEEP, uppercut: EDGE_RISE, overhand: EDGE_CHOP };
   const EDGE_SWING = EDGE_SWEEP;
 
-  root.MMAPhys = { init, ready: () => !!R, World, Ragdoll, STRIKES, EDGE_SWING, EDGE_MOVES, EDGE_GUARD, POSES, SEGS, SEG_ORDER, JOINTS, fk, resolveFrameExport: resolveFrame, impactDamage, PHYS_DT, SUBSTEPS, HOVER_HEIGHT, VMIN, DMG_SCALE, TARGET_R, math: { qMul, qEuler, qRot, qYaw, qSlerp, vAdd } };
+  root.MMAPhys = { init, ready: () => !!R, World, Ragdoll, HeavyBag, STRIKES, EDGE_SWING, EDGE_MOVES, EDGE_GUARD, POSES, SEGS, SEG_ORDER, JOINTS, fk, resolveFrameExport: resolveFrame, impactDamage, PHYS_DT, SUBSTEPS, HOVER_HEIGHT, VMIN, DMG_SCALE, TARGET_R, math: { qMul, qEuler, qRot, qYaw, qSlerp, vAdd } };
   if (typeof module !== 'undefined' && module.exports) module.exports = root.MMAPhys;
 })(typeof window !== 'undefined' ? window : globalThis);

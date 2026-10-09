@@ -444,9 +444,19 @@
       // physics (standing game). Off for guest placeholders / menu demos.
       const PH = root.MMAPhys;
       this.phys = null;
+      // training (the career gym): fighter 1 is a heavy bag (opts.world.bag), the round never ends, nothing is stopped
+      this.training = !!opts.training;
+      if (this.training) {
+        const F = this.state.f;
+        if (opts.spawn) { F[0].x = opts.spawn.x; F[0].z = opts.spawn.z; }
+        const bag = opts.world && opts.world.bag;
+        if (bag) { F[1].x = bag.x; F[1].z = bag.z; }
+        this.state.phase = 'fight';
+        this.state.clock = this.state.roundLen = Infinity;
+      }
       if (opts.physics !== false && PH && PH.ready()) {
         const F = this.state.f;
-        this.phys = new PH.World({ rand: this.rand, positions: [[F[0].x, F[0].z], [F[1].x, F[1].z]] });
+        this.phys = new PH.World(Object.assign({}, opts.world, { rand: this.rand, positions: [[F[0].x, F[0].z], [F[1].x, F[1].z]] }));
         this.state.phys = true;
         // the AI and the stamina economy read ranges / costs from STRIKES: use the physical ones
         if (!STRIKES._physTuned) {
@@ -667,6 +677,12 @@
 
     _checkStoppage() {
       const S = this.state;
+      if (this.training) {
+        // the bag soaks up everything and is fresh again for the next shot
+        const b = S.f[1];
+        b.dmg.head = b.dmg.body = b.dmg.legs = 0; b.rocked = 0; b.wobble = 0; b.stam = b.stamMax = 100;
+        return false;
+      }
       for (const f of S.f) {
         const o = S.f[1 - f.idx];
         let method = null;

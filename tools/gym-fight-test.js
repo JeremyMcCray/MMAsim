@@ -13,7 +13,7 @@ const server = http.createServer((req, res) => { const url = decodeURIComponent(
   await page.evaluate(() => { try { localStorage.removeItem('cr_career'); } catch (_) {} });
   await page.click('#btnCareer'); await page.waitForTimeout(300); await page.fill('#careerName', 'Testy'); await page.click('#btnCareerStart'); await page.waitForTimeout(1000);
   const st = () => page.evaluate(() => { const A = window.CageRules, G = A.gym; return { mode: A.mode, active: !!(G && G.active), hud: !document.querySelector('#gymHud').classList.contains('hidden'), career: !document.querySelector('#career').classList.contains('hidden'), end: !document.querySelector('#end').classList.contains('hidden') }; });
-  const go = async (x, z) => { await page.evaluate(([x, z]) => { const G = window.CageRules.gym; G.player.x = x; G.player.z = z; }, [x, z]); await page.waitForTimeout(400); await page.keyboard.press('Enter'); await page.waitForTimeout(400); };
+  const go = async (x, z) => { await page.evaluate(([x, z]) => { const G = window.CageRules.gym; G.teleport(x, z); }, [x, z]); await page.waitForTimeout(400); await page.keyboard.press('Enter'); await page.waitForTimeout(400); };
   await go(-5.6, -3.0); await page.click('#tabOffers button[data-offer]'); await page.waitForTimeout(200); await page.click('#btnCareerGym'); await page.waitForTimeout(300);
   await go(-1.9, -3.9);
   for (let i = 0; i < 12; i++) { if (await page.evaluate(() => !!document.querySelector('#btnCareerFight'))) break; await page.click('#tabCamp .train'); await page.waitForTimeout(120); }
