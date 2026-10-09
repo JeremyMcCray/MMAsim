@@ -471,7 +471,7 @@
       this.gainMult = 1;
       this.staggerT = 0;
       this.stunT = 0;
-      this.dashT = 0; this.dashDur = 1; this.dashSpeed = 0; // lunge: a burst of speed along his facing (+ in, - out)
+      this.dashT = 0; this.dashDur = 1; this.dashSpeed = 0; this.dashSide = 0; // lunge: a burst of speed along his facing (+ in, - out) and to his right (+) / left (-)
       this.wobble = 0;          // rocked wobble intensity
       this.strike = null;       // { def, t, tf, speedMult, hit, glanced }
       this.ankle = { l: 0, r: 0 }; // current plantar-flexion of each foot collider (rad)
@@ -577,7 +577,7 @@
     cancelStrike() { this.strike = null; }
     stagger(sec) { this.staggerT = Math.max(this.staggerT, sec); }
     stun(sec) { this.stunT = Math.max(this.stunT, sec); }
-    dash(speed, dur) { this.dashSpeed = speed; this.dashT = this.dashDur = dur; }
+    dash(speed, dur, side = 0) { this.dashSpeed = speed; this.dashSide = side; this.dashT = this.dashDur = dur; }
 
     position() { return this.bodies.pelvis.translation(); }
     velocity() { return this.bodies.pelvis.linvel(); }
@@ -829,8 +829,9 @@
           vdx += -lx * c + lz * s; vdz += lx * s + lz * c;
           if (this.dashT > 0) {
             // full burst for the first part of the lunge, then it tapers off into his normal step
-            const k = Math.min(1, this.dashT / (this.dashDur * 0.45)) * this.dashSpeed;
-            vdx += k * s; vdz += k * c;
+            const k = Math.min(1, this.dashT / (this.dashDur * 0.45));
+            const dz = k * this.dashSpeed, dx = k * this.dashSide;
+            vdx += -dx * c + dz * s; vdz += dx * s + dz * c;
           }
         } else if (this.override === 'SHOOT') {
           const c = Math.cos(this.yaw), s = Math.sin(this.yaw);

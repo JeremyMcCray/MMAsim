@@ -328,7 +328,7 @@
       ownEdge: false,
       ownPocket: false,
       blockTap: -9,       // sim time of the last BLOCK press (double tap = push)
-      fwdTap: -9, backTap: -9, // sim time of the last FWD / BACK press (double tap = lunge in / out)
+      dirTap: -9, dirTapBit: 0, // sim time and key of the last direction press (the same key twice = lunge that way)
       lungeReady: -9,     // sim time the next lunge may start
       kickReady: -9,      // sim time the kicking foot is back on the mat: no kick can start before it
       restT: 0,           // seconds since he last blocked or threw: stamina regen ramps up the longer this runs
@@ -365,6 +365,8 @@
   const PHYS_PUSH = 0.9; // teep shove (impulse per kg) in the physics model
   const BUFFER_T = 0.3; // seconds a buffered strike press stays valid
   const BODY_TOUGHNESS = 0.5; // body damage bar fills this much per point of damage (the stamina drain still uses the full hit)
+  const LEG_TOUGHNESS = 1 / 1.3; // legs take 30% more punishment before the bar fills
+  const PART_TOUGHNESS = { body: BODY_TOUGHNESS, legs: LEG_TOUGHNESS };
   // Sword in the lead (forward) hand. This direction is "forward and up" in the orthodox guard,
   // so the blade rests pointing at the other fighter. The swing carries that blade across him.
   const EDGE_DIR = [-0.091, -0.597, -0.797];
@@ -382,11 +384,12 @@
   const PUSH_SHOVE = 2.8;   // impulse per kg given to the opponent (cf. PHYS_PUSH for a teep)
   const PUSH_DUR = 0.38;    // seconds the pusher is committed
   const PUSH_STUN_DIST = PUSH_DIST * 0.5; // stumble / stagger applies only inside this range; beyond it the push just shoves
-  // lunge: FWD or BACK tapped twice quickly bursts in or out to close / make distance
+  // lunge: a direction key tapped twice quickly bursts that way to close / make distance or angle off
   const LUNGE_TAP_T = 0.28;  // the second tap has to come within this many seconds of the first
   const LUNGE_DUR = 0.32;    // seconds the burst lasts (it tapers off over the back half)
   const LUNGE_IN = 3.2;      // extra speed (m/s) on top of his step, lunging in
   const LUNGE_OUT = 2.7;     // ... and backing out
+  const LUNGE_SIDE = 2.9;    // ... and angling off to either side
   const LUNGE_COST = 4;      // stamina
   const LUNGE_CD = 0.55;     // seconds from one lunge to the next
   // stamina economy
@@ -741,10 +744,13 @@
         // BLOCK tapped twice quickly = push (the taps are remembered even mid-strike, the push waits until he is free)
         let push = false;
         if (pressed & IN.BLOCK) { push = S.t - f.blockTap <= PUSH_TAP_T; f.blockTap = push ? -9 : S.t; }
-        // FWD / BACK tapped twice quickly = lunge in / out
+        // a direction key tapped twice quickly = lunge that way (in / out / left / right)
         let lunge = 0;
-        if (pressed & IN.FWD) { if (S.t - f.fwdTap <= LUNGE_TAP_T) { lunge = 1; f.fwdTap = -9; } else f.fwdTap = S.t; f.backTap = -9; }
-        if (pressed & IN.BACK) { if (S.t - f.backTap <= LUNGE_TAP_T) { lunge = -1; f.backTap = -9; } else f.backTap = S.t; f.fwdTap = -9; }
+        for (const bit of [IN.FWD, IN.BACK, IN.LEFT, IN.RIGHT]) {
+          if (!(pressed & bit)) continue;
+          if (f.dirTapBit === bit && S.t - f.dirTap <= LUNGE_TAP_T) { lunge = bit; f.dirTap = -9; f.dirTapBit = 0; }
+          else { f.dirTap = S.t; f.dirTapBit = bit; }
+        }
         const rag = this.phys.fighters[i];
         rag.move[0] = 0; rag.move[1] = 0;
 
@@ -767,7 +773,10 @@
           if (lunge && S.t >= f.lungeReady && f.stam > LUNGE_COST && f.rocked <= 0) {
             f.stam -= LUNGE_COST; f.restT = 0; f.lungeReady = S.t + LUNGE_CD;
             const legs = 1 - f.dmg.legs / 140;
-            rag.dash((lunge > 0 ? LUNGE_IN : -LUNGE_OUT) * (0.85 + f.stats.spd * 0.3) * legs, LUNGE_DUR);
+            const k = (0.85 + f.stats.spd * 0.3) * legs;
+            const fwd = lunge === IN.FWD ? LUNGE_IN : lunge === IN.BACK ? -LUNGE_OUT : 0;
+            const side = lunge === IN.RIGHT ? LUNGE_SIDE : lunge === IN.LEFT ? -LUNGE_SIDE : 0;
+            rag.dash(fwd * k, LUNGE_DUR, side * k);
           }
         }
 
@@ -1214,7 +1223,7 @@
       if (kickCancel) dmg *= KICK_CANCEL_BONUS;
       const at = [Math.round(h.point.x * 100) / 100, Math.round(h.point.y * 100) / 100, Math.round(h.point.z * 100) / 100];
       const fwd = this._frame(f, o);
-      o.dmg[part] = clamp(o.dmg[part] + dmg * (part === 'body' ? BODY_TOUGHNESS : 1), 0, 100);
+      o.dmg[part] = clamp(o.dmg[part] + dmg * (PART_TOUGHNESS[part] || 1), 0, 100);
       f.rs.landed++;
       f.rs.sig += dmg;
       rag.takeHit(h, dmg, res.blocked);
@@ -1409,7 +1418,7 @@
       if (f.rocked > 0) dmg *= 0.7;
       let blocked = false;
       if (this.inputs[o.idx].held & IN.BLOCK) { blocked = true; dmg *= 0.3; o.stam = Math.min(o.stamMax, o.stam + GROUND_BLOCK_REWARD); }
-      o.dmg[st.part] = clamp(o.dmg[st.part] + dmg * (st.part === 'body' ? BODY_TOUGHNESS : 1), 0, 100);
+      o.dmg[st.part] = clamp(o.dmg[st.part] + dmg * (PART_TOUGHNESS[st.part] || 1), 0, 100);
       f.rs.landed++; f.rs.sig += dmg;
       if (blocked) { this._emit({ k: 'block', i: f.idx, j: o.idx, name: st.name, part: st.part }); return; }
       this._cleanRefund(f, f.act);
