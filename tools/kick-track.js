@@ -1,5 +1,5 @@
 // Per-tick trace of one kick in the live sim: where the kicking knee and foot actually are (fighter frame: hips at
-// the origin, +Z toward the opponent, +X the kicker's right, metres), where the kneecap and the toes point, and
+// the origin, +Z toward the opponent, +X the kicker's left, metres), where the kneecap and the toes point, and
 // where the two gloves are, so the authored keyframes can be checked against what the motors deliver.
 //   node tools/kick-track.js [strike=hkick]
 const { chromium } = require('playwright');

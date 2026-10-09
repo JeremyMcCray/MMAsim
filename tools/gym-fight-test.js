@@ -33,7 +33,7 @@ const server = http.createServer((req, res) => { const url = decodeURIComponent(
   let ph = '';
   for (let k = 0; k < 140 && ph !== 'over'; k++) { ph = await page.evaluate(() => { window.CageRules.tick(300); return window.CageRules.state.phase; }); }
   console.log('phase', ph, 'result', await page.evaluate(() => JSON.stringify(window.CageRules.state.result)));
-  await page.waitForTimeout(4500);
+  await page.waitForSelector('#end:not(.hidden)', { timeout: 20000 }); // shown after the result ceremony (MMARender.ceremonyEnd, ~6-8 s), not a fixed delay
   console.log('end screen:', JSON.stringify(await st()), await page.evaluate(() => document.querySelector('#endDetail').textContent), '|', await page.evaluate(() => document.querySelector('#btnRematch').textContent));
   await page.evaluate(() => document.querySelector('#btnRematch').click()); await page.waitForTimeout(1500);
   console.log('after fight:', JSON.stringify(await st()), 'banner:', await page.evaluate(() => document.querySelector('#gResult').textContent.slice(0, 90)), 'frames:', await page.evaluate(() => window.CageRules.gym.frames.filter(f => f.f.visible).length));

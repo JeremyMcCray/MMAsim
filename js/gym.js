@@ -122,6 +122,20 @@
     MATS.foam = M(0x3b3b42, { roughness: 0.95 });
     return MATS;
   }
+  // free a built room: its geometries, the materials made for it (not the shared MATS) with their canvas textures,
+  // and the lights' shadow maps. three holds all of that on the GPU until dispose(); dropping the group isn't enough.
+  function disposeRoom(g) {
+    const shared = new Set(Object.values(MATS));
+    g.traverse((o) => {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) for (const m of [].concat(o.material)) {
+        if (shared.has(m)) continue;
+        for (const k in m) if (m[k] && m[k].isTexture) m[k].dispose();
+        m.dispose();
+      }
+      if (o.isLight && o.shadow) o.shadow.dispose();
+    });
+  }
 
   // ---------- the facilities, as furniture. level 0 = nothing (or the cheapest version) ----------
   // Each adds meshes to g and pushes collision circles {x,z,r} onto obs.
@@ -321,11 +335,11 @@
     leave() {
       if (!this.active) return;
       this.active = false; this.paused = false;
-      if (this.group) { this.scene.remove(this.group); this.group = null; }
+      if (this.group) { this.scene.remove(this.group); disposeRoom(this.group); this.group = null; }
       if (this.sim) { this.sim.destroy(); this.sim = null; }
       if (this.model) { this.model.dispose(); this.model = null; }
       if (this.coach) { this.coach.dispose(); this.coach = null; }
-      for (const e of this.fx) this.scene.remove(e.m);
+      for (const e of this.fx) { this.scene.remove(e.m); e.m.geometry.dispose(); e.m.material.dispose(); }
       this.fx = [];
       this.sig = null;
       if (this._saved) { this.scene.fog = this._saved.fog; this.scene.background = this._saved.bg; this.R.camera.fov = this._saved.fov; this.R.camera.updateProjectionMatrix(); }
@@ -344,6 +358,11 @@
       this.model.setColors(C.color, C.skin);
       this.redrawScreens(C);
     }
+    // the options panel changed the strike mapping: apply it to the live sim right away
+    setMoveset(moveset) {
+      this.moveset = moveset || DEFAULT_MOVESET;
+      if (this.sim) this.sim.state.f[0].moveset = root.MMASim.normalizeMoveset(this.moveset);
+    }
 
     totalLevel(C) { return Career.FACILITIES.reduce((a, f) => a + (C.gym[f.id] || 0), 0); }
     tierOf(C) { const t = this.totalLevel(C); return t <= 2 ? 0 : t <= 9 ? 1 : t <= 23 ? 2 : 3; }
@@ -351,7 +370,7 @@
 
     // ---- build the room from the save ----
     build(C) {
-      if (this.group) this.scene.remove(this.group);
+      if (this.group) { this.scene.remove(this.group); disposeRoom(this.group); }
       if (this.coach) { this.coach.dispose(); this.coach = null; }
       const m = mats();
       const g = new THREE.Group(); this.group = g; this.obstacles = [];
@@ -667,7 +686,7 @@
         cam.tgt.x += (mx - cam.tgt.x) * expo(dt, 5); cam.tgt.z += (mz - cam.tgt.z) * expo(dt, 5); cam.tgt.y += (0.95 - cam.tgt.y) * expo(dt, 4);
       } else {
         cam.fight = false;
-        const back = 4.0, up = 2.2, side = 0.35; // over the right shoulder
+        const back = 4.0, up = 2.2, side = -0.35; // over the right shoulder ((cos yaw, -sin yaw) is his left)
         let cx = P.x - Math.sin(cam.yaw) * back + Math.cos(cam.yaw) * side, cz = P.z - Math.cos(cam.yaw) * back - Math.sin(cam.yaw) * side;
         cx = clamp(cx, -ROOM.hw + 0.35, ROOM.hw - 0.35); cz = clamp(cz, -ROOM.hd + 0.35, ROOM.hd - 0.35);
         cam.pos.x += (cx - cam.pos.x) * expo(dt, 8); cam.pos.z += (cz - cam.pos.z) * expo(dt, 8); cam.pos.y += (up - cam.pos.y) * expo(dt, 3);

@@ -5,8 +5,6 @@
 (function (root) {
   'use strict';
   const TAU = Math.PI * 2;
-  const MIN_DB = -36;
-  const MAX_DB = -8;
   const STORAGE_KEY = 'cr_bg';
   const STORAGE_VER = 'cr_bg_ver';
   const MUSIC_KEY = 'cr_bg_fx';
@@ -16,9 +14,6 @@
 
   const CIRCUIT = 'circuit';
   const WARP = 'warp';
-  const ORBIT = 'orbit';
-  const SHOCKWAVE = 'shockwave';
-  const CONSTELLATION = 'constellation';
 
   // Resting void colors. Accents (bass / mids / highs) are derived in paletteFrom.
   // 'legacy' (the default) hides the canvas and shows the flat LEGACY_COLOR.
@@ -57,11 +52,6 @@
   function wrap(v, m) {
     if (!(m > 0)) return 0;
     return ((v % m) + m) % m;
-  }
-  function limit(vx, vy, max) {
-    const l = Math.hypot(vx, vy);
-    if (l > max && l > 0) { const s = max / l; return [vx * s, vy * s]; }
-    return [vx, vy];
   }
   function inside(x, y, w, h, pad) {
     return x >= -pad && y >= -pad && x <= w + pad && y <= h + pad;
@@ -188,7 +178,7 @@
   }
 
   function makeParticle() {
-    return { x: 0, y: 0, vx: 0, vy: 0, hx: 0, hy: 0, life: 0, maxLife: 0, size: 2, band: 0, phase: 0 };
+    return { x: 0, y: 0, vx: 0, vy: 0, life: 0, size: 2, band: 0 };
   }
 
   class MusicBackground {
@@ -203,16 +193,12 @@
       }
       this.ctx = this.canvas.getContext('2d', { alpha: false });
       this.bandCount = 8;
-      this.minHz = 40;
-      this.maxHz = 14000;
       this.intensity = 1;
       this.attack = 10;
       this.release = 4;
       this.particleCount = 260;
       this.bands = new Float32Array(this.bandCount);
-      this._edges = new Float32Array(this.bandCount + 1);
       this.particles = [];
-      this.shockRings = [];
       this.sparks = [];
       this.particlesOn = loadParticles();
       this.impactOn = loadImpact();
@@ -385,19 +371,6 @@
       this.flux = 0;
     }
 
-    _bandRaw(db, binHz, lo, hi) {
-      if (!(binHz > 0) || !db || !db.length) return 0;
-      let i0 = Math.floor(lo / binHz);
-      let i1 = Math.ceil(hi / binHz);
-      if (i0 < 0) i0 = 0;
-      if (i1 >= db.length) i1 = db.length - 1;
-      if (i1 < i0) return 0;
-      let max = -Infinity;
-      for (let i = i0; i <= i1; i++) if (db[i] > max) max = db[i];
-      if (max === -Infinity) return 0;
-      return clamp((max - MIN_DB) / (MAX_DB - MIN_DB), 0, 1);
-    }
-
     _slice(fromT, toT) {
       const n = this.bandCount;
       if (!n) return 0;
@@ -413,7 +386,6 @@
       const next = track === 'fight' ? WARP : CIRCUIT;
       if (next !== this.active) {
         this.active = next;
-        this.shockRings.length = 0;
         this._rebuild();
       }
     }
@@ -421,10 +393,6 @@
     _move(dt) {
       if (this.particles.length !== this.particleCount) this._rebuild();
       if (this.active === CIRCUIT) this._stepCircuit(dt);
-      else if (this.active === WARP) this._stepWarp(dt);
-      else if (this.active === ORBIT) this._stepOrbit(dt);
-      else if (this.active === SHOCKWAVE) this._stepShock(dt);
-      else if (this.active === CONSTELLATION) this._stepConstellation(dt);
       else this._stepWarp(dt);
     }
 
@@ -480,79 +448,6 @@
       }
     }
 
-    _stepOrbit(dt) {
-      const cx = this.w * 0.5, cy = this.h * 0.48;
-      const breathe = 1 + this.bass * 0.55 + this.flux * 0.35;
-      const spin = 0.35 + this.mid * 1.8;
-      const hi = this.bandCount * 0.7;
-      for (let i = 0; i < this.particles.length; i++) {
-        const p = this.particles[i];
-        const band = this.bands[p.band] || 0;
-        p.phase += (spin + band * 3.4) * p.vx * dt;
-        if (p.band >= hi) p.phase -= this.high * 5 * dt;
-        const radius = p.hx * breathe;
-        p.x = cx + Math.cos(p.phase) * radius;
-        p.y = cy + Math.sin(p.phase) * 0.62 * radius;
-        p.size = p.hy * (0.75 + band * 1.4);
-      }
-    }
-
-    _stepShock(dt) {
-      const cx = this.w * 0.5, cy = this.h * 0.5;
-      if (this.flux > 0.12 && this.shockRings.length < 16) {
-        this.shockRings.push({ x: cx, y: cy, r: 0 });
-        for (let i = 0; i < this.particles.length; i++) {
-          const p = this.particles[i];
-          if (Math.random() < 0.22 + this.flux) {
-            const ang = Math.random() * TAU;
-            const sp = 180 + this.flux * 900;
-            p.vx = Math.cos(ang) * sp;
-            p.vy = Math.sin(ang) * sp;
-            p.life = 0.45 + this.flux;
-            p.x = cx; p.y = cy;
-          }
-        }
-      }
-      const grow = (220 + this.bass * 480) * dt;
-      const limitR = Math.max(this.w, this.h);
-      for (let i = 0; i < this.shockRings.length;) {
-        this.shockRings[i].r += grow;
-        if (this.shockRings[i].r > limitR) this.shockRings.splice(i, 1);
-        else i++;
-      }
-      const driftX = this.mid * 80 - this.low * 40;
-      const driftY = this.high * 90 - this.bass * 30;
-      for (let i = 0; i < this.particles.length; i++) {
-        const p = this.particles[i];
-        p.life -= dt;
-        if (p.life <= 0) { this._respawnDrift(p); continue; }
-        p.vx += driftX * dt;
-        p.vy += driftY * dt;
-        const lim = limit(p.vx, p.vy, 420);
-        p.vx = lim[0]; p.vy = lim[1];
-        p.x += p.vx * dt;
-        p.y += p.vy * dt;
-        if (!inside(p.x, p.y, this.w, this.h, 20)) this._respawnDrift(p);
-      }
-    }
-
-    _stepConstellation(dt) {
-      const cx = this.w * 0.5, cy = this.h * 0.5;
-      const shearX = this.mid * 28 - this.low * 10;
-      const shearY = this.high * 22 - this.bass * 8;
-      const k = 1 - Math.exp(-6 * dt);
-      const punch = this.bass * 0.18 + this.flux * 0.12;
-      for (let i = 0; i < this.particles.length; i++) {
-        const p = this.particles[i];
-        const x = p.hx + (p.hx - cx) * punch + shearX;
-        let y = p.hy + (p.hy - cy) * punch + shearY;
-        y += Math.sin(this.time * 2.4 + p.phase) * (3 + this.high * 10);
-        p.x += (x - p.x) * k;
-        p.y += (y - p.y) * k;
-        p.size = 1.6 + (this.bands[p.band] || 0) * 3.4 + this.high * 1.2;
-      }
-    }
-
     _stepImpacts(dt) {
       for (let i = this.sparks.length - 1; i >= 0; i--) {
         const s = this.sparks[i];
@@ -580,9 +475,6 @@
       this._drawImpacts();
       if (!this.particlesOn || drive <= 0.08) return;
       ctx.lineCap = 'round';
-      if (this.active === SHOCKWAVE) this._drawShock();
-      else if (this.active === CONSTELLATION) this._drawLinks();
-      else if (this.active === ORBIT) this._drawOrbit();
       for (let i = 0; i < this.particles.length; i++) this._drawParticle(this.particles[i], boost);
     }
 
@@ -622,23 +514,19 @@
       const energy = this._particleEnergy(p);
       if (energy < 0.08) return;
       this._colorInto(this._c0, p.band, energy);
-      let alpha = (energy * 0.85 + this.flux * 0.15) * this.intensity * boost;
-      if (this.active === CONSTELLATION) alpha = energy * 0.7 + this.high * 0.2;
-      alpha = clamp(alpha, 0, 0.95);
+      const alpha = clamp((energy * 0.85 + this.flux * 0.15) * this.intensity * boost, 0, 0.95);
       const radius = p.size * (1.05 + energy * 1.7) * this.intensity;
       const ctx = this.ctx;
-      if (this.active === CIRCUIT || this.active === WARP) {
-        const sp = Math.hypot(p.vx, p.vy);
-        if (sp > 0.01) {
-          const len = 10 + energy * 34 + this.bass * 16;
-          const inv = len / sp;
-          ctx.strokeStyle = css(this._c0, alpha * 0.45);
-          ctx.lineWidth = Math.max(radius * 0.7, 1);
-          ctx.beginPath();
-          ctx.moveTo(p.x - p.vx * inv, p.y - p.vy * inv);
-          ctx.lineTo(p.x, p.y);
-          ctx.stroke();
-        }
+      const sp = Math.hypot(p.vx, p.vy);
+      if (sp > 0.01) {
+        const len = 10 + energy * 34 + this.bass * 16;
+        const inv = len / sp;
+        ctx.strokeStyle = css(this._c0, alpha * 0.45);
+        ctx.lineWidth = Math.max(radius * 0.7, 1);
+        ctx.beginPath();
+        ctx.moveTo(p.x - p.vx * inv, p.y - p.vy * inv);
+        ctx.lineTo(p.x, p.y);
+        ctx.stroke();
       }
       ctx.fillStyle = css(this._c0, alpha);
       ctx.beginPath();
@@ -651,62 +539,6 @@
         ctx.beginPath();
         ctx.arc(p.x, p.y, Math.max(radius * 0.38, 0.3), 0, TAU);
         ctx.fill();
-      }
-    }
-
-    _drawLinks() {
-      const n = Math.min(this.particles.length, 56);
-      const reach = 90 + this.mid * 70;
-      lerpInto(this._c0, this.palette.neon, this.palette.gold, this.mid);
-      const ctx = this.ctx;
-      ctx.strokeStyle = css(this._c0, (0.08 + this.mid * 0.35 + this.bass * 0.12) * this.intensity);
-      ctx.lineWidth = 1 + this.bass * 1.6;
-      ctx.beginPath();
-      for (let a = 0; a < n; a++) {
-        const pa = this.particles[a];
-        let best = -1, bestD = reach;
-        for (let b = a + 1; b < n; b++) {
-          const pb = this.particles[b];
-          const d = Math.hypot(pa.x - pb.x, pa.y - pb.y);
-          if (d < bestD) { bestD = d; best = b; }
-        }
-        if (best >= 0) {
-          const pb = this.particles[best];
-          ctx.moveTo(pa.x, pa.y);
-          ctx.lineTo(pb.x, pb.y);
-        }
-      }
-      ctx.stroke();
-    }
-
-    _drawShock() {
-      const maxR = Math.max(this.w, 1);
-      const ctx = this.ctx;
-      for (let i = 0; i < this.shockRings.length; i++) {
-        const ring = this.shockRings[i];
-        const t = 1 - ring.r / maxR;
-        lerpInto(this._c0, this.palette.neon, this.palette.gold, 1 - t);
-        ctx.strokeStyle = css(this._c0, 0.22 * t * this.intensity);
-        ctx.lineWidth = 2 + this.bass * 3;
-        ctx.beginPath();
-        ctx.arc(ring.x, ring.y, Math.max(ring.r, 0.5), 0, TAU);
-        ctx.stroke();
-      }
-    }
-
-    _drawOrbit() {
-      const cx = this.w * 0.5, cy = this.h * 0.48;
-      const breathe = 1 + this.bass * 0.55;
-      const n = Math.min(this.bandCount, 6);
-      const ctx = this.ctx;
-      ctx.lineWidth = 1;
-      for (let i = 0; i < n; i++) {
-        const energy = this.bands[i] || 0;
-        this._colorInto(this._c0, i, energy);
-        ctx.strokeStyle = css(this._c0, (0.04 + energy * 0.16) * this.intensity);
-        ctx.beginPath();
-        ctx.arc(cx, cy, (40 + i * 38) * breathe, 0, TAU);
-        ctx.stroke();
       }
     }
 
@@ -730,11 +562,6 @@
     _rebuildBands() {
       this.bandCount = Math.max(2, this.bandCount | 0);
       this.bands = new Float32Array(this.bandCount);
-      this._edges = new Float32Array(this.bandCount + 1);
-      const lo = Math.max(this.minHz, 1);
-      const hi = Math.max(this.maxHz, lo + 1);
-      const ratio = hi / lo;
-      for (let i = 0; i <= this.bandCount; i++) this._edges[i] = lo * Math.pow(ratio, i / this.bandCount);
     }
 
     _rebuild() {
@@ -746,15 +573,8 @@
       for (let i = 0; i < n; i++) {
         const p = list[i];
         p.band = i % this.bandCount;
-        p.phase = Math.random() * TAU;
-        p.size = rand(1.4, 3.2);
-        p.maxLife = rand(1.6, 4.5);
-        p.life = Math.random() * p.maxLife;
         if (this.active === CIRCUIT) this._respawnCircuit(p);
-        else if (this.active === WARP) this._respawnWarp(p, centerX, centerY);
-        else if (this.active === ORBIT) this._respawnOrbit(p);
-        else if (this.active === CONSTELLATION) this._respawnConstellation(p, i);
-        else this._respawnDrift(p);
+        else this._respawnWarp(p, centerX, centerY);
       }
     }
 
@@ -780,37 +600,6 @@
       p.vy = Math.sin(ang) * sp;
       p.life = rand(2.6, 6.2);
       p.size = rand(2.6, 5.0);
-    }
-
-    _respawnOrbit(p) {
-      p.hx = 40 + p.band * 38 + rand(-8, 8);
-      p.hy = rand(1.4, 2.8);
-      p.vx = p.band % 2 === 0 ? 1 : -1;
-      p.vy = 0;
-      p.phase = Math.random() * TAU;
-      p.life = 999;
-    }
-
-    _respawnDrift(p) {
-      p.x = Math.random() * this.w;
-      p.y = Math.random() * this.h;
-      p.vx = rand(-30, 30);
-      p.vy = rand(-24, 24);
-      p.life = rand(1.8, 4);
-      p.size = rand(1.3, 2.8);
-    }
-
-    _respawnConstellation(p, index) {
-      const cols = Math.max(Math.ceil(Math.sqrt(this.particleCount)), 2);
-      const rows = Math.max(Math.ceil(this.particleCount / cols), 1);
-      const col = index % cols;
-      const row = Math.floor(index / cols);
-      const cellX = this.w / cols, cellY = this.h / rows;
-      p.hx = (col + 0.5) * cellX + rand(-10, 10);
-      p.hy = (row + 0.5) * cellY + rand(-8, 8);
-      p.x = p.hx; p.y = p.hy;
-      p.life = 999;
-      p.size = rand(1.6, 2.6);
     }
   }
 

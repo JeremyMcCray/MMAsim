@@ -58,9 +58,10 @@
     } catch (_) {}
     rebuildKeyMap();
   }
+  function syncGymMoveset() { if (App.gym && App.gym.active) App.gym.setMoveset(Controls.moveset); }
   function saveControls() {
     try { localStorage.setItem('cr_binds', JSON.stringify(Controls.binds)); localStorage.setItem('cr_moveset', JSON.stringify(Controls.moveset)); } catch (_) {}
-    rebuildKeyMap();
+    rebuildKeyMap(); syncGymMoveset();
   }
   function rebuildKeyMap() {
     Controls.keyMap = {};
@@ -79,6 +80,8 @@
 
   // practice (you vs CPU), watch (CPU vs CPU) and career run the sim locally with no network
   const isLocal = () => App.mode === 'practice' || App.mode === 'watch' || App.mode === 'career';
+  // a roster key that arrived over the network (an own key: '__proto__' or 'toString' must not pass)
+  const isFighter = (k) => typeof k === 'string' && Object.prototype.hasOwnProperty.call(ROSTER, k);
 
   function fighterSelect(id, sel, random) {
     return '<select id="' + id + '">' + (random ? '<option value="random"' + (sel === 'random' ? ' selected' : '') + '>Random</option>' : '') +
@@ -188,6 +191,7 @@
   }
 
   function startHost() {
+    if (App.net) App.net.destroy(); // a join still connecting must not keep running behind the new room
     App.net = new Net({
       onReady: (code) => { $('#codeLbl').textContent = code; refreshLobby(); },
       onConnect: () => { toast('Opponent connected!'); App.lobby.names[0] = myName(); sendPick(); refreshLobby(); },
@@ -200,13 +204,15 @@
     $('#codeLbl').textContent = '…';
   }
   function startJoin(code) {
-    App.net = new Net({
-      onConnect: () => { toast('Connected to room ' + App.net.code); enterLobby('guest'); App.lobby.names[1] = myName(); sendPick(); },
+    if (App.net) App.net.destroy();
+    const net = App.net = new Net({
+      onConnect: () => { toast('Connected to room ' + net.code); enterLobby('guest'); App.lobby.names[1] = myName(); sendPick(); },
       onData: onGuestData,
       onClose: () => { onOpponentLeft(); },
-      onError: (m) => { toast(m, 6000); if (!App.net.connected) { App.net.destroy(); App.net = null; } }
+      // a failed join drops its own Net — never a newer one that took App.net since
+      onError: (m) => { toast(m, 6000); if (App.net === net && !net.connected) { net.destroy(); App.net = null; } }
     });
-    App.net.join(code);
+    net.join(code);
     toast('Connecting to ' + code + '…', 8000);
   }
   function onOpponentLeft() {
@@ -215,19 +221,25 @@
     App.mode = null; screen('menu');
   }
 
+  // Everything below arrives from the other player's machine, which may not be running this code: fields are
+  // type-checked and rebuilt before use, and whatever reaches innerHTML later is escaped there.
   function onHostData(d) {
     switch (d.t) {
       case 'pick':
-        App.lobby.picks[1] = ROSTER[d.fighter] ? d.fighter : 'balanced';
-        App.lobby.names[1] = (d.name || '').slice(0, 14);
+        App.lobby.picks[1] = isFighter(d.fighter) ? d.fighter : 'balanced';
+        App.lobby.names[1] = String(d.name || '').slice(0, 14);
         App.lobby.ready[1] = !!d.ready;
         App.lobby.movesets[1] = normalizeMoveset(d.moveset);
         refreshLobby(); sendPick(); maybeStart(); break;
       case 'in':
-        App.remote.h = d.h | 0; App.remote.p |= (d.p | 0); break;
+        App.remote.h = (d.h | 0) & SIM_MASK; App.remote.p |= (d.p | 0) & SIM_MASK; break;
       case 'say': {
-        showLine(1, d.m);
-        if (App.net) App.net.send({ t: 'say', i: 1, m: d.m });
+        // the cleaned line is what gets echoed back; a flood is dropped here, on the machine running the fight
+        const m = cleanLine(d.m), now = performance.now();
+        if (!m || now - guestSayT < SAY_GAP_MS) break;
+        guestSayT = now;
+        showLine(1, m);
+        if (App.net) App.net.send({ t: 'say', i: 1, m });
         break;
       }
       case 'rematch':
@@ -236,21 +248,43 @@
   }
   function onGuestData(d) {
     switch (d.t) {
-      case 'lobby':
-        App.lobby.picks[0] = d.picks[0]; App.lobby.names[0] = d.names[0]; App.lobby.ready[0] = d.ready[0];
-        App.lobby.settings = d.settings;
-        if (d.settings) { $('#selRounds').value = d.settings.rounds; $('#selLen').value = d.settings.len; $('#selGrapple').value = d.settings.grappling === false ? '0' : '1'; }
+      case 'lobby': {
+        const s = d.settings;
+        if (!Array.isArray(d.picks) || !Array.isArray(d.names) || !Array.isArray(d.ready) || !s || typeof s !== 'object') break;
+        App.lobby.picks[0] = isFighter(d.picks[0]) ? d.picks[0] : 'balanced';
+        App.lobby.names[0] = String(d.names[0] || '').slice(0, 14);
+        App.lobby.ready[0] = !!d.ready[0];
+        App.lobby.settings = { rounds: s.rounds | 0, len: s.len | 0, grappling: s.grappling !== false, diff: App.lobby.settings.diff };
+        $('#selRounds').value = App.lobby.settings.rounds; $('#selLen').value = App.lobby.settings.len; $('#selGrapple').value = App.lobby.settings.grappling ? '1' : '0';
         refreshLobby(); break;
-      case 'start':
-        beginFight(d); break;
-      case 's':
-        App.state = d.s; App.lastSnap = performance.now();
-        if (d.ev && d.ev.length) processEvents(d.ev, App.state);
+      }
+      case 'start': {
+        const msg = cleanStart(d);
+        if (msg) beginFight(msg);
         break;
+      }
+      case 's': {
+        const S = d.s;
+        if (!S || !Array.isArray(S.f) || S.f.length !== 2 || !S.f.every(f => f && typeof f === 'object')) break;
+        for (const f of S.f) f.name = String(f.name == null ? '' : f.name).slice(0, 24);
+        App.state = S; App.lastSnap = performance.now();
+        if (Array.isArray(d.ev) && d.ev.length) processEvents(d.ev, App.state);
+        break;
+      }
       case 'say':
-        if (d && d.m) showLine(d.i, d.m);
+        showLine(d.i === 1 ? 1 : 0, d.m);
         break;
     }
+  }
+  // the host's 'start', rebuilt from checked fields: two known fighters, short string names, settings in range
+  function cleanStart(d) {
+    const s = d.settings;
+    if (!Array.isArray(d.players) || d.players.length !== 2 || !s || typeof s !== 'object') return null;
+    const players = d.players.map((p) => {
+      p = p && typeof p === 'object' ? p : {};
+      return { fighter: isFighter(p.fighter) ? p.fighter : 'balanced', name: String(p.name || '').slice(0, 24), color: typeof p.color === 'number' ? p.color : undefined, moveset: p.moveset };
+    });
+    return { t: 'start', seed: d.seed | 0, players, settings: { rounds: Math.min(5, Math.max(1, s.rounds | 0)), len: Math.min(300, Math.max(60, s.len | 0)), grappling: s.grappling !== false } };
   }
 
   function maybeStart() {
@@ -297,6 +331,7 @@
     }
     if (isHost && App.physFailed) return; // the host needs physics to run a fight; the failure toast was already shown
     if (App.sim) App.sim.destroy();
+    clearTimeout(App.endT); App.endT = 0;
     App.sim = null; App.state = null; App.evQueue = []; App.remote = { h: 0, p: 0 }; App.rematch = [false, false];
     App.lobby.ready = [false, false];
     if (isHost) {
@@ -323,31 +358,31 @@
     $('#controlsHint').style.display = App.mode === 'watch' || App.hintsHidden ? 'none' : '';
     App.playing = true;
     App.audio.setCrowd(0.06);
-    centerMsg('ROUND 1<small>' + App.state.f[0].name + ' vs ' + App.state.f[1].name + (App.state.grappling === false ? ' · striking only' : '') + '</small>', 2600);
+    centerMsg('ROUND 1<small>' + esc(App.state.f[0].name) + ' vs ' + esc(App.state.f[1].name) + (App.state.grappling === false ? ' · striking only' : '') + '</small>', 2600);
   }
 
-  function stopFight() { App.playing = false; App.paused = false; if (App.sim) App.sim.destroy(); App.sim = null; hideCenter(); $('#grapple').classList.remove('show'); }
+  function stopFight() { clearTimeout(App.endT); App.endT = 0; App.playing = false; App.paused = false; if (App.sim) App.sim.destroy(); App.sim = null; App.audio.setCrowd(0); hideCenter(); $('#grapple').classList.remove('show'); }
 
   function showEnd(S) {
     const R = S.result; if (!R) return;
     const w = R.winner == null ? null : S.f[R.winner];
-    $('#endMethod').textContent = R.method.toUpperCase() + (R.method.indexOf('Decision') < 0 && R.method !== 'Majority Draw' ? ' · ROUND ' + R.round + ' · ' + R.time : '');
+    $('#endMethod').textContent = R.method.toUpperCase() + (!/Decision|Draw/.test(R.method) ? ' · ROUND ' + R.round + ' · ' + R.time : '');
     $('#endWinner').textContent = w ? w.name + ' WINS' : 'DRAW';
     $('#endWinner').style.color = w ? (App.mode === 'watch' ? '#fff' : R.winner === App.myIdx ? '#52d273' : '#e23b3b') : '#fff';
     $('#endDetail').textContent = w ? (App.mode === 'watch' ? '' : R.winner === App.myIdx ? 'Victory.' : 'Defeat.') : 'The judges could not separate them.';
-    // scorecards
-    let h = '<tr><th>Judges</th>' + S.cards.map(c => '<th>R' + c.round + '</th>').join('') + '<th>Total</th></tr>';
+    // scorecards (online, S is the host's snapshot: counts are forced to numbers and names escaped for innerHTML)
+    let h = '<tr><th>Judges</th>' + S.cards.map(c => '<th>R' + (c.round | 0) + '</th>').join('') + '<th>Total</th></tr>';
     for (let j = 0; j < 3; j++) {
       let a = 0, b = 0;
-      h += '<tr><td>Judge ' + (j + 1) + '</td>' + S.cards.map(c => { a += c.j[j][0]; b += c.j[j][1]; return '<td>' + c.j[j][0] + '–' + c.j[j][1] + '</td>'; }).join('') + '<td><b>' + a + '–' + b + '</b></td></tr>';
+      h += '<tr><td>Judge ' + (j + 1) + '</td>' + S.cards.map(c => { const x = c.j[j][0] | 0, y = c.j[j][1] | 0; a += x; b += y; return '<td>' + x + '–' + y + '</td>'; }).join('') + '<td><b>' + a + '–' + b + '</b></td></tr>';
     }
     $('#cards').innerHTML = h;
     // totals use ts alone: after a stoppage the last round's rs is already folded into ts, so adding rs double-counts
     const ts = S.f.map(f => f.ts);
     const row = (lbl, fn) => '<tr><td>' + lbl + '</td><td>' + fn(ts[0]) + '</td><td>' + fn(ts[1]) + '</td></tr>';
-    $('#totals').innerHTML = '<tr><th></th><th>' + S.f[0].name + '</th><th>' + S.f[1].name + '</th></tr>' +
-      row('Strikes landed / thrown', s => s.landed + ' / ' + s.thrown) + row('Damage dealt', s => Math.round(s.sig)) +
-      row('Takedowns', s => s.td + ' / ' + s.tdAtt) + row('Control time', s => Math.round(s.ctrl) + 's') + row('Submission attempts', s => s.subs) + row('Knockdowns', s => s.kd);
+    $('#totals').innerHTML = '<tr><th></th><th>' + esc(S.f[0].name) + '</th><th>' + esc(S.f[1].name) + '</th></tr>' +
+      row('Strikes landed / blocked / thrown', s => (s.landed | 0) + ' / ' + (s.blocked | 0) + ' / ' + (s.thrown | 0)) + row('Damage dealt', s => Math.round(s.sig)) +
+      row('Takedowns', s => (s.td | 0) + ' / ' + (s.tdAtt | 0)) + row('Control time', s => Math.round(s.ctrl) + 's') + row('Submission attempts', s => s.subs | 0) + row('Knockdowns', s => s.kd | 0);
     $('#btnRematch').textContent = 'REMATCH'; $('#btnRematch').disabled = false;
     if (App.mode === 'career') {
       settleCareerFight();
@@ -391,16 +426,17 @@
         case 'tap': A.tap(); feed(text, true); break;
         case 'ko': A.horn(); feed(text, true); break;
         case 'bell':
-          if (ev.end) { A.bell(2); centerMsg('END OF ROUND ' + ev.round, 2500); }
+          if (ev.end) { A.bell(2); centerMsg('END OF ROUND ' + (ev.round | 0), 2500); }
           else { A.bell(1); centerMsg('FIGHT!', 900); }
           feed(text); break;
-        case 'round': centerMsg('ROUND ' + ev.round, 2200); break;
+        case 'round': centerMsg('ROUND ' + (ev.round | 0), 2200); break;
         case 'end': {
           // no centre-screen result here: the ref announces the winner in the hand-raise, and the end screen follows
           const res = ev.res;
           if (res.method.indexOf('Decision') >= 0 || res.method.indexOf('Draw') >= 0) A.bell(3);
           // after the referee has raised the winner's hand
-          setTimeout(() => { if (App.state && App.state.result) showEnd(App.state); }, window.MMARender.ceremonyEnd(res) * 1000);
+          clearTimeout(App.endT);
+          App.endT = setTimeout(() => { App.endT = 0; if (App.state && App.state.result) showEnd(App.state); }, window.MMARender.ceremonyEnd(res) * 1000);
           break;
         }
       }
@@ -451,7 +487,7 @@
         } else if (me.act.name === 'rise') kdTxt = '<span class="t">GETTING UP</span>Still rocked — cover up.';
       } else if (op.act.type === 'kd' && op.act.name !== 'rise' && S.grappling) {
         const dist = Math.hypot(op.x - me.x, op.z - me.z);
-        kdTxt = '<span class="t">' + op.name.toUpperCase() + ' IS DOWN</span><b>' + kn('grapple') + '</b> dive on him' + (dist > KD.FOLLOW_DIST ? ' (get closer)' : '') + ' · back off to keep it standing — he comes up rocked';
+        kdTxt = '<span class="t">' + esc(String(op.name).toUpperCase()) + ' IS DOWN</span><b>' + kn('grapple') + '</b> dive on him' + (dist > KD.FOLLOW_DIST ? ' (get closer)' : '') + ' · back off to keep it standing — he comes up rocked';
       }
     }
     if (kdTxt) { kh.innerHTML = kdTxt; kh.classList.add('show'); } else kh.classList.remove('show');
@@ -662,6 +698,8 @@
       if (e.code === 'Escape' && !e.repeat) { e.preventDefault(); screen('menu'); }
       return;
     }
+    // in the gym, ESC backs out of an open station screen before it reaches the options menu
+    if (e.code === 'Escape' && !App.optionsOpen && App.gym && App.gym.active && CareerUI.station && !$('#career').classList.contains('hidden')) { e.preventDefault(); if (!e.repeat) closeStation(); return; }
     if (e.code === 'Escape') { e.preventDefault(); if (!e.repeat) { if (App.optionsOpen) closeOptions(); else openOptions(); } return; }
     if (App.optionsOpen) return;
     if (e.code === 'KeyH' && !Controls.keyMap.KeyH) { if (!e.repeat) { App.hintsHidden = !App.hintsHidden; $('#controlsHint').style.display = App.hintsHidden ? 'none' : ''; } return; }
@@ -965,7 +1003,7 @@
       h += '<h3>WEEK ' + (o.weeks - B.weeksLeft + 1) + ' OF ' + o.weeks + ' — WHAT ARE YOU TRAINING?</h3>' + trainGrid(C);
     } else {
       const inj = Career.injuryTotal(C);
-      h += '<div class="fight-now"><div><div class="t">IT\'S FIGHT NIGHT</div><small>' + (inj > 30 ? 'You are going in hurt (' + Math.round(inj) + ' damage carried) — it shows up on your damage meters from the first bell.' : inj > 0 ? 'A little banged up (' + Math.round(inj) + '), nothing serious.' : 'Healthy and ready.') + ' Quitting mid-fight counts as pulling out: no purse, and the promoter remembers.</small></div><button class="big" id="btnCareerFight">FIGHT</button></div>';
+      h += '<div class="fight-now"><div><div class="t">IT\'S FIGHT NIGHT</div><small>' + (inj > 30 ? 'You are going in hurt (' + Math.round(inj) + ' damage carried).' : inj > 0 ? 'A little banged up (' + Math.round(inj) + '), nothing serious.' : 'Healthy and ready.') + '</small></div><button class="big" id="btnCareerFight">FIGHT</button></div>';
     }
     if (B.plan.length) h += '<div class="camp-plan">Camp so far: ' + B.plan.map(p => '<b>' + (p === 'rest' ? 'Rest' : Career.STAT_BY_KEY[p].label) + '</b>').join(' → ') + '</div>';
     el.innerHTML = h; bindTrain(el);
@@ -1211,14 +1249,17 @@
     if (i === App.myIdx) return myName() || 'You';
     return 'Opponent';
   }
+  const cleanLine = (text) => String(text || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+  const SAY_GAP_MS = 300; // the host takes at most one chat line per this from the guest (see onHostData)
+  let guestSayT = -1e9;
   function showLine(i, text) {
-    text = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    text = cleanLine(text);
     if (!text || !App.talk) return;
     const slot = App.state && App.state.f && App.state.f[i] ? i : null;
     App.talk.add(lineName(i), text, slot);
   }
   function postLine(text) {
-    text = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    text = cleanLine(text);
     if (!text) return;
     if (App.mode === 'guest') { if (App.net) App.net.send({ t: 'say', m: text }); return; }
     showLine(App.myIdx, text);

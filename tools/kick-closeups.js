@@ -49,7 +49,7 @@ const server = http.createServer((req, res) => {
       const A = window.CageRules, R = A.renderer, m = R.models[0], o = R.models[1];
       const fx = o.px - m.px, fz = o.pz - m.pz, L = Math.hypot(fx, fz) || 1, ux = fx / L, uz = fz / L;
       R.camera.aspect = W / H; R.camera.updateProjectionMatrix();
-      R.camera.position.set(m.px + ux * dz + uz * dx, dy, m.pz + uz * dz - ux * dx); R.camera.lookAt(m.px + ux * 0.2, ly, m.pz + uz * 0.2);
+      R.camera.position.set(m.px + ux * dz - uz * dx, dy, m.pz + uz * dz + ux * dx); R.camera.lookAt(m.px + ux * 0.2, ly, m.pz + uz * 0.2);
       R.renderer.render(R.scene, R.camera);
     }, [dx, dy, dz, ly, W, H]);
     await page.screenshot({ path: path.join(outdir, `${tag}-${cam}.png`) });

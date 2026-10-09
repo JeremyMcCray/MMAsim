@@ -1,5 +1,5 @@
 // Strike tracking probe: throws one strike with no opponent in range and prints, every 2 sim ticks, where the
-// weapon actually is (pelvis-relative, facing frame: x right, y up, z forward) next to where the keyframe
+// weapon actually is (pelvis-relative, facing frame: x left, y up, z forward) next to where the keyframe
 // pose being chased would put it (forward kinematics). Shows lag, overshoot and whether a pose is reachable.
 //   node tools/track.js [strike=rh_overhand] [tf=1]
 const RAPIER = require('./rapier.js');

@@ -109,7 +109,8 @@ works from any camera angle.
   Hard shots stagger the ragdoll (gains drop, the body gets shoved).
 * **Combos flow.** As soon as a strike has landed (or whiffed) you can throw
   the next one straight out of the recovery, and a press made while a strike
-  is still in the air is buffered and fires the instant it can. Chained
+  is still in the air is buffered and fires the instant it can. Kicks are
+  the exception: you can only kick with both feet on the mat. Chained
   strikes come out a little quicker (up to three in a rhythm) when you
   switch limbs. A strike that gets slipped has to be ridden out. Hits on an
   already‑stunned opponent stun for less, so stun‑locks wear off.
@@ -271,6 +272,9 @@ tools/            node scripts: headless.js (CPU vs CPU fights + stats),
                   posecheck.js (does a stance / guard pose clip the arms through the chest?),
                   browser-test.js (run the page in headless Chromium), gym-test.js (the career gym)
 ```
+
+The game has no dependencies. The browser-driven tools need Playwright:
+`cd tools && npm install` (its `package.json` also has `npm run test:gym` etc.).
 
 ### Tuning the physics
 

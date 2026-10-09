@@ -168,29 +168,23 @@
     for (const limb of LIMBS) {
       const hand = limb === 'lh' || limb === 'rh';
       const lead = limb === 'lh' || limb === 'll';
-      const s = lead ? 1 : -1;
       for (const kind of (hand ? HAND_KINDS : LEG_KINDS)) {
         const ks = KIND_STATS[kind], v = lead ? ks.lead : ks.rear;
         const st = {
           key: limb + '_' + kind, limb, kind, bit: LIMB_BIT[limb], name: ks.names[lead ? 0 : 1],
           w: v[0], a: v[1], r: v[2], dmg: v[3], stam: v[4], part: ks.part, push: !!ks.push,
           tip: hand ? 'hand' : kind === 'knee' ? 'knee' : 'foot',
-          pivot: hand ? [0, s * 0.23, 1.36 + Y_SHIFT] : [0, s * 0.12, 0.86 + Y_SHIFT],
           reach: hand ? ARM_REACH : kind === 'knee' ? KNEE_REACH : LEG_REACH
         };
         st.path = hand ? handPath(limb, kind, st.w, st.a, st.r) : legPath(limb, kind, st.w, st.a, st.r);
         // scale the authored paths to the rig: forward reach, hands raised by Y_SHIFT, leg heights scaled by (1 + Y_SHIFT)
         for (const k of st.path) { if (k[1] > 0) k[1] *= REACH_SCALE; k[3] = hand ? k[3] + Y_SHIFT : k[3] * (1 + Y_SHIFT); }
         // impact keyframe: furthest-forward keyframe inside the active window
-        let imp = null, best = -1e9, prev = null;
+        let imp = null, best = -1e9;
         for (let i = 0; i < st.path.length; i++) {
           const k = st.path[i];
-          if (k[0] >= st.w - 1e-6 && k[0] <= st.w + st.a + 1e-6 && k[1] > best) { best = k[1]; imp = k; prev = st.path[i - 1]; }
+          if (k[0] >= st.w - 1e-6 && k[0] <= st.w + st.a + 1e-6 && k[1] > best) { best = k[1]; imp = k; }
         }
-        st.impactT = imp[0];
-        st.expExt = Math.hypot(imp[1] - st.pivot[0], imp[2] - st.pivot[1], imp[3] - st.pivot[2]);
-        const segV = Math.hypot(imp[1] - prev[1], imp[2] - prev[2], imp[3] - prev[3]) / Math.max(1e-6, imp[0] - prev[0]);
-        st.refSpeed = segV * 0.9;
         // root-to-root distance at which a clean impact lands on the intended region of a square-on opponent
         st.range = imp[1] + 0.06 + PART_R[st.part] + TIP_R[st.tip];
         STRIKES[st.key] = st;
@@ -284,31 +278,6 @@
   const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
   const lerp = (a, b, t) => a + (b - a) * t;
 
-  // closest points between segments P0-P1 and Q0-Q1 (Ericson, Real-Time Collision Detection).
-  // Returns [distance, s (param on P), t (param on Q)].
-  function segSegClosest(p0x, p0y, p0z, p1x, p1y, p1z, q0x, q0y, q0z, q1x, q1y, q1z) {
-    const d1x = p1x - p0x, d1y = p1y - p0y, d1z = p1z - p0z;
-    const d2x = q1x - q0x, d2y = q1y - q0y, d2z = q1z - q0z;
-    const rx = p0x - q0x, ry = p0y - q0y, rz = p0z - q0z;
-    const a = d1x * d1x + d1y * d1y + d1z * d1z, e = d2x * d2x + d2y * d2y + d2z * d2z, f = d2x * rx + d2y * ry + d2z * rz;
-    let s = 0, t = 0;
-    if (a <= 1e-9 && e <= 1e-9) { s = t = 0; }
-    else if (a <= 1e-9) { s = 0; t = clamp(f / e, 0, 1); }
-    else {
-      const c = d1x * rx + d1y * ry + d1z * rz;
-      if (e <= 1e-9) { t = 0; s = clamp(-c / a, 0, 1); }
-      else {
-        const b = d1x * d2x + d1y * d2y + d1z * d2z, denom = a * e - b * b;
-        s = denom !== 0 ? clamp((b * f - c * e) / denom, 0, 1) : 0;
-        t = (b * s + f) / e;
-        if (t < 0) { t = 0; s = clamp(-c / a, 0, 1); }
-        else if (t > 1) { t = 1; s = clamp((b - c) / a, 0, 1); }
-      }
-    }
-    const cx = p0x + d1x * s - (q0x + d2x * t), cy = p0y + d1y * s - (q0y + d2y * t), cz = p0z + d1z * s - (q0z + d2z * t);
-    return [Math.sqrt(cx * cx + cy * cy + cz * cz), s, t];
-  }
-
   function makeFighter(idx, key, name, color, moveset, extra) {
     const r = ROSTER[key] || ROSTER.balanced;
     extra = extra || {};
@@ -343,9 +312,9 @@
       kdCount: 0,
       ground: null,       // null | 'top' | 'bottom'
       // round stats (reset per round)
-      rs: { thrown: 0, landed: 0, sig: 0, td: 0, tdAtt: 0, ctrl: 0, subs: 0, kd: 0 },
+      rs: { thrown: 0, landed: 0, blocked: 0, sig: 0, td: 0, tdAtt: 0, ctrl: 0, subs: 0, kd: 0 },
       // total stats
-      ts: { thrown: 0, landed: 0, sig: 0, td: 0, tdAtt: 0, ctrl: 0, subs: 0, kd: 0 },
+      ts: { thrown: 0, landed: 0, blocked: 0, sig: 0, td: 0, tdAtt: 0, ctrl: 0, subs: 0, kd: 0 },
       lastInput: 0
     };
   }
@@ -454,7 +423,6 @@
         evSeq: 0
       };
       this.events = [];           // {seq, k, ...}
-      this.roundScore = [{}, {}];
       this._resetRoundScore();
       this.inputs = [{ held: 0, pressed: 0 }, { held: 0, pressed: 0 }];
       // physics (standing game). Off for guest placeholders / menu demos.
@@ -494,8 +462,12 @@
       // real-time accumulator: exactly 60 ticks per simulated second regardless of monitor refresh rate
       this.acc = (this.acc || 0) + Math.min(dt, 0.25);
       let n = 0;
-      while (this.acc >= DT && n < 8) { this._tick(DT); this.acc -= DT; n++; }
-      if (n > 0) { this.inputs[0].pressed = 0; this.inputs[1].pressed = 0; }
+      while (this.acc >= DT && n < 8) {
+        this._tick(DT); this.acc -= DT; n++;
+        // a press belongs to the first tick only: a frame that runs two ticks must not see one tap twice
+        // (that turned a single tap into a double-tap push / lunge and threw two strikes for one press)
+        this.inputs[0].pressed = 0; this.inputs[1].pressed = 0;
+      }
     }
 
     drainEvents() { const e = this.events; this.events = []; return e; }
@@ -504,7 +476,7 @@
     _emit(ev) { ev.seq = ++this.state.evSeq; ev.t = this.state.t; this.events.push(ev); return ev; }
 
     _resetRoundScore() {
-      for (const f of this.state.f) f.rs = { thrown: 0, landed: 0, sig: 0, td: 0, tdAtt: 0, ctrl: 0, subs: 0, kd: 0 };
+      for (const f of this.state.f) f.rs = { thrown: 0, landed: 0, blocked: 0, sig: 0, td: 0, tdAtt: 0, ctrl: 0, subs: 0, kd: 0 };
     }
 
     _tick(dt) {
@@ -587,10 +559,13 @@
       for (const c of S.cards) for (let j = 0; j < 3; j++) { tot[j][0] += c.j[j][0]; tot[j][1] += c.j[j][1]; }
       let w0 = 0, w1 = 0;
       for (let j = 0; j < 3; j++) { if (tot[j][0] > tot[j][1]) w0++; else if (tot[j][1] > tot[j][0]) w1++; }
-      let winner = null, type = 'Draw';
-      if (w0 >= 2) { winner = 0; type = w0 === 3 ? 'Unanimous Decision' : 'Split Decision'; }
-      else if (w1 >= 2) { winner = 1; type = w1 === 3 ? 'Unanimous Decision' : 'Split Decision'; }
-      else type = 'Majority Draw';
+      // 3-0 unanimous, 2-0-1 majority (third judge a draw), 2-1 split; draws: 0-0-3 unanimous, 1-0-2 majority, 1-1-1 split
+      const d = 3 - w0 - w1;
+      let winner = null, type;
+      if (w0 >= 2 || w1 >= 2) {
+        winner = w0 >= 2 ? 0 : 1;
+        type = (d === 0 && (w0 === 3 || w1 === 3) ? 'Unanimous' : d === 1 ? 'Majority' : 'Split') + ' Decision';
+      } else type = (d === 3 ? 'Unanimous' : d === 2 ? 'Majority' : 'Split') + ' Draw';
       this._finish({ method: type, winner, round: S.round, time: 0, totals: tot });
     }
 
@@ -609,7 +584,7 @@
       }
     }
 
-    // unit vectors of f's frame: fwd towards o, left = fwd rotated 90°
+    // unit vectors of f's frame: fwd towards o, l = fwd rotated 90° (the fighter's right: fwd x up)
     _frame(f, o) {
       const dx = o.x - f.x, dz = o.z - f.z;
       const d = Math.hypot(dx, dz) || 0.001;
@@ -653,18 +628,8 @@
         a.t += dt;
         if (a.type === 'strike') {
           const st = STRIKES[a.name];
-          const tf = a.tf;
-          if (st.ground) {
-            if (!a.hit && a.t >= st.w * tf) { a.hit = true; this._resolveGroundStrike(f, st); }
-          } else if (a.phys) {
-            // physical strike: contacts are resolved in _physTick after the world steps
-          } else if (!a.hit && !S.ground) {
-            const t0 = st.w * tf * 0.45, t1 = (st.w + st.a) * tf;
-            if (a.t >= t0) {
-              this._traceStrike(f, st, dt);
-              if (!a.hit && a.t >= t1) { a.hit = true; this._whiff(f, st); }
-            }
-          }
+          // ground strikes are timed; standing strikes are physical and resolve in _physTick after the world steps
+          if (st.ground && !a.hit && a.t >= st.w * a.tf) { a.hit = true; this._resolveGroundStrike(f, st); }
           if (a.t >= a.dur && f.act === a) f.act = idleAct();
         } else if (a.type === 'takedown') {
           if (!a.hit && a.t >= 0.32) { a.hit = true; this._resolveTakedown(f); }
@@ -734,7 +699,7 @@
 
         // facing vector towards opponent
         const fx = ux * sign, fz = uz * sign;
-        // lateral (circle) vector = fighter's left
+        // lateral (circle) vector = fighter's right (fwd x up)
         const lx = -fz, lz = fx;
 
         f.blocking = !busy && !!(held & IN.BLOCK) && f.rocked <= 0.4;
@@ -790,7 +755,7 @@
             f.stam -= 5;
             f.act = { type: 'dodge', name: '', t: 0, dur: 0.45, hit: false };
             f.blocking = false;
-            const out = isSouthpaw(f) ? -0.4 : 0.4;
+            const out = isSouthpaw(f) ? 0.4 : -0.4;
             rag.shove(lx * out - fx * 0.3, lz * out - fz * 0.3, 1.1); // slip outside the lead shoulder
           } else if (pressed & IN.GRAPPLE && S.grappling && this._canFollow(f, F[1 - i], dist)) {
             // dive on a knocked-down opponent: flat on his back he gives up side control, half guard if he was already rising
@@ -807,9 +772,8 @@
             }
           } else if (pressed & LIMB_BITS) {
             const key = this._pickStrikeKey(f, pressed, held, false);
-            // no kicking with a leg already off the ground: a kick pressed mid-kick waits (buffered) for the foot to land
-            if (key && isKickKey(key) && kickInFlight(f, S.t)) f.buf = { key, t: S.t };
-            else if (key) this._startStrike(f, key, canCancel);
+            // no kicking with a leg already off the ground
+            if (key && !(isKickKey(key) && kickInFlight(f, S.t))) this._startStrike(f, key, canCancel);
           } else if (f.buf && S.t - f.buf.t <= BUFFER_T && !(isKickKey(f.buf.key) && kickInFlight(f, S.t))) {
             this._startStrike(f, f.buf.key, canCancel);
           }
@@ -909,7 +873,7 @@
         f.act = { type: 'strike', name: key, t: 0, dur: pdef.dur * tf, tf, hit: false, slipped: false, chained: !!chained, cost, phys: true, cancelAt: (wind + live) * tf };
         this.phys.fighters[f.idx].startStrike(pdef, tf);
       } else {
-        f.act = { type: 'strike', name: key, t: 0, dur: (st.w + st.a + st.r) * tf, tf, hit: false, tip: null, tipT: null, slipped: false, chained: !!chained, cost, cancelAt: (st.w + st.a) * tf };
+        f.act = { type: 'strike', name: key, t: 0, dur: (st.w + st.a + st.r) * tf, tf, hit: false, slipped: false, chained: !!chained, cost, cancelAt: (st.w + st.a) * tf };
       }
       f.repeatN = key === f.lastStrike ? f.repeatN + 1 : 1;
       f.lastStrike = key;
@@ -919,88 +883,6 @@
       f.rs.thrown++;
       // the next kick waits until this one's foot has planted (see kickInFlight)
       if (!st.ground && (st.limb === 'll' || st.limb === 'rl')) f.kickReady = this.state.t + f.act.dur + (st.push ? TEEP_PLANT_T : KICK_PLANT_T);
-    }
-
-    _hitboxes(o, f) {
-      const fr = this._frame(o, f); // o's frame, facing f
-      const W = (p) => [o.x + fr.fx * p[0] + fr.lx * p[1], p[2], o.z + fr.fz * p[0] + fr.lz * p[1]];
-      let head = [0.06, 0, 1.52 + Y_SHIFT], torsoA = [0.0, 0, 0.95 + Y_SHIFT], torsoB = [0.03, 0, 1.2 + Y_SHIFT];
-      const a = o.act;
-      if (a.type === 'dodge' && a.t < 0.32) { head = [-0.08, 0.34, 1.36 + Y_SHIFT]; torsoB = [-0.02, 0.12, 1.16 + Y_SHIFT]; }
-      else if (a.type === 'hit') {
-        if (a.name === 'head') head = [-0.14, 0, 1.5 + Y_SHIFT];
-        else if (a.name === 'body') { head = [0.2, 0, 1.3 + Y_SHIFT]; torsoB = [0.15, 0, 1.12 + Y_SHIFT]; }
-        else head = [0.06, 0.1, 1.42 + Y_SHIFT];
-      } else if (a.type === 'stumble' || a.type === 'takedown') { head = [0.32, 0, 1.2 + Y_SHIFT]; torsoB = [0.25, 0, 1.1 + Y_SHIFT]; }
-      else if (o.blocking) head = [0.0, 0, 1.46 + Y_SHIFT];
-      if (o.rocked > 0 && a.type !== 'hit') head[2] -= 0.05;
-      const hw = W(head);
-      return [
-        { part: 'head', a: hw, b: hw, r: PART_R.head },
-        { part: 'body', a: W(torsoA), b: W(torsoB), r: PART_R.body },
-        { part: 'legs', a: W([0, 0, 0.1]), b: W([0, 0, 0.82 + Y_SHIFT]), r: PART_R.legs }
-      ];
-    }
-
-    // sweep the striking tip against the opponent this tick. The sweep is split at the path's
-    // keyframes so the limb's peak extension is never skipped between two 60 Hz samples.
-    _traceStrike(f, st, dt) {
-      const S = this.state, o = S.f[1 - f.idx], a = f.act;
-      const fr = this._frame(f, o);
-      const world = (t, out) => {
-        const tip = strikeTip(st, t, a.tf, out);
-        const fwd = tip[0], side = tip[1];
-        tip[0] = f.x + fr.fx * fwd + fr.lx * side; tip[1] = tip[2]; tip[2] = f.z + fr.fz * fwd + fr.lz * side;
-        return tip;
-      };
-      const tNow = a.t, tPrev = a.tipT;
-      a.tipT = tNow;
-      if (tPrev == null) { a.tip = world(tNow); return; }
-      if (o.act.type === 'dodge' && o.act.t < 0.32) a.slipped = true;
-      if (o.act.type === 'down') return;
-      // sample times: previous tick, any keyframe crossed since, this tick
-      const times = [tPrev];
-      for (const k of st.path) { const kt = k[0] * a.tf; if (kt > tPrev && kt < tNow) times.push(kt); }
-      times.push(tNow);
-      const hb = this._hitboxes(o, f);
-      const tipR = TIP_R[st.tip];
-      let prev = a.tip, cur = null, best = null, bestR = null, segDt = dt; // a.tip = last tick's world position, so the attacker's own motion counts
-      for (let i = 1; i < times.length && !best; i++) {
-        cur = world(times[i]);
-        let bestD = 1e9;
-        for (const h of hb) {
-          const r = segSegClosest(prev[0], prev[1], prev[2], cur[0], cur[1], cur[2], h.a[0], h.a[1], h.a[2], h.b[0], h.b[1], h.b[2]);
-          if (r[0] > tipR + h.r) continue;
-          const score = r[0] - (h.part === st.part ? 0.1 : 0); // prefer the region the strike is aimed at when boxes overlap
-          if (score < bestD) { best = h; bestR = r; bestD = score; }
-        }
-        segDt = Math.max(1e-4, times[i] - times[i - 1]);
-        if (!best) prev = cur;
-      }
-      if (!best) { a.tip = cur; return; }
-      a.tip = world(tNow);
-      a.hit = true;
-      // entry point: back up from the closest approach along the sweep until the tip just touches the box
-      const dx = cur[0] - prev[0], dy = cur[1] - prev[1], dz = cur[2] - prev[2];
-      const len = Math.hypot(dx, dy, dz) || 1e-6, R = tipR + best.r;
-      const back = Math.sqrt(Math.max(0, R * R - bestR[0] * bestR[0])) / len;
-      const sE = clamp(bestR[1] - back, 0, 1);
-      const wx = prev[0] + dx * sE, wy = prev[1] + dy * sE, wz = prev[2] + dz * sE;
-      // closing speed between the tip and the target along the line of impact
-      const vtx = dx / segDt, vty = dy / segDt, vtz = dz / segDt;
-      const ax = best.b[0] - best.a[0], ay = best.b[1] - best.a[1], az = best.b[2] - best.a[2];
-      const al = ax * ax + ay * ay + az * az;
-      const tq = al > 1e-9 ? clamp(((wx - best.a[0]) * ax + (wy - best.a[1]) * ay + (wz - best.a[2]) * az) / al, 0, 1) : 0;
-      let nx = best.a[0] + ax * tq - wx, ny = best.a[1] + ay * tq - wy, nz = best.a[2] + az * tq - wz;
-      const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
-      const impact = (vtx - o.vx) * nx + vty * ny + (vtz - o.vz) * nz;
-      const speedF = clamp(impact * a.tf / st.refSpeed, 0, 1.6); // ref is at tempo 1: a fighter's own speed is already in the stamina/speed factors
-      // extension: how far the limb got from its pivot compared to a clean impact (jammed strikes land short)
-      const pv = st.pivot;
-      const px = f.x + fr.fx * pv[0] + fr.lx * pv[1], pz = f.z + fr.fz * pv[0] + fr.lz * pv[1];
-      const ext = Math.hypot(wx - px, wy - pv[2], wz - pz) / st.expExt;
-      const jamF = ext < 0.7 ? Math.pow(clamp(ext / 0.7, 0, 1), 2.5) : 1;
-      this._landStrike(f, o, st, best.part, speedF, jamF, [wx, wy, wz], fr);
     }
 
     // a strike that finds nothing costs extra; one that lands clean gives some of its cost back
@@ -1083,19 +965,19 @@
       const oKicking = !!oSt && !o.act.hit && !oSt.ground && (oSt.limb === 'll' || oSt.limb === 'rl');
       const kickCancel = oKicking && (def.limb === 'lh' || def.limb === 'rh') && !res.blocked && dmg >= KICK_CANCEL_DMG;
       if (kickCancel) dmg *= KICK_CANCEL_BONUS;
-      const at = [Math.round(h.point.x * 100) / 100, Math.round(h.point.y * 100) / 100, Math.round(h.point.z * 100) / 100];
+      const at = [Math.round(h.point.x * 100) / 100, Math.round(h.point.y * 100) / 100, Math.round(h.point.z * 100) / 100]; // contact point; `seg` / `weapon` name the collider struck and the one that struck it, so the renderer can mark the skin where it landed
       const fwd = this._frame(f, o);
       if (checked) {
         f.dmg.legs = clamp(f.dmg.legs + dmg * CHECK_SELF_DMG * (PART_TOUGHNESS.legs || 1), 0, 100);
         dmg *= CHECK_DMG;
       }
       o.dmg[part] = clamp(o.dmg[part] + dmg * (PART_TOUGHNESS[part] || 1), 0, 100);
-      f.rs.landed++;
+      if (res.blocked) f.rs.blocked++; else f.rs.landed++; // blocked / checked shots count apart from clean ones
       f.rs.sig += dmg;
       rag.takeHit(h, dmg, res.blocked);
       if (res.blocked) {
         if (o.blocking) o.stam = Math.min(o.stamMax, o.stam + def.cost * BLOCK_REWARD); // a stray arm in the way is free, a real block is rewarded
-        this._emit({ k: 'block', i: f.idx, j: o.idx, name: def.name, part, at, passive: !o.blocking && !checked, checked, vn: Math.round(h.vn * 10) / 10 });
+        this._emit({ k: 'block', i: f.idx, j: o.idx, name: def.name, kind: def.kind, part, at, seg: h.seg, weapon: h.weapon, passive: !o.blocking && !checked, checked, vn: Math.round(h.vn * 10) / 10 });
         if (def.push) rag.shove(fwd.fx, fwd.fz, PHYS_PUSH * 0.5);
         return;
       }
@@ -1112,7 +994,7 @@
       }
       if (def.push) rag.shove(fwd.fx, fwd.fz, PHYS_PUSH);
       const ev = this._emit({ k: 'hit', i: f.idx, j: o.idx, name: def.name, kind: def.kind, part, intended: def.part, dmg: Math.round(dmg * 10) / 10, counter, big: dmg >= 3.6,
-        vn: Math.round(h.vn * 10) / 10, clean: Math.round(h.clean * 100) / 100, momentum: h.vn >= 8, combo: f.combo, kickCancel, at, phys: true });
+        vn: Math.round(h.vn * 10) / 10, clean: Math.round(h.clean * 100) / 100, momentum: h.vn >= 8, combo: f.combo, kickCancel, at, seg: h.seg, weapon: h.weapon, phys: true });
       this._afterHit(f, o, part, dmg, ev, false);
     }
 
@@ -1502,7 +1384,7 @@
 
   const API = { IN, STRIKES, ROSTER, SUBS, POS_NAME, MOVES, SUBS_BY, BOTTOM_CAN_STRIKE, Sim, describe, CAGE_R, DT, BREAK_T,
     KD: { FALL: KD_FALL, STAY: KD_STAY, RISE: KD_RISE, FOLLOW_DIST: KD_FOLLOW_DIST },
-    LIMBS, LIMB_BIT, LIMB_NAME, MODS, MOD_BIT, HAND_KINDS, LEG_KINDS, KIND_LABEL, KIND_STATS, DEFAULT_MOVESET, normalizeMoveset, modOf, isSouthpaw, strikeTip, TIP_R, recovering };
+    LIMBS, LIMB_BIT, LIMB_NAME, MODS, MOD_BIT, HAND_KINDS, LEG_KINDS, KIND_LABEL, KIND_STATS, DEFAULT_MOVESET, normalizeMoveset, modOf, isSouthpaw, strikeTip, TIP_R, recovering, mulberry32 };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   root.MMASim = API;
 })(typeof window !== 'undefined' ? window : globalThis);

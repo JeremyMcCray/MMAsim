@@ -33,7 +33,7 @@ const server = http.createServer((req, res) => {
     await page.evaluate(([dx, dy, dz, ly, who, W, H]) => {
       const A = window.CageRules, R = A.renderer, m = R.models[who], o = R.models[1 - who];
       const fx = o.px - m.px, fz = o.pz - m.pz, L = Math.hypot(fx, fz) || 1, ux = fx / L, uz = fz / L;
-      const cx = m.px + ux * dz + uz * dx, cz = m.pz + uz * dz - ux * dx;
+      const cx = m.px + ux * dz - uz * dx, cz = m.pz + uz * dz + ux * dx; // dx = his right: (-uz, ux)
       R.camera.aspect = W / H; R.camera.updateProjectionMatrix();
       R.camera.position.set(cx, dy, cz); R.camera.lookAt(m.px, ly, m.pz); R.renderer.render(R.scene, R.camera);
     }, [dx, dy, dz, ly, who, W, H]);

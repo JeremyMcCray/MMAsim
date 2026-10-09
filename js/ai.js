@@ -4,7 +4,7 @@
   const { IN, STRIKES, MODS, LIMBS, LIMB_BIT, MOD_BIT, DEFAULT_MOVESET, recovering } = root.MMASim;
 
   class CpuBrain {
-    constructor(idx, difficulty) {
+    constructor(idx, difficulty, rng) {
       this.idx = idx;
       this.diff = difficulty == null ? 0.6 : difficulty; // 0..1
       this.timer = 0;
@@ -12,7 +12,7 @@
       this.pressed = 0;
       this.lateral = 0;
       this.latT = 0;
-      this.rng = Math.random;
+      this.rng = rng || Math.random; // pass a seeded rng (MMASim.mulberry32) for reproducible runs
       this.moveset = DEFAULT_MOVESET;
       this.modHeld = 0;      // modifier to keep held for the strike we just pressed
       this.modT = 0;

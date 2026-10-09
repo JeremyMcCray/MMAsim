@@ -63,6 +63,10 @@
     this.list.appendChild(line);
     while (this.list.children.length > 8) this.list.removeChild(this.list.firstChild);
     if (slot == null || !this.layer) return;
+    // one bubble per fighter: a new line replaces the last (which also caps what a chat flood can pile up)
+    for (let i = this.floaters.length - 1; i >= 0; i--) {
+      if (this.floaters[i].slot === slot) { this.floaters[i].el.remove(); this.floaters.splice(i, 1); }
+    }
     const el = document.createElement('div');
     el.className = 'talk-float';
     el.textContent = text;

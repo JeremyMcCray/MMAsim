@@ -13,7 +13,8 @@ const P = require('../js/physics.js');
       const def1 = check ? IN.CHECK : 0;
       const tick = (h0, p0) => { sim.setInput(0, h0, p0); sim.setInput(1, def1, 0); sim.step(1 / 60); };
       while (S.phase !== 'fight') tick(0, 0);
-      for (let i = 0; i < 300 && dist() > 1.1; i++) tick(IN.FWD, 0);
+      // stop at 1.4 m (settles to ~1.15): any closer and the kick passes under the lifted, checking knee and whiffs
+      for (let i = 0; i < 300 && dist() > 1.4; i++) tick(IN.FWD, 0);
       for (let i = 0; i < 20; i++) tick(0, 0);
       const l0 = f[1].dmg.legs, s0 = f[0].dmg.legs;
       tick(IN.MOD3 | IN.RLEG, IN.RLEG);

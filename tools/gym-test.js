@@ -143,7 +143,7 @@ const server = http.createServer((req, res) => {
   console.log('physics', physOk, 'in fight:', JSON.stringify(await st()), 'playing', await page.evaluate(() => window.CageRules.playing));
   await shot('11-fight');
   for (let k = 0; k < 140; k++) { await page.evaluate(() => window.CageRules.tick(300)); const ph = await page.evaluate(() => window.CageRules.state && window.CageRules.state.phase); if (ph === 'over') break; }
-  await page.evaluate(() => window.CageRules.tick(200)); await page.waitForTimeout(4500);
+  await page.evaluate(() => window.CageRules.tick(200)); await page.waitForSelector('#end:not(.hidden)', { timeout: 20000 }); // shown after the result ceremony (MMARender.ceremonyEnd, ~6-8 s), not a fixed delay
   console.log('end screen:', await page.evaluate(() => !document.querySelector('#end').classList.contains('hidden')), await page.evaluate(() => document.querySelector('#endWinner').textContent), await page.evaluate(() => document.querySelector('#btnRematch').textContent));
   await page.click('#btnRematch'); await page.waitForTimeout(1200);
   console.log('after fight:', JSON.stringify(await st()), 'result banner:', await page.evaluate(() => document.querySelector('#gResult').textContent.slice(0, 80)));
