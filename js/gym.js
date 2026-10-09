@@ -23,6 +23,7 @@
   const SPAWN = { x: 3.4, z: 1.7, yaw: Math.PI + 0.25 };     // facing -z, into the room
   const LOCK_RANGE = 3.2;                             // how close to the bag you can lock on
   const ROOM_FOV = 50, FIGHT_FOV = 42;                // camera lens walking the room / locked on (the fight camera's)
+  const LOOK_SENS = 0.004;                            // camera turn (radians) per pixel of mouse movement
   const DIRS = IN.FWD | IN.BACK | IN.LEFT | IN.RIGHT;
   const SIM_BITS = 0x3fff | IN.STANCE;                            // input bits the sim reads (the gym's interact / lock bits sit above)
 
@@ -294,7 +295,7 @@
       this.sim = null;      // the training Sim: you (fighter 0) and the heavy bag (fighter 1)
       this.bagSquash = 0;
       this.session = { hits: 0, combo: 0, bestCombo: 0, hardest: 0, last: '', lastT: -9, comboT: 0 };
-      this.prompt = ''; this.station = null; this.fx = []; this.locked = false;
+      this.prompt = ''; this.station = null; this.fx = []; this.locked = false; this.lookDX = 0;
       this.time = 0;
       this.moveset = null;
       this._saved = null;
@@ -530,6 +531,8 @@
     }
 
     // ---- per frame ----
+    // mouse movement (px) for the free-walk camera; read and cleared by update()
+    look(dx) { if (this.active && !this.paused && !this.locked) this.lookDX += dx; }
     canLock() { const P = this.player; return !!P && Math.hypot(BAG.x - P.x, BAG.z - P.z) < LOCK_RANGE; }
     toggleLock() {
       if (this.locked) { this.locked = false; return; }
@@ -642,6 +645,9 @@
       if (!cam.init) { cam.yaw = P.yaw; cam.init = true; cam.pos.set(clamp(P.x - Math.sin(P.yaw) * 4.2, -ROOM.hw + 0.35, ROOM.hw - 0.35), 2.5, clamp(P.z - Math.cos(P.yaw) * 4.2, -ROOM.hd + 0.35, ROOM.hd - 0.35)); cam.tgt.set(P.x, 1.0, P.z); }
       // cam.yaw (the free-walk heading W/A/S/D read) follows the bag while locked, so unlocking leaves the camera behind you
       if (locked) { let d = lockYaw - cam.yaw; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; cam.yaw += d * expo(dt, 7); }
+      // free: the mouse swings the camera round (mouse right turns the view right, i.e. lowers cam.yaw)
+      else if (live) cam.yaw -= this.lookDX * LOOK_SENS;
+      this.lookDX = 0;
       if (locked) {
         // the fight camera (Renderer.update): side-on to you and the bag, centred between you, and it never swaps sides
         const dx = BAG.x - P.x, dz = BAG.z - P.z, dist = Math.hypot(dx, dz) || 0.001;

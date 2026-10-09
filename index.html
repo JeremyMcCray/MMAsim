@@ -6,7 +6,7 @@
 <title>Cage Rules — 1v1 MMA</title>
 <meta name="description" content="Cage Rules: a 3D one-on-one mixed martial arts simulation you can play online against a friend, right in the browser.">
 <link href="lib/fonts/fonts.css" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=23">
+<link rel="stylesheet" href="css/style.css?v=26">
 </head>
 <body>
 <canvas id="musicbg" aria-hidden="true" hidden></canvas>
@@ -250,6 +250,7 @@
         <label class="mute-music"><input type="checkbox" id="bgMusicFx" disabled> Music particles</label>
         <label class="mute-music"><input type="checkbox" id="bgImpactFx" disabled> Impact particles</label>
       </div>
+      <label class="mute-music"><input type="checkbox" id="optRef" checked> Show referee</label>
       <div class="bg-menu-wrap">
         <button type="button" class="bg-menu" id="bgColorBtn" aria-expanded="false" aria-controls="bgColorSub">
           <span>Colors</span><b id="bgColorName">Legacy</b>
@@ -273,6 +274,13 @@
         <h3>ON THE GROUND</h3>
         <p class="opt-help">Positions: closed guard → half guard → side control → mount, or back control. <b>Takedown key + a direction</b> attempts a pass, escape, sweep or stand-up (the other fighter holds block to base and deny it; attempts have a short cooldown). <b>Takedown key alone</b> goes for a submission from that position; hold it to squeeze, the defender holds block and times escapes. The hands punch; hold <b data-mod="mod1">Q</b> for elbows, <b data-mod="mod2">E</b> for hammer fists, <b data-mod="mod3">R</b> for body shots; leg keys knee the body. Strikes hit hardest from mount; the bottom fighter can only strike from guard.</p>
       </div>
+    </div>
+    <div class="opt-kb">
+      <h3>KEYBOARD</h3>
+      <p class="opt-help">Your current keys. Hover a key for details, and hover a modifier to see what each limb throws while you hold it.</p>
+      <div class="kb-scroll"><div class="kb" id="kbMap"></div></div>
+      <div class="kb-info" id="kbInfo"></div>
+      <div class="kb-legend" id="kbLegend"></div>
     </div>
     <div class="lobby-btns">
       <button class="ghost" id="btnOptReset">RESET DEFAULTS</button>
@@ -298,7 +306,7 @@
 <script src="js/net.js?v=12"></script>
 <script src="js/audio.js?v=18"></script>
 <script src="js/chat.js?v=1"></script>
-<script src="js/main.js?v=31"></script>
+<script src="js/main.js?v=32"></script>
 <script src="lib/rapier3d-compat.js?v=12"></script>
 <script>
   // Rapier physics engine (vendored, WASM inlined, plain script so the game also runs from file://).

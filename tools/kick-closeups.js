@@ -1,6 +1,9 @@
 // Big close-ups of one kick frozen at a few sim times, from three cameras (side, 3/4 front, behind the kicker),
 // to check the arms, the knee turnover and the foot.
 //   node tools/kick-closeups.js [outdir=/tmp/kickshots] [strike=hkick] [t,t,t...]
+// NOTE: turn the referee off before taking reference pictures, so he isn't in the frame or blocking the fighters:
+//   await page.evaluate(() => window.CageRules.renderer.setRefVisible(false));  (any time after page load; it sticks across fights)
+// or untick Options > Show referee (saved as localStorage cr_ref = '0').
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const ROOT = path.resolve(__dirname, '..'); const outdir = process.argv[2] || '/tmp/kickshots'; fs.mkdirSync(outdir, { recursive: true });

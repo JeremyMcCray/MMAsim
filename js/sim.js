@@ -1192,7 +1192,7 @@
         // otherwise — or when the legs just give out — he crumples forward onto his hands and knees (turtle)
         const facing = Math.sin(rag.yaw) * fr.fx + Math.cos(rag.yaw) * fr.fz; // shove along his own facing (< 0: pushed backward)
         const dir = facing < -0.2 && this.rand() < 0.65 ? 'back' : 'fwd';
-        rag.knockDown(KD_FALL, dir);
+        rag.knockDown(KD_FALL, dir, this.rand() < 0.5 ? -1 : 1);
         rag.shove(fr.fx, fr.fz, dir === 'back' ? KD_SHOVE : KD_SHOVE * 0.35);
         return;
       }

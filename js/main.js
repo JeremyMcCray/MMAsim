@@ -515,6 +515,75 @@
     mt.querySelectorAll('select').forEach(sel => sel.onchange = () => { Controls.moveset[sel.dataset.mod][sel.dataset.limb] = sel.value; saveControls(); updateHint(); });
     document.querySelectorAll('#options b[data-mod]').forEach(b => { b.textContent = keyName(Controls.binds[b.dataset.mod][0]); });
     $('#optStatus').textContent = App.playing ? (isLocal() ? 'Fight paused. Changes apply instantly.' : 'Online: the fight keeps running while this is open. Strike changes apply next fight.') : 'Changes are saved automatically.';
+    buildKeyboard();
+  }
+
+  // ---------- keyboard diagram (options panel), drawn from the live binds ----------
+  const KB_CAT = { fwd: 'move', back: 'move', left: 'move', right: 'move', lh: 'strike', rh: 'strike', ll: 'strike', rl: 'strike', mod1: 'mod', mod2: 'mod', mod3: 'mod', block: 'def', dodge: 'def', check: 'def', grapple: 'grap', stance: 'misc', interact: 'misc', lock: 'misc' };
+  const KB_SHORT = { fwd: 'In', back: 'Out', left: 'Left', right: 'Right', lh: 'L hand', rh: 'R hand', ll: 'L leg', rl: 'R leg', mod1: 'Mod 1', mod2: 'Mod 2', mod3: 'Mod 3', block: 'Block', dodge: 'Slip', check: 'Check', grapple: 'Takedown', stance: 'Stance', interact: 'Use', lock: 'Lock' };
+  const KB_KIND = { straight: 'Straight', hook: 'Hook', uppercut: 'Upper', overhand: 'Overhd', teep: 'Teep', knee: 'Knee', bkick: 'Body kk', hkick: 'Head kk', lkick: 'Low kk' }; // fits a 1u cap
+  const KB_LEGEND = [['move', 'Move'], ['strike', 'Strike'], ['mod', 'Modifier'], ['def', 'Defense'], ['grap', 'Grapple'], ['misc', 'Other'], ['sys', 'System']];
+  const KB_CAP = { Escape: 'ESC', MetaLeft: 'WIN', MetaRight: 'WIN', ContextMenu: 'MENU', Backspace: '⌫' };
+  const kbKeys = (pre, s) => s.split('').map(c => [pre + c, 1]);
+  const KB_MAIN = [
+    [['Escape', 1], [null, 14]],
+    [['Backquote', 1], ...kbKeys('Digit', '1234567890'), ['Minus', 1], ['Equal', 1], ['Backspace', 2]],
+    [['Tab', 1.5], ...kbKeys('Key', 'QWERTYUIOP'), ['BracketLeft', 1], ['BracketRight', 1], ['Backslash', 1.5]],
+    [['CapsLock', 1.75], ...kbKeys('Key', 'ASDFGHJKL'), ['Semicolon', 1], ['Quote', 1], ['Enter', 2.25]],
+    [['ShiftLeft', 2.25], ...kbKeys('Key', 'ZXCVBNM'), ['Comma', 1], ['Period', 1], ['Slash', 1], ['ShiftRight', 2.75]],
+    [['ControlLeft', 1.5], ['MetaLeft', 1.25], ['AltLeft', 1.25], ['Space', 7], ['AltRight', 1.25], ['ContextMenu', 1.25], ['ControlRight', 1.5]]
+  ];
+  const KB_ARROWS = [[[null, 3]], [[null, 3]], [[null, 3]], [[null, 3]], [[null, 1], ['ArrowUp', 1], [null, 1]], [['ArrowLeft', 1], ['ArrowDown', 1], ['ArrowRight', 1]]];
+  // keys main.js handles itself; H and M only when nothing is bound to them
+  function kbFixed(code) {
+    if (code === 'Escape') return ['Menu', 'Open / close options (pauses practice)'];
+    if (code === 'Enter') return ['Chat', 'Open chat during a fight'];
+    if (code === 'KeyH' && !Controls.keyMap.KeyH) return ['Hints', 'Show / hide the on-screen control hints'];
+    if (code === 'KeyM' && !Controls.keyMap.KeyM) return ['Mute', 'Mute / unmute sound'];
+    return null;
+  }
+  function buildKeyboard() {
+    const host = $('#kbMap'); if (!host) return;
+    const byCode = {};
+    for (const a of ACTIONS) for (const c of Controls.binds[a.id]) if (c && !byCode[c]) byCode[c] = a;
+    const placed = new Set();
+    const cap = ([code, w]) => {
+      if (!code) return '<div class="kk gap" style="flex:' + w + '"></div>';
+      placed.add(code);
+      const a = byCode[code], fx = kbFixed(code);
+      const cat = a ? KB_CAT[a.id] : fx ? 'sys' : '';
+      const label = a ? KB_SHORT[a.id] : fx ? fx[0] : '';
+      const strike = a && KB_CAT[a.id] === 'strike' ? '<span class="ks" data-limb="' + a.id + '"></span>' : '';
+      return '<div class="kk' + (cat ? ' c-' + cat : ' off') + '" style="flex:' + w + '" data-code="' + code + '"' + (a ? ' data-act="' + a.id + '"' : '') + '>' +
+        '<span class="kc">' + esc(KB_CAP[code] || keyName(code)) + '</span>' + (label ? '<span class="kl">' + label + '</span>' : '') + strike + '</div>';
+    };
+    const block = (rows, cls) => '<div class="kb-block ' + cls + '">' + rows.map(r => '<div class="kb-row">' + r.map(cap).join('') + '</div>').join('') + '</div>';
+    host.innerHTML = block(KB_MAIN, 'main') + block(KB_ARROWS, 'arrows');
+    // binds on keys the diagram has no cap for (numpad, F-keys, ...)
+    const extra = Object.keys(byCode).filter(c => !placed.has(c));
+    const info = $('#kbInfo');
+    const idle = extra.length ? 'Also bound: ' + extra.map(c => '<b>' + esc(keyName(c)) + '</b> ' + KB_SHORT[byCode[c].id]).join(' · ') : '<span class="muted">Hover a key.</span>';
+    info.innerHTML = idle;
+    $('#kbLegend').innerHTML = KB_LEGEND.map(([c, n]) => '<span class="c-' + c + '"><i></i>' + n + '</span>').join('');
+    const ms = Controls.moveset;
+    const showMod = (m) => {
+      host.querySelectorAll('.ks').forEach(s => { s.textContent = KB_KIND[ms[m][s.dataset.limb]] || KIND_LABEL[ms[m][s.dataset.limb]]; });
+      host.querySelectorAll('.kk[data-act^="mod"]').forEach(k => k.classList.toggle('hot', k.dataset.act === m));
+    };
+    showMod('none');
+    const modKey = m => m === 'none' ? 'no modifier' : 'hold <b>' + esc(keyName(Controls.binds[m][0])) + '</b>';
+    host.querySelectorAll('.kk[data-code]').forEach(k => k.onmouseenter = () => {
+      const a = byCode[k.dataset.code], fx = kbFixed(k.dataset.code);
+      if (a && KB_CAT[a.id] === 'mod') showMod(a.id);
+      let h = '<b>' + esc(keyName(k.dataset.code)) + '</b> ';
+      if (a && KB_CAT[a.id] === 'mod') h += a.label + ': ' + LIMBS.map(l => LIMB_NAME[l].toLowerCase() + ' ' + KIND_LABEL[ms[a.id][l]].toLowerCase()).join(' · ');
+      else if (a && KB_CAT[a.id] === 'strike') h += a.label + ': ' + MODS.map(m => modKey(m) + ' ' + KIND_LABEL[ms[m][a.id]].toLowerCase()).join(' · ');
+      else if (a) h += a.label;
+      if (fx) h += (a ? ' · ' : '') + fx[1];
+      if (!a && !fx) h += '<span class="muted">unbound</span>';
+      info.innerHTML = h;
+    });
+    host.onmouseleave = () => { showMod('none'); info.innerHTML = idle; };
   }
   function startCapture(act, slot, btn) {
     cancelCapture();
@@ -537,7 +606,7 @@
     saveControls(); buildOptions(); updateHint();
   }
   function openOptions() {
-    App.optionsOpen = true; App.held = 0; App.pressed = 0;
+    App.optionsOpen = true; App.held = 0; App.pressed = 0; releasePointer();
     if (App.playing && isLocal()) App.paused = true;
     $('#btnOptQuit').style.display = ($('#menu').classList.contains('hidden') && $('#career').classList.contains('hidden') && $('#careerNew').classList.contains('hidden')) || (App.gym && App.gym.active) ? '' : 'none'; // QUIT shows only in a fight/lobby or the gym, hidden on the menus
     buildOptions(); show($('#options'));
@@ -604,6 +673,11 @@
   });
   window.addEventListener('keyup', (e) => { const b = Controls.keyMap[e.code]; if (b) { App.held &= ~b; e.preventDefault(); } });
   window.addEventListener('blur', () => { App.held = 0; });
+  // the gym's free-walk camera turns with the mouse: click the view to capture the pointer (ESC lets it go)
+  const gymLive = () => App.gym && App.gym.active && !App.gym.paused && !App.optionsOpen;
+  $('#gl').addEventListener('mousedown', () => { if (gymLive() && !document.pointerLockElement) { const p = $('#gl').requestPointerLock(); if (p && p.catch) p.catch(() => {}); } });
+  window.addEventListener('mousemove', (e) => { if (document.pointerLockElement === $('#gl') && gymLive()) App.gym.look(e.movementX || 0); });
+  function releasePointer() { if (document.pointerLockElement) document.exitPointerLock(); }
 
   // ============================================================
   //  Main loop
@@ -731,7 +805,7 @@
   // keepScene: a fight is about to take the scene over; otherwise put the menu's demo arena back
   function exitGym(keepScene) {
     if (!App.gym || !App.gym.active) return;
-    App.gym.leave(); hide($('#gymHud'));
+    App.gym.leave(); hide($('#gymHud')); releasePointer();
     if (App.mode === 'gym') App.mode = null;
     if (!keepScene) menuScene();
   }
@@ -740,7 +814,7 @@
     // once a fight is booked the computer shows the fight card (and the FIGHT button on fight week)
     if (id === 'computer' && C.booked) { tab = 'camp'; id = 'computerBooked'; }
     CareerUI.tab = tab; CareerUI.station = id || tab;
-    App.gym.paused = true; App.held = 0; App.pressed = 0;
+    App.gym.paused = true; App.held = 0; App.pressed = 0; releasePointer();
     hide($('#gymHud'));
     renderCareer(); show($('#career'));
     $('#career .panel').scrollTop = 0;
@@ -1110,21 +1184,25 @@
   window.addEventListener('mmaphys', (e) => { if (!e.detail.ok) { App.physFailed = true; toast('Physics engine failed to load: ' + (e.detail.error && e.detail.error.message), 8000); } });
 
   // Hidden extras: clicking the title's G (#titleG) opens the 'more' screen.
-  const Extras = { mark: false };
+  const Extras = { mark: false, ref: true };
   function loadExtras() {
     try {
       Extras.mark = localStorage.getItem('cr_fx_1') === '1';
+      Extras.ref = localStorage.getItem('cr_ref') !== '0';
     } catch (_) {}
   }
   function saveExtras() {
     try {
       localStorage.setItem('cr_fx_1', Extras.mark ? '1' : '0');
+      localStorage.setItem('cr_ref', Extras.ref ? '1' : '0');
     } catch (_) {}
   }
   function syncExtras() {
     const mark = $('#optMark');
     if (mark) mark.checked = Extras.mark;
-    if (App.renderer) App.renderer.setMarks(Extras.mark);
+    const ref = $('#optRef');
+    if (ref) ref.checked = Extras.ref;
+    if (App.renderer) { App.renderer.setMarks(Extras.mark); App.renderer.setRefVisible(Extras.ref); }
     updateHint();
   }
   function lineName(i) {
@@ -1166,6 +1244,7 @@
   $('#titleG').onclick = () => { if ($('#menu').classList.contains('hidden')) return; screen('more'); syncExtras(); };
   $('#btnMoreClose').onclick = () => screen('menu');
   $('#optMark').addEventListener('change', () => { Extras.mark = $('#optMark').checked; saveExtras(); syncExtras(); });
+  $('#optRef').addEventListener('change', () => { Extras.ref = $('#optRef').checked; saveExtras(); syncExtras(); });
   syncExtras();
   App.talk = new CageTalk.Talk();
   App.talk.mount();

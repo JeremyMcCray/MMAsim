@@ -1,6 +1,9 @@
 // Loads the game in headless Chromium, starts a career, walks around the gym, hits the bag,
 // opens every station and screenshots the room at every upgrade tier.
 //   node tools/gym-test.js [outdir=/tmp/gymshots]
+// NOTE: turn the referee off before taking reference pictures, so he isn't in the frame or blocking the fighters:
+//   await page.evaluate(() => window.CageRules.renderer.setRefVisible(false));  (any time after page load; it sticks across fights)
+// or untick Options > Show referee (saved as localStorage cr_ref = '0').
 const { chromium } = require('playwright');
 const http = require('http');
 const fs = require('fs');

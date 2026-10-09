@@ -1,5 +1,8 @@
 // Close-ups of the fighter model in its stance from the front, side, 3/4 back and a head close-up.
 //   node tools/model-shots.js [outdir=/tmp/model]
+// NOTE: turn the referee off before taking reference pictures, so he isn't in the frame or blocking the fighters:
+//   await page.evaluate(() => window.CageRules.renderer.setRefVisible(false));  (any time after page load; it sticks across fights)
+// or untick Options > Show referee (saved as localStorage cr_ref = '0').
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const ROOT = path.resolve(__dirname, '..'); const outdir = process.argv[2] || '/tmp/model'; fs.mkdirSync(outdir, { recursive: true });

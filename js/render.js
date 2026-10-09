@@ -1457,6 +1457,7 @@
       this.models = [];
       this.ref = new Referee(this.scene);
       this.ref.setVisible(false);
+      this.refOn = true; // the 'Show referee' option: off hides him (he still runs the post-fight line-up, unseen)
       // black card in front of the lens for the cut to the post-fight line-up
       this.fadeCard = new THREE.Mesh(new THREE.PlaneGeometry(4, 4), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0, depthTest: false, depthWrite: false, fog: false }));
       this.fadeCard.position.z = -0.15; this.fadeCard.renderOrder = 999; this.fadeCard.visible = false;
@@ -1491,8 +1492,13 @@
     // the career gym (js/gym.js) borrows the scene: hide the cage, crowd and arena lighting while it is up
     setArenaVisible(v) {
       this.arena.visible = v;
-      this.ref.setVisible(v && this.models.length > 0);
+      this.ref.setVisible(this.refOn && v && this.models.length > 0);
       for (const l of this.arenaLights) l.visible = v;
+    }
+
+    setRefVisible(on) {
+      this.refOn = !!on;
+      this.ref.setVisible(this.refOn && this.arena.visible && this.models.length > 0);
     }
 
     setFighters(S) {
@@ -1500,7 +1506,7 @@
       this.models = S.f.map((f, i) => new FighterModel(this.scene, f.color, f.skin, i));
       this.lastGround = false;
       this.ref.reset();
-      this.ref.setVisible(this.arena.visible);
+      this.ref.setVisible(this.refOn && this.arena.visible);
       if (this.blood) this.blood.clear();
     }
 

@@ -30,6 +30,8 @@
   const HIT_IMPULSE_CAP = 5;          // damage above this adds no more physical shove (keeps knockdowns on the spot)
   const VMIN = 2.2;                   // m/s along the contact normal
   const MIN_CLEAN = 0.35;             // vn / |v_rel| below this is a glancing blow
+  const KNEE_DRIVE_TAU = 0.1;         // s: how fast a knee's built-up drive fades once the kneecap slows
+  const KNEE_CARRY = 0.8;             // share of that drive a knee lands with when the body arrives after the peak
   const ZETA = 1.0;                   // damping ratio of every joint controller
   const HOVER_HEIGHT = 1.08; // hip height in stance (legs are human-proportioned: a head kick must be reachable)
   const HOVER_FRACTION = 0.7;
@@ -295,16 +297,19 @@
         { t: 0.5, pelvisYaw: -96, pelvisTilt: [-4, 0, 30], chest: [18, 10, -4], head: [8, 20, 6], rThigh: [-105, 33, 52], rShin: [127, 0, 0], lThigh: [-26, -13, -28], lShin: [18, 0, 0], lUpperArm: [-70, 0, 10], rUpperArm: [60, 15, 0], rForearm: [-94, 0, 0], lift: 0, rAnkle: 25 },
         { t: 0.62, pelvisYaw: -48, pelvisTilt: [0, 0, 8], chest: [8, 4, -2], head: [8, 6, 0], rThigh: [-38, 21, -3], rShin: [46, 0, 0], lThigh: [-22, -7, -9], lShin: [28, 0, 0], lUpperArm: [-44, -14, 0], rUpperArm: [-32, -12, -4], rForearm: [-138, 0, -22], lift: 0, rAnkle: 5 },
         { t: 0.90, pelvisYaw: S, pelvisTilt: S, chest: S, head: S, rThigh: S, rShin: S, lThigh: S, lShin: S, lUpperArm: S, rUpperArm: S, rForearm: S, lift: 0, rAnkle: 0 }] },
-    // ---- rear-leg roundhouse to the body: the head kick's path brought down to the ribs
+    // ---- rear-leg roundhouse to the body: the head kick's path brought down to the ribs. The leg turns over: from the
+    // mid-swing on the kneecap faces across and down, the shin swings through near level and the pointed instep leads it
+    // across the ribs (tools/kicksolve.js 'face' targets).
     rl_bkick: { name: 'body kick', part: 'body', keys: ['chest', 'head', 'rThigh', 'rShin', 'lThigh', 'lShin', 'pelvisYaw', 'pelvisTilt', 'lUpperArm', 'rUpperArm', 'lift', 'rAnkle'], weapon: 'rShin', weaponMult: 1.5, active: [0.21, 0.42], cost: 8, speed: 1.7, lunge: 0.5,
       frames: [
         { t: 0.00, pelvisYaw: S, pelvisTilt: S, chest: S, head: S, rThigh: S, rShin: S, lThigh: S, lShin: S, lUpperArm: S, rUpperArm: S, lift: 0, rAnkle: 0 },
-        { t: 0.10, pelvisYaw: -14, pelvisTilt: [0, 0, 6], chest: [4, -4, -4], head: [6, 14, 2], rThigh: [-65, 1, 31], rShin: [126, 0, 0], lThigh: [-21, -4, -6], lShin: [25, 0, 0], lUpperArm: [-60, 0, 10], rUpperArm: [-26, -6, -30], lift: 0, rAnkle: 20 },
-        { t: 0.20, pelvisYaw: -48, pelvisTilt: [-4, 0, 28], chest: [8, 4, -8], head: [6, 28, 4], rThigh: [-39, -34, 68], rShin: [137, 0, 0], lThigh: [-28, -11, -38], lShin: [31, 0, 0], lUpperArm: [-80, 10, 20], rUpperArm: [-20, 0, -70], lift: 0, rAnkle: 45 },
-        { t: 0.29, pelvisYaw: -78, pelvisTilt: [-6, 0, 46], chest: [20, 10, -14], head: [6, 30, 6], rThigh: [-130, 13, 84], rShin: [27, 0, 0], lThigh: [-45, -9, -55], lShin: [32, 0, 0], lUpperArm: [-80, 10, 20], rUpperArm: [-20, 0, -70], lift: 0.04, rAnkle: 50 },
-        { t: 0.38, pelvisYaw: -88, pelvisTilt: [-6, 0, 46], chest: [22, 14, -14], head: [6, 30, 6], rThigh: [-151, 17, 80], rShin: [54, 0, 0], lThigh: [-44, -13, -52], lShin: [28, 0, 0], lUpperArm: [-80, 10, 20], rUpperArm: [-20, 0, -70], lift: 0.04, rAnkle: 50 },
-        { t: 0.50, pelvisYaw: -46, pelvisTilt: [-4, 0, 22], chest: [10, 6, -8], head: [6, 14, 2], rThigh: [-71, -1, 44], rShin: [145, 0, 0], lThigh: [-29, -21, -34], lShin: [28, 0, 0], lUpperArm: [-64, -6, 4], rUpperArm: [-36, -8, -30], lift: 0, rAnkle: 25 },
-        { t: 0.64, pelvisYaw: -8, pelvisTilt: [0, 0, 4], chest: [4, 2, -2], head: [6, 0, 0], rThigh: [-19, 21, 12], rShin: [50, 0, 0], lThigh: [-22, -11, -5], lShin: [24, 0, 0], lUpperArm: [-40, -16, -4], rUpperArm: [-32, -12, 0], lift: 0, rAnkle: 5 },
+        { t: 0.1, pelvisYaw: -14, pelvisTilt: [0, 0, 6], chest: [4, -4, -4], head: [6, 14, 2], rThigh: [-65, 1, 31], rShin: [126, 0, 0], lThigh: [-21, -4, -6], lShin: [25, 0, 0], lUpperArm: [-60, 0, 10], rUpperArm: [-26, -6, -30], lift: 0, rAnkle: 20 },
+        { t: 0.2, pelvisYaw: -48, pelvisTilt: [-4, 0, 28], chest: [8, 4, -8], head: [6, 28, 4], rThigh: [-26, -36, 76], rShin: [134, 0, 0], lThigh: [-28, -11, -38], lShin: [31, 0, 0], lUpperArm: [-80, 10, 20], rUpperArm: [-20, 0, -70], lift: 0, rAnkle: 50 },
+        { t: 0.245, pelvisYaw: -64, pelvisTilt: [-5, 0, 38], chest: [14, 7, -11], head: [6, 30, 5], rThigh: [4, -29, 68], rShin: [75, 0, 0], lThigh: [-38, -11, -48], lShin: [31, 0, 0], lUpperArm: [-80, 10, 20], rUpperArm: [-20, 0, -70], lift: 0.02, rAnkle: 55 },
+        { t: 0.29, pelvisYaw: -78, pelvisTilt: [-6, 0, 46], chest: [20, 10, -14], head: [6, 30, 6], rThigh: [35, -47, 76], rShin: [14, 0, 0], lThigh: [-45, -9, -55], lShin: [32, 0, 0], lUpperArm: [-80, 10, 20], rUpperArm: [-20, 0, -70], lift: 0.04, rAnkle: 55 },
+        { t: 0.38, pelvisYaw: -88, pelvisTilt: [-6, 0, 46], chest: [22, 14, -14], head: [6, 30, 6], rThigh: [60, -51, 103], rShin: [8, 0, 0], lThigh: [-44, -13, -52], lShin: [28, 0, 0], lUpperArm: [-80, 10, 20], rUpperArm: [-20, 0, -70], lift: 0.04, rAnkle: 55 },
+        { t: 0.5, pelvisYaw: -46, pelvisTilt: [-4, 0, 22], chest: [10, 6, -8], head: [6, 14, 2], rThigh: [-69, 0, 44], rShin: [144, 0, 0], lThigh: [-29, -21, -34], lShin: [28, 0, 0], lUpperArm: [-64, -6, 4], rUpperArm: [-36, -8, -30], lift: 0, rAnkle: 25 },
+        { t: 0.64, pelvisYaw: -8, pelvisTilt: [0, 0, 4], chest: [4, 2, -2], head: [6, 0, 0], rThigh: [-19, 21, 12], rShin: [49, 0, 0], lThigh: [-22, -11, -5], lShin: [24, 0, 0], lUpperArm: [-40, -16, -4], rUpperArm: [-32, -12, 0], lift: 0, rAnkle: 5 },
         { t: 0.80, pelvisYaw: S, pelvisTilt: S, chest: S, head: S, rThigh: S, rShin: S, lThigh: S, lShin: S, lUpperArm: S, rUpperArm: S, lift: 0, rAnkle: 0 }] },
     // ---- teep: knee comes up in front, the foot drives straight out and shoves
     rl_teep: { name: 'rear teep', part: 'body', push: true, keys: ['chest', 'rThigh', 'rShin', 'lThigh', 'lShin', 'pelvisYaw', 'lUpperArm', 'rUpperArm'], weapon: 'rFoot', weaponMult: 1.15, active: [0.15, 0.36], cost: 6, speed: 1.6, lunge: 0.8,
@@ -319,7 +324,7 @@
     // belt, the hips have thrust through and turned to carry the rear hip and the knee forward, with the torso leaning back behind them, the fighter is up on the ball of the
     // straight support leg, the lead arm is out framing the opponent's head and the rear arm keeps the guard's bent elbow and
     // rotates down at the shoulder as the counterweight, elbow back beside the ribs. The top of the shin (the kneecap) is the weapon.
-    rl_knee: { name: 'knee', part: 'body', keys: ['chest', 'head', 'rThigh', 'rShin', 'lThigh', 'lShin', 'pelvisYaw', 'pelvisTilt', 'lUpperArm', 'rUpperArm', 'rForearm', 'lForearm', 'lift', 'rAnkle'], weapon: 'rShin', weaponMult: 1.35, active: [0.15, 0.32], cost: 6.5, speed: 1.6, lunge: 1.8,
+    rl_knee: { name: 'knee', part: 'body', keys: ['chest', 'head', 'rThigh', 'rShin', 'lThigh', 'lShin', 'pelvisYaw', 'pelvisTilt', 'lUpperArm', 'rUpperArm', 'rForearm', 'lForearm', 'lift', 'rAnkle'], weapon: 'rShin', weaponMult: 2.2, active: [0.12, 0.32], cost: 6.5, speed: 1.6, lunge: 1.8,
       frames: [
         { t: 0.00, pelvisYaw: S, pelvisTilt: S, chest: S, head: S, rThigh: S, rShin: S, lThigh: S, lShin: S, lUpperArm: S, rUpperArm: S, rForearm: S, lForearm: S, lift: 0, rAnkle: 0 },
         { t: 0.08, pelvisYaw: 2, pelvisTilt: [-4, 0, 2], chest: [6, 10, 0], head: [12, -4, 0], rThigh: [-11, -6, 1], rShin: [63, 0, 0], lThigh: [-17, 7, -2], lShin: [27, 0, 0], lUpperArm: [-51, 0, 5], rUpperArm: [-52, -6, -4], rForearm: [-130, 0, -16], lForearm: [-95, 0, 0], lift: 0, rAnkle: 25 },
@@ -372,7 +377,7 @@
   STRIKES.ll_hkick = mirrorStrike(RAW.rl_hkick, 'll_hkick', 'lead head kick', 0.92);
   STRIKES.ll_bkick = mirrorStrike(RAW.rl_bkick, 'll_bkick', 'lead body kick', 0.92);
   STRIKES.ll_teep = mirrorStrike(RAW.rl_teep, 'll_teep', 'teep', 0.9);
-  STRIKES.ll_knee = mirrorStrike(RAW.rl_knee, 'll_knee', 'lead knee', 0.92);
+  STRIKES.ll_knee = mirrorStrike(RAW.rl_knee, 'll_knee', 'lead knee', 0.92); STRIKES.ll_knee.weaponMult = 1.25;
   for (const k in STRIKES) {
     const d = STRIKES[k];
     d.key = k; d.limb = k.slice(0, 2); d.kind = k.slice(3);
@@ -438,7 +443,7 @@
     // measured with tools/probe.js (furthest root-to-root distance at which the strike still lands on its
     // target); overrides the FK estimate above. The AI picks strikes from these.
     const RANGE = { lh_straight: 1.0, rh_straight: 1.0, lh_hook: 0.85, rh_hook: 0.85, rh_uppercut: 0.75, lh_uppercut: 0.9, rh_overhand: 1.3, lh_overhand: 1.25,
-      ll_lkick: 1.2, rl_lkick: 1.2, rl_hkick: 1.4, ll_hkick: 1.3, rl_bkick: 1.0, ll_bkick: 1.2, rl_teep: 1.25, ll_teep: 1.15, rl_knee: 0.8, ll_knee: 0.7 };
+      ll_lkick: 1.2, rl_lkick: 1.2, rl_hkick: 1.4, ll_hkick: 1.3, rl_bkick: 1.4, ll_bkick: 1.2, rl_teep: 1.25, ll_teep: 1.15, rl_knee: 1.05, ll_knee: 1.05 };
     for (const k in RANGE) if (STRIKES[k]) STRIKES[k].range = RANGE[k];
   })();
 
@@ -496,6 +501,8 @@
       this.downT = 0; this.downTotal = 1; this.riseT = 0; this.riseTotal = 1; // knocked down: catching himself, then climbing back up
       this.lying = false;       // knocked down and staying down (turtled / on his back until getUp() is called)
       this.kdDir = 'back';      // which way he went down: 'fwd' (onto hands and knees) or 'back' (onto his back, open guard)
+      this.kdSide = 1;          // the side he favours on the mat (+1 right, -1 left): nobody lands or posts symmetrically
+      this.downClock = 0;       // seconds since the knockdown (drives the dazed movement on the mat)
       this.gainTarget = 1;      // 1 normal, lower when staggered / stunned
       this.gainMult = 1;
       this.staggerT = 0;
@@ -587,7 +594,7 @@
         b.setLinvel(V(0, 0, 0), true); b.setAngvel(V(0, 0, 0), true);
         b.resetForces(true); b.resetTorques(true);
       }
-      this.strike = null; this.override = null; this.ko = false; this.downT = 0; this.riseT = 0; this.lying = false; this.kdDir = 'back'; this.gainMult = 1; this.gainTarget = 1;
+      this.strike = null; this.override = null; this.ko = false; this.downT = 0; this.riseT = 0; this.lying = false; this.kdDir = 'back'; this.downClock = 0; this.gainMult = 1; this.gainTarget = 1;
       this.staggerT = 0; this.stunT = 0; this.wobble = 0; this.move[0] = this.move[1] = 0; this.guard = false; this.check = false;
     }
 
@@ -626,6 +633,7 @@
       if (this.downT > 0) this.downT = Math.max(0, this.downT - dt);
       else if (!this.lying && this.riseT > 0) this.riseT = Math.max(0, this.riseT - dt);
       const down = this.ko || this.downT > 0 || this.lying;
+      if (down) this.downClock += dt;
       let gTarget = this.gainTarget;
       if (this.ko) gTarget = 0;
       else if (down) gTarget = this.downT > 0 ? 0.5 : 0.42; // conscious: still holding himself together on the mat
@@ -658,6 +666,15 @@
         while (d < -Math.PI) d += Math.PI * 2;
         const maxTurn = 10 * dt;
         this.yaw += clamp(d, -maxTurn, maxTurn);
+      } else if (this.opponent && !this.ko && this.lying && this.downT <= 0) {
+        // on the mat he keeps turning to face the threat: on his back he spins on his hips to keep his feet toward the
+        // opponent, on his hands and knees he shuffles round more slowly
+        const a = this.bodies.pelvis.translation(), b = this.opponent.bodies.pelvis.translation();
+        let d = Math.atan2(b.x - a.x, b.z - a.z) - this.yaw;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        const maxTurn = (this.kdDir === 'back' ? 1.6 : 0.7) * dt;
+        this.yaw += clamp(d, -maxTurn, maxTurn);
       }
       const pose = this.#computePose(dt);
       this.#applyControl(pose, dt, rand);
@@ -682,8 +699,84 @@
       return this.guard && !this.strike ? (this.guardLow ? GUARD_LOW : GUARD) : STANCE;
     }
 
+    // Knocked down but conscious, a fighter is never still: the head lolls, his chest
+    // heaves, he rolls onto a hip, tries to sit up on an elbow and sags back, covers his face and pulls his knees up
+    // when the opponent comes close; on his hands and knees his head hangs, he sways, an arm buckles, he tries to
+    // plant a foot. Getting up he posts one hand on the mat and keeps the other up by his face. This layers that
+    // movement onto the base mat pose. Deterministic (driven by downClock and kdSide only).
+    #animateDown(base) {
+      const p = {};
+      for (const k in base) p[k] = Array.isArray(base[k]) ? base[k].slice() : base[k];
+      p.pelvisTilt = p.pelvisTilt ? p.pelvisTilt.slice() : [0, 0, 0];
+      const s = this.kdSide, near = s > 0 ? 'r' : 'l', far = s > 0 ? 'l' : 'r';
+      const add = (k, x, y, z) => { const e = p[k]; e[0] += x; e[1] += y; e[2] += z; };
+      // offsets authored for the left limb; the right one gets the mirror
+      const addS = (side, k, x, y, z) => add(side + k, x, side === 'r' ? -y : y, side === 'r' ? -z : z);
+      // a 0..1 hump `width` of the way into every `period` seconds, starting `delay` seconds in
+      const pulse = (t, period, delay, width) => { const u = (((t - delay) % period) + period) % period / period; return t < delay || u >= width ? 0 : Math.sin(Math.PI * u / width); };
+
+      if (this.riseT > 0) {
+        // getting up: the near hand posts on the mat — out beside the hip when he comes up off his back (straight
+        // forward it ends up in his lap), out in front beside the knee when he comes up off his hands and knees —
+        // and the far one stays up by the face
+        const ax = this.kdDir === 'fwd' ? -60 : 15, az = this.kdDir === 'fwd' ? 25 : 35;
+        p[near + 'UpperArm'] = [ax, 0, near === 'r' ? az : -az]; p[near + 'Forearm'] = [-10, 0, 0];
+        addS(far, 'UpperArm', -12, 0, -15); addS(far, 'Forearm', -90, 0, 0);
+        add('chest', 0, 0, -6 * s); add('head', 0, 8 * s, 0);
+        return p;
+      }
+      const fwd = this.kdDir === 'fwd';
+      if (this.downT > this.downTotal * 0.5) {
+        // the fall: nobody lands square. He twists onto one side, one hand reaches further, one knee gives first
+        add('pelvisTilt', 0, 0, 14 * s); add('chest', 0, 0, 8 * s); add('head', 0, 15 * s, -10 * s);
+        addS(near, 'UpperArm', -15, 0, 0); addS(far, 'UpperArm', 25, 0, 0);
+        addS(near, 'Thigh', -15, 0, 0); addS(near, 'Shin', 20, 0, 0);
+        return p;
+      }
+      const t = Math.max(0, this.downClock - this.downTotal * 0.5); // seconds on the mat
+      const daze = clamp(1 - t / 6, 0.3, 1);                         // the fog lifts the longer he stays down
+      let close = 0;
+      if (this.opponent) {
+        const a = this.bodies.pelvis.translation(), b = this.opponent.bodies.pelvis.translation();
+        close = smooth(clamp((2.6 - Math.hypot(b.x - a.x, b.z - a.z)) / 1.2, 0, 1)); // 1 when the opponent stands over him
+      }
+      // head: a slow dazed loll
+      add('head', 0, 16 * daze * (Math.sin(t * 1.1 + s) + 0.4 * Math.sin(t * 2.7)), 10 * daze * Math.sin(t * 0.8 + 1.7 * s));
+      const breath = Math.sin(t * 3.3) * (1.5 + 3 * daze);
+      if (!fwd) {
+        add('chest', breath, 0, 0);
+        add('pelvisTilt', 0, 0, s * (8 + 6 * Math.sin(t * 0.5)) * (1 - 0.6 * close)); // rolled onto a hip, squares up when threatened
+        // legs: one knee pulled up, the other foot pushing out, swapping as he scoots; both come up as a shield when he's close
+        const lp = Math.sin(t * 0.9 + s) * (1 - 0.5 * close);
+        addS('l', 'Thigh', -18 * lp - 20 * close, 0, 0); addS('l', 'Shin', 22 * lp + 15 * close, 0, 0);
+        addS('r', 'Thigh', 18 * lp - 20 * close, 0, 0); addS('r', 'Shin', -22 * lp + 15 * close, 0, 0);
+        // tries to sit up on his near elbow, chin to chest, then sags back (more often once his head clears)
+        const su = pulse(t, 3.2, 0.6, 0.55) * (1 - close) * (0.6 + 0.4 * (1 - daze));
+        add('chest', 28 * su, 0, 0); add('head', 12 * su, 0, 0); add('pelvisTilt', 10 * su, 0, 0);
+        addS(near, 'UpperArm', 115 * su, 0, -20 * su); addS(near, 'Forearm', -20 * su, 0, 0);
+        addS(far, 'Forearm', -30 * su, 0, 0); // the other hand goes to his face
+        // covering up: forearms fold in front of the face
+        addS('l', 'Forearm', -50 * close, 0, 0); addS('r', 'Forearm', -50 * close, 0, 0);
+        addS('l', 'UpperArm', 0, 0, 8 * close); addS('r', 'UpperArm', 0, 0, 8 * close);
+      } else {
+        add('chest', 3 * Math.sin(t * 3.3), 0, 0);
+        // swaying on hands and knees, head hanging toward the mat, lifting to find the opponent when he comes close
+        const sw = Math.sin(t * 1.2 + s);
+        add('pelvisTilt', 0, 0, 8 * sw * daze); add('chest', 0, 0, 14 * sw * daze);
+        add('head', 45 * daze * (0.55 + 0.45 * Math.sin(t * 0.7)) - 25 * close, 0, 0);
+        // the near arm buckles and he dips onto that shoulder, then pushes back up
+        const bk = pulse(t, 2.9, 0.4, 0.3) * daze;
+        addS(near, 'UpperArm', 35 * bk, 0, 0); addS(near, 'Forearm', -75 * bk, 0, 0); add('chest', 12 * bk, 0, 10 * s * bk);
+        // tries to plant the far foot and come up, hips rising
+        const ft = pulse(t, 3.6, 1.8, 0.5) * (1 - 0.6 * daze);
+        addS(far, 'Thigh', -30 * ft, 0, 0); addS(far, 'Shin', -45 * ft, 0, 0); add('pelvisTilt', -10 * ft, 0, 0);
+      }
+      return p;
+    }
+
     #computePose(dt) {
-      const base = this.#basePose();
+      let base = this.#basePose();
+      if (!this.ko && (this.downT > 0 || this.lying || (this.riseT > 0 && this.riseProgress() < 0.55))) base = this.#animateDown(base);
       const st = this.strike;
       const out = { pelvisYaw: base.pelvisYaw, pelvisTilt: base.pelvisTilt || null, lift: 0, lAnkle: 0, rAnkle: 0, q: {}, speed: {}, zeta: {} };
       const inStrike = st ? st.def.keys : [];
@@ -911,6 +1004,15 @@
       const st = this.strike;
       if (!st || st.hit || !this.opponent) return null;
       const tt = st.t / st.tf;
+      const knee = st.def.kind === 'knee';
+      // a knee is driven in by the hips: the kneecap's closing speed peaks on the way up and the body arrives a
+      // moment later, so the drive it built (decaying fast) is what lands, not just the speed at the instant of contact
+      if (knee) {
+        const shin = st.def.weapon, kp = vAdd(this.bodies[shin].translation(), qRot(this.bodies[shin].rotation(), V(0, 0.18, 0)));
+        const v = vSub(this.velAt(shin, kp), this.opponent.velAt('pelvis', kp));
+        const fwd = Math.max(0, v.x * Math.sin(this.yaw) + v.z * Math.cos(this.yaw)), up = Math.max(0, v.y);
+        st.drive = Math.max((st.drive || 0) * Math.exp(-PHYS_DT / KNEE_DRIVE_TAU), Math.hypot(fwd, up));
+      }
       if (tt < st.def.active[0] || tt > st.def.active[1]) return null;
       const opp = this.opponent;
       let result = null;
@@ -918,6 +1020,7 @@
         const weapon = this.colliders[wname];
         for (const pc of opp.partColliders) {
           if (result) break;
+          if (knee && REGION[pc.part] === 'legs') continue; // the knee rides up over the lead thigh into the body
           this.world.contactPair(weapon.collider, pc.collider, (manifold, flipped) => {
           if (result || manifold.numContacts() === 0) return;
           const n0 = manifold.normal();
@@ -929,7 +1032,8 @@
           if (manifold.numSolverContacts() > 0) { const sp = manifold.solverContactPoint(0); point = V(sp.x, sp.y, sp.z); }
           else point = V(wp.x, wp.y, wp.z);
             const vRel = vSub(this.velAt(weapon.seg, point), opp.velAt(pc.seg, point));
-            const vn = vDot(vRel, n), speed = vLen(vRel);
+            let vn = vDot(vRel, n), speed = vLen(vRel);
+            if (knee && vn > -0.5) { vn = Math.max(vn, KNEE_CARRY * st.drive); speed = Math.max(speed, vn); }
             if (vn < 1.0) return; // touching or pulling away, not a blow
             result = { partName: pc.part, region: REGION[pc.part], seg: pc.seg, n, point, vn, speed, clean: speed > 0.01 ? vn / speed : 0, weapon: wname };
           });
@@ -973,7 +1077,7 @@
     knockOut() { this.ko = true; this.strike = null; }
     // go down for `fall` seconds, catching himself — forward onto hands and knees ('fwd') or back onto the mat ('back') —
     // and then stay there until getUp() is called
-    knockDown(fall, dir) { this.dashT = 0; this.downT = fall; this.downTotal = fall; this.kdDir = dir === 'fwd' ? 'fwd' : 'back'; this.lying = true; this.riseT = 0; this.strike = null; this.guard = false; this.check = false; }
+    knockDown(fall, dir, side) { this.dashT = 0; this.downT = fall; this.downTotal = fall; this.kdDir = dir === 'fwd' ? 'fwd' : 'back'; this.kdSide = side < 0 ? -1 : 1; this.downClock = 0; this.lying = true; this.riseT = 0; this.strike = null; this.guard = false; this.check = false; }
     // climb back to the stance over `rise` seconds
     getUp(rise) { this.lying = false; this.downT = 0; this.riseT = rise; this.riseTotal = rise; }
     isDown() { return this.downT > 0 || this.lying; }

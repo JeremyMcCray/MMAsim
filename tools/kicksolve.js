@@ -133,20 +133,31 @@ const KICKS = {
         kick: { knee: [-0.14, -0.42, 0.32], foot: [-0.18, -0.96, 0.26] }, sup: { knee: [-0.16, -0.54, 0.08], foot: [-0.18, -1.03, 0.02], heading: -60 } },
       { t: 0.90, S: true }] },
   // rear-leg roundhouse to the body: the head kick's path (knee up and across, hips over, late shin snap) brought
-  // down to rib height — the thigh stops level, the lean-away is smaller, the shin comes through nearly horizontal
+  // down to rib height — the thigh stops level, the lean-away is smaller, the shin comes through nearly horizontal.
+  // The leg must TURN OVER: from the mid-swing on, the kneecap faces across (the way the shin travels) and down, the
+  // shin swings in a near-level plane and the pointed foot's instep leads it across the ribs. Without the face
+  // targets the solver keeps the kneecap up and the shin flicks forward and up like a teep.
   rl_bkick: { side: 'r', dur: 0.80, active: [0.21, 0.42],
     frames: [
       { t: 0.00, S: true },
       { t: 0.10, yaw: -14, tilt: [0, 0, 6], chest: [4, -4, -4], head: [6, 14, 2], lUA: [-60, 0, 10], rUA: [-26, -6, -30], ankle: 20,
         kick: { knee: [0.20, -0.12, 0.30], foot: [0.26, -0.56, 0.02] }, sup: { knee: [-0.12, -0.56, 0.16], foot: [-0.13, -1.04, 0.16], heading: -20 } },
-      { t: 0.20, yaw: -48, tilt: [-4, 0, 28], chest: [8, 4, -8], head: [6, 28, 4], lUA: [-80, 10, 20], rUA: [-20, 0, -70], ankle: 45,
-        kick: { knee: [0.06, 0.16, 0.46], foot: [0.46, -0.06, 0.26] }, sup: { knee: [-0.18, -0.54, 0.04], foot: [-0.20, -1.02, -0.02], heading: -75 } },
-      { t: 0.29, yaw: -78, tilt: [-6, 0, 46], chest: [20, 10, -14], head: [6, 30, 6], lUA: [-80, 10, 20], rUA: [-20, 0, -70], ankle: 50, lift: 0.04,
-        kick: { knee: [0.02, 0.30, 0.48], foot: [-0.08, 0.50, 0.90] }, sup: { knee: [-0.22, -0.52, 0.00], foot: [-0.24, -1.00, -0.04], heading: -120 } },
-      { t: 0.38, yaw: -88, tilt: [-6, 0, 46], chest: [22, 14, -14], head: [6, 30, 6], lUA: [-80, 10, 20], rUA: [-20, 0, -70], ankle: 50, lift: 0.04,
-        kick: { knee: [-0.14, 0.30, 0.42], foot: [-0.46, 0.42, 0.68] }, sup: { knee: [-0.22, -0.52, 0.00], foot: [-0.24, -1.00, -0.04], heading: -130 } },
+      // chamber: knee up in front at belt height, shin folded and trailing out to the right, foot already pointed
+      { t: 0.20, yaw: -48, tilt: [-4, 0, 28], chest: [8, 4, -8], head: [6, 28, 4], lUA: [-80, 10, 20], rUA: [-20, 0, -70], ankle: 50,
+        kick: { knee: [0.08, 0.16, 0.46], foot: [0.48, 0.02, 0.26] }, sup: { knee: [-0.18, -0.54, 0.04], foot: [-0.20, -1.02, -0.02], heading: -75 } },
+      // mid-swing: the hips roll over and the knee leads across the centre line, kneecap turning to face across and
+      // down; the shin opens out level behind it, the foot still out to the right at rib height
+      { t: 0.245, yaw: -64, tilt: [-5, 0, 38], chest: [14, 7, -11], head: [6, 30, 5], lUA: [-80, 10, 20], rUA: [-20, 0, -70], ankle: 55, lift: 0.02,
+        kick: { knee: [0.07, 0.10, 0.59], foot: [0.52, 0.26, 0.70], face: [-0.28, 0.12, 0.95] }, sup: { knee: [-0.20, -0.53, 0.02], foot: [-0.22, -1.01, -0.03], heading: -100 } },
+      // impact: hips over, shin snapped out level across the ribs (slight bend left in it), kneecap across and down,
+      // instep in line with the shin and pointed past the target
+      { t: 0.29, yaw: -78, tilt: [-6, 0, 46], chest: [20, 10, -14], head: [6, 30, 6], lUA: [-80, 10, 20], rUA: [-20, 0, -70], ankle: 55, lift: 0.04,
+        kick: { knee: [-0.10, 0.06, 0.58], foot: [-0.15, 0.17, 1.05], face: [-0.70, -0.71, 0.09] }, sup: { knee: [-0.22, -0.52, 0.00], foot: [-0.24, -1.00, -0.04], heading: -120 } },
+      // through: the leg carries on across, still long and level, kneecap rolled down at the mat
+      { t: 0.38, yaw: -88, tilt: [-6, 0, 46], chest: [22, 14, -14], head: [6, 30, 6], lUA: [-80, 10, 20], rUA: [-20, 0, -70], ankle: 55, lift: 0.04,
+        kick: { knee: [-0.25, 0.06, 0.53], foot: [-0.50, 0.16, 0.94], face: [-0.40, -0.92, -0.01] }, sup: { knee: [-0.22, -0.52, 0.00], foot: [-0.24, -1.00, -0.04], heading: -130 } },
       { t: 0.50, yaw: -46, tilt: [-4, 0, 22], chest: [10, 6, -8], head: [6, 14, 2], lUA: [-64, -6, 4], rUA: [-36, -8, -30], ankle: 25,
-        kick: { knee: [0.08, 0.02, 0.44], foot: [0.24, -0.34, 0.20] }, sup: { knee: [-0.18, -0.54, 0.04], foot: [-0.20, -1.02, -0.02], heading: -80 } },
+        kick: { knee: [0.09, 0.01, 0.55], foot: [0.24, -0.34, 0.20] }, sup: { knee: [-0.18, -0.54, 0.04], foot: [-0.20, -1.02, -0.02], heading: -80 } },
       { t: 0.64, yaw: -8, tilt: [0, 0, 4], chest: [4, 2, -2], head: [6, 0, 0], lUA: [-40, -16, -4], rUA: [-32, -12, 0], ankle: 5,
         kick: { knee: [0.18, -0.40, 0.10], foot: [0.22, -0.95, -0.06] }, sup: { knee: [-0.12, -0.54, 0.16], foot: [-0.12, -1.03, 0.18], heading: -20 } },
       { t: 0.80, S: true }] },
@@ -183,7 +194,7 @@ const KICKS = {
   //           torso leans back behind them, up on the ball of the straight support leg, rear arm swung down
   //           and back past the hip as the counterweight, lead arm out at head height
   //   return  the knee drops straight back down and the foot returns to stance
-  rl_knee: { side: 'r', dur: 0.62, active: [0.15, 0.32],
+  rl_knee: { side: 'r', dur: 0.62, active: [0.12, 0.32],
     frames: [
       { t: 0.00, S: true },
       { t: 0.08, yaw: 2, tilt: [-4, 0, 2], chest: [6, 10, 0], head: [12, -4, 0], ankle: 25, lFist: [-0.14, 0.58, 0.44], rUA: [-52, -6, -4], rFA: [-130, 0, -16],
