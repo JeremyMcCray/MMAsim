@@ -183,17 +183,11 @@
   const CELEBRATE = { pelvisYaw: 0, chest: [-8, 0, 0], head: [-12, 0, 0], lUpperArm: [-170, 0, 30], lForearm: [-20, 0, 0], rUpperArm: [-170, 0, -30], rForearm: [-20, 0, 0], lThigh: [-5, 0, -8], lShin: [8, 0, 0], rThigh: [-5, 0, 8], rShin: [8, 0, 0] };
   // rocked: chin up, hands low, knees soft
   const WOBBLE = { pelvisYaw: 10, chest: [-6, 10, 0], head: [-10, -8, 0], lUpperArm: [-40, 8, -12], lForearm: [-70, 0, 8], rUpperArm: [-30, -10, 10], rForearm: [-80, 0, -6], lThigh: [-30, 0, -6], lShin: [38, 0, 0], rThigh: [4, 0, 10], rShin: [20, 0, 0] };
-  // edge guard: the lead arm props up on the centre line, covering the head
-  const EDGE_GUARD = Object.assign({}, STANCE, {
-    pelvisYaw: 6, chest: [10, 6, 0], head: [2, -4, 0],
-    lUpperArm: [-100, -30, 65], lForearm: [-130, -40, -50],
-    rUpperArm: [-55, -6, 12], rForearm: [-110, 0, -8]
-  });
   // check (CHECK held): the lead knee comes up and turns out so the shin meets an incoming low kick, hands stay up
   const CHECK_LEGS = { lThigh: [-68, 0, -14], lShin: [74, 0, 0], rThigh: [8, 0, 6], rShin: [10, 0, 0] };
   const CHECK = Object.assign({}, STANCE, CHECK_LEGS);
   const CHECK_GUARD = Object.assign({}, GUARD, CHECK_LEGS); // checking with BLOCK held too
-  const POSES = { STANCE, GUARD, GUARD_LOW, CHECK, CHECK_GUARD, LIMP, SLIP, SHOOT, SPRAWL, PUSH, STUMBLE, CELEBRATE, WOBBLE, GETUP, KD_FALL_FWD, KD_TURTLE, KD_FALL_BACK, KD_GUARD, EDGE_GUARD };
+  const POSES = { STANCE, GUARD, GUARD_LOW, CHECK, CHECK_GUARD, LIMP, SLIP, SHOOT, SPRAWL, PUSH, STUMBLE, CELEBRATE, WOBBLE, GETUP, KD_FALL_FWD, KD_TURTLE, KD_FALL_BACK, KD_GUARD };
 
   // ---------------------------------------------------------------- strikes
   // keys: joints a strike animates. Every keyframe must give each of those joints (or 'stance').
@@ -467,7 +461,7 @@
   }
   const flipSide = (name) => (name[0] === 'l' ? 'r' : 'l') + name.slice(1);
   const SOUTHPAW_POSE = new Map(); // orthodox pose -> its mirror
-  for (const k in POSES) if (k !== 'EDGE_GUARD') SOUTHPAW_POSE.set(POSES[k], mirrorFrame(POSES[k])); // the blade stays in the left hand
+  for (const k in POSES) SOUTHPAW_POSE.set(POSES[k], mirrorFrame(POSES[k]));
   for (const k in STRIKES) {
     const d = STRIKES[k];
     d.southpaw = Object.assign({}, d, {
@@ -1026,7 +1020,7 @@
       col.setCollisionGroups(groups(GROUP_FIGHTER[1], GROUP_FIGHTER[0]));
       world.createImpulseJoint(R.JointData.spherical(V(0, 0, 0), V(0, cfg.pivot - mid, 0)), this.anchor, body, true);
       this.body = body;
-      // every body the sim may read (facing, vitals, the lead-prop blade) is the bag itself
+      // every body the sim may read (facing, vitals) is the bag itself
       this.bodies = { pelvis: body, chest: body, head: body, lForearm: body };
       this.colliders = { bag: { collider: col, part: 'chest', seg: 'bag' } };
       this.partColliders = [this.colliders.bag];
@@ -1178,55 +1172,6 @@
 
   function init(RAPIER) { R = RAPIER; return R.init ? R.init() : Promise.resolve(); }
 
-  // Lead-hand prop moves: one path per punch kind (EDGE_MOVES). Angles assume the prop's long axis
-  // points forward in the orthodox guard.
-  function edgeMove(name, speed, active, lunge, frames) {
-    const d = {
-      name, limb: 'lh', weapon: 'lFist', weapons: ['lFist'], speed, active, lunge,
-      keys: ['pelvisYaw', 'chest', 'head', 'lUpperArm', 'lForearm', 'rUpperArm'],
-      frames
-    };
-    d.dur = frames[frames.length - 1].t;
-    d.w = active[0];
-    d.a = active[1] - active[0];
-    return d;
-  }
-  const ARM = [-100, -15, -20];
-  // E + lead hand: step in and drive straight out.
-  const EDGE_LUNGE = edgeMove('lunge', 1.55, [0.12, 0.32], 1.15, [
-    { t: 0.00, pelvisYaw: S, chest: S, head: S, lUpperArm: S, lForearm: S, rUpperArm: S },
-    { t: 0.08, pelvisYaw: 6, chest: S, head: S, lUpperArm: [-80, -12, -12], lForearm: [-90, 0, 8], rUpperArm: S },
-    { t: 0.20, pelvisYaw: 0, chest: S, head: S, lUpperArm: [-110, -20, -40], lForearm: [-30, 20, 40], rUpperArm: [-50, 4, 8] },
-    { t: 0.34, pelvisYaw: 0, chest: S, head: S, lUpperArm: [-110, -20, -40], lForearm: [-30, 20, 40], rUpperArm: [-50, 4, 8] },
-    { t: 0.54, pelvisYaw: S, chest: S, head: S, lUpperArm: S, lForearm: S, rUpperArm: S }
-  ]);
-  // Hook: a horizontal sweep from the lead side, through the front, and across.
-  const EDGE_SWEEP = edgeMove('sweep', 1.3, [0.12, 0.38], 0.2, [
-    { t: 0.00, pelvisYaw: S, chest: S, head: S, lUpperArm: S, lForearm: S, rUpperArm: S },
-    { t: 0.10, pelvisYaw: S, chest: S, head: S, lUpperArm: ARM, lForearm: [-130, -20, -40], rUpperArm: S },
-    { t: 0.24, pelvisYaw: S, chest: S, head: S, lUpperArm: ARM, lForearm: [-70, 10, 10], rUpperArm: S },
-    { t: 0.38, pelvisYaw: S, chest: S, head: S, lUpperArm: ARM, lForearm: [-40, -10, 45], rUpperArm: S },
-    { t: 0.56, pelvisYaw: S, chest: S, head: S, lUpperArm: S, lForearm: S, rUpperArm: S }
-  ]);
-  // Base lead hand: it comes up from below through the front.
-  const EDGE_RISE = edgeMove('rise', 1.4, [0.10, 0.30], 0.25, [
-    { t: 0.00, pelvisYaw: S, chest: S, head: S, lUpperArm: S, lForearm: S, rUpperArm: S },
-    { t: 0.09, pelvisYaw: S, chest: S, head: S, lUpperArm: ARM, lForearm: [-20, 0, 20], rUpperArm: S },
-    { t: 0.20, pelvisYaw: S, chest: S, head: S, lUpperArm: ARM, lForearm: [-70, 10, 10], rUpperArm: S },
-    { t: 0.32, pelvisYaw: S, chest: S, head: S, lUpperArm: ARM, lForearm: [-110, -10, -30], rUpperArm: S },
-    { t: 0.50, pelvisYaw: S, chest: S, head: S, lUpperArm: S, lForearm: S, rUpperArm: S }
-  ]);
-  // Overhand: it lifts overhead and comes down the center line.
-  const EDGE_CHOP = edgeMove('chop', 1.2, [0.14, 0.38], 0.15, [
-    { t: 0.00, pelvisYaw: S, chest: S, head: S, lUpperArm: S, lForearm: S, rUpperArm: S },
-    { t: 0.12, pelvisYaw: S, chest: S, head: S, lUpperArm: ARM, lForearm: [-150, -40, -40], rUpperArm: S },
-    { t: 0.26, pelvisYaw: S, chest: S, head: S, lUpperArm: ARM, lForearm: [-50, 15, 30], rUpperArm: S },
-    { t: 0.40, pelvisYaw: S, chest: S, head: S, lUpperArm: ARM, lForearm: [-35, 20, 40], rUpperArm: S },
-    { t: 0.58, pelvisYaw: S, chest: S, head: S, lUpperArm: S, lForearm: S, rUpperArm: S }
-  ]);
-  const EDGE_MOVES = { straight: EDGE_LUNGE, hook: EDGE_SWEEP, uppercut: EDGE_RISE, overhand: EDGE_CHOP };
-  const EDGE_SWING = EDGE_SWEEP;
-
-  root.MMAPhys = { init, ready: () => !!R, World, Ragdoll, HeavyBag, STRIKES, EDGE_SWING, EDGE_MOVES, EDGE_GUARD, POSES, SEGS, SEG_ORDER, JOINTS, fk, resolveFrameExport: resolveFrame, impactDamage, PHYS_DT, SUBSTEPS, HOVER_HEIGHT, VMIN, DMG_SCALE, TARGET_R, math: { qMul, qEuler, qRot, qYaw, qSlerp, vAdd } };
+  root.MMAPhys = { init, ready: () => !!R, World, Ragdoll, HeavyBag, STRIKES, POSES, SEGS, SEG_ORDER, JOINTS, fk, resolveFrameExport: resolveFrame, impactDamage, PHYS_DT, SUBSTEPS, HOVER_HEIGHT, VMIN, DMG_SCALE, TARGET_R, math: { qMul, qEuler, qRot, qYaw, qSlerp, vAdd } };
   if (typeof module !== 'undefined' && module.exports) module.exports = root.MMAPhys;
 })(typeof window !== 'undefined' ? window : globalThis);

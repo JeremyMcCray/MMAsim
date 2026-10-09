@@ -226,15 +226,10 @@
       case 'in':
         App.remote.h = d.h | 0; App.remote.p |= (d.p | 0); break;
       case 'say': {
-        const kind = slashKind(d.m);
-        if (kind) { grant(1, kind); break; }
         showLine(1, d.m);
         if (App.net) App.net.send({ t: 'say', i: 1, m: d.m });
         break;
       }
-      case 'd':
-        if (App.sim) App.sim.drawPocket(1);
-        break;
       case 'rematch':
         App.rematch[1] = true; toast('Opponent wants a rematch!'); maybeRematch(); break;
     }
@@ -383,7 +378,6 @@
         case 'push': if (ev.ok) { A.block(); feed(text); } else A.whiff(); break;
         case 'miss': A.whiff(); if (ev.slipped) feed(text); break;
         case 'kd': A.slam(); centerMsg('KNOCKDOWN!', 1400); feed(text, true); break;
-        case 'line': break;
         case 'follow': A.slam(); feed(text, true); break;
         case 'getup': case 'stance': feed(text); break;
         case 'td': A.slam(); feed(text, true); break;
@@ -395,7 +389,7 @@
         case 'subescape': A.whistle(); feed(text, true); break;
         case 'subhold': A.block(); feed(text); break;
         case 'tap': A.tap(); feed(text, true); break;
-        case 'ko': A.horn(); if (ev.method === 'FATALITY') centerMsg('FATALITY', 2600); feed(text, true); break;
+        case 'ko': A.horn(); feed(text, true); break;
         case 'bell':
           if (ev.end) { A.bell(2); centerMsg('END OF ROUND ' + ev.round, 2500); }
           else { A.bell(1); centerMsg('FIGHT!', 900); }
@@ -569,8 +563,7 @@
     $('#controlsHint').innerHTML =
       '<div class="ctl-row">' + [B('fwd'), B('left'), B('back'), B('right')].join(' ') + ' move / circle (stepping into a shot adds power, backing off takes it away), tap any direction twice to lunge that way · ' + B('lh') + ' left hand · ' + B('rh') + ' right hand · ' + B('ll') + ' left leg · ' + B('rl') + ' right leg</div>' +
       '<div class="ctl-row">' + MODS.map(row).join(' · ') + '</div>' +
-      '<div class="ctl-row">' + B('block') + ' hold: block / sprawl (+ ' + B('mod3') + ' drops into a shell that covers the body), tap twice: push them off · ' + B('grapple') + ' takedown / dive on a downed opponent · ' + B('dodge') + ' slip · ' + B('stance') + ' switch stance · knocked down: a direction or ' + B('dodge') + ' gets up, or stay down to recover · ground: hands & legs strike, ' + B('grapple') + ' submission / sweep, ' + B('block') + ' posture / cover, ' + B('dodge') + ' let up · <b>Enter</b> chat · <b>ESC</b> options · <b>H</b> hide this · <b>M</b> mute' +
-      (App.extras && App.extras.pocket ? ' · <b>G</b> draw' : '') + '</div>';
+      '<div class="ctl-row">' + B('block') + ' hold: block / sprawl (+ ' + B('mod3') + ' drops into a shell that covers the body), tap twice: push them off · ' + B('grapple') + ' takedown / dive on a downed opponent · ' + B('dodge') + ' slip · ' + B('stance') + ' switch stance · knocked down: a direction or ' + B('dodge') + ' gets up, or stay down to recover · ground: hands & legs strike, ' + B('grapple') + ' submission / sweep, ' + B('block') + ' posture / cover, ' + B('dodge') + ' let up · <b>Enter</b> chat · <b>ESC</b> options · <b>H</b> hide this · <b>M</b> mute</div>';
   }
 
   // ============================================================
@@ -601,11 +594,6 @@
       return;
     }
     if (e.code === 'Escape') { e.preventDefault(); if (!e.repeat) { if (App.optionsOpen) closeOptions(); else openOptions(); } return; }
-    if ((e.code === 'KeyG' || e.key === 'g' || e.key === 'G') && !e.repeat && App.extras && App.extras.pocket && App.playing && !App.optionsOpen && App.mode !== 'watch') {
-      e.preventDefault();
-      tryDraw();
-      return;
-    }
     if (App.optionsOpen) return;
     if (e.code === 'KeyH' && !Controls.keyMap.KeyH) { if (!e.repeat) { App.hintsHidden = !App.hintsHidden; $('#controlsHint').style.display = App.hintsHidden ? 'none' : ''; } return; }
     if (e.code === 'KeyM' && !Controls.keyMap.KeyM) { if (!e.repeat) { App.audio.setMuted(!App.audio.muted); toast(App.audio.muted ? 'Muted' : 'Sound on', 1200); } return; }
@@ -644,7 +632,6 @@
       if (App.brain) { const o = App.brain.update(sim.state, dt); sim.setInput(1, o.held, o.pressed); inputs[1] = o.held; }
       else { sim.setInput(1, App.remote.h, App.remote.p); App.remote.p = 0; inputs[1] = App.remote.h; }
       if (App.mode !== 'watch') inputs[0] = App.held & SIM_MASK;
-      applyExtras(sim);
       sim.step(dt);
       const evs = sim.drainEvents();
       if (evs.length) processEvents(evs, sim.state);
@@ -1118,55 +1105,23 @@
 
   window.addEventListener('mmaphys', (e) => { if (!e.detail.ok) { App.physFailed = true; toast('Physics engine failed to load: ' + (e.detail.error && e.detail.error.message), 8000); } });
 
-  // Hidden extras: clicking the title's G (#titleG) opens the 'more' screen; double-clicking its G (#moreG) reveals the pocket row.
-  const Extras = { mark: false, edge: false, pocket: false };
+  // Hidden extras: clicking the title's G (#titleG) opens the 'more' screen.
+  const Extras = { mark: false };
   function loadExtras() {
     try {
       Extras.mark = localStorage.getItem('cr_fx_1') === '1';
-      Extras.edge = localStorage.getItem('cr_fx_2') === '1';
-      Extras.pocket = localStorage.getItem('cr_fx_3') === '1';
     } catch (_) {}
   }
   function saveExtras() {
     try {
       localStorage.setItem('cr_fx_1', Extras.mark ? '1' : '0');
-      localStorage.setItem('cr_fx_2', Extras.edge ? '1' : '0');
-      localStorage.setItem('cr_fx_3', Extras.pocket ? '1' : '0');
     } catch (_) {}
   }
   function syncExtras() {
-    const mark = $('#optMark'), edge = $('#optEdge'), pocket = $('#optPocket'), smile = $('#markSmile');
+    const mark = $('#optMark');
     if (mark) mark.checked = Extras.mark;
-    if (edge) edge.checked = Extras.edge;
-    if (pocket) pocket.checked = Extras.pocket;
-    if (smile) smile.classList.toggle('hidden', !Extras.pocket);
     if (App.renderer) App.renderer.setMarks(Extras.mark);
-    if (!App.playing && App.state) for (const f of App.state.f) f.edge = !!Extras.edge;
     updateHint();
-  }
-  function applyExtras(sim) {
-    if (!sim) return;
-    for (const f of sim.state.f) {
-      const local = f.idx === App.myIdx;
-      if (!f.ownPocket && f.pocket) {
-        if (local && !Extras.pocket) f.pocket = false;
-        else if (!local && !f.heldPocket && !Extras.pocket) f.pocket = false;
-      }
-      if (f.pocket) f.edge = false;
-      else f.edge = !!(Extras.edge || f.ownEdge);
-    }
-  }
-  function slashKind(text) {
-    const s = String(text || '').trim().toLowerCase();
-    if (s === '/sword-fight') return 'edge';
-    if (s === '/pew-pew') return 'pocket';
-    return '';
-  }
-  function grant(i, kind) {
-    const f = App.sim && App.sim.state.f[i];
-    if (!f) return;
-    if (kind === 'edge') { f.ownEdge = true; f.ownPocket = false; f.pocket = false; f.edge = true; }
-    else if (kind === 'pocket') { f.ownPocket = true; f.pocket = true; f.edge = false; }
   }
   function lineName(i) {
     const f = App.state && App.state.f && App.state.f[i];
@@ -1183,22 +1138,9 @@
   function postLine(text) {
     text = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 80);
     if (!text) return;
-    const kind = slashKind(text);
     if (App.mode === 'guest') { if (App.net) App.net.send({ t: 'say', m: text }); return; }
-    if (kind) { grant(App.myIdx, kind); return; }
     showLine(App.myIdx, text);
     if (App.mode === 'host' && App.net) App.net.send({ t: 'say', i: App.myIdx, m: text });
-  }
-  function tryDraw() {
-    if (!Extras.pocket || !App.playing || App.mode === 'watch') return;
-    const phase = App.state && App.state.phase;
-    const draw = () => { if (App.sim) App.sim.drawPocket(App.myIdx); };
-    if (phase !== 'fight') {
-      if (phase === 'intro' || phase === 'break') { draw(); toast('The bell hasn\'t rung', 1400); }
-      return;
-    }
-    if (App.mode === 'guest') { if (App.net) App.net.send({ t: 'd' }); return; }
-    draw();
   }
   function tickTalk(dt) {
     if (!App.talk || !App.renderer || !App.renderer.camera) return;
@@ -1218,11 +1160,8 @@
   App.extras = Extras;
   loadExtras();
   $('#titleG').onclick = () => { if ($('#menu').classList.contains('hidden')) return; screen('more'); syncExtras(); };
-  $('#moreG').addEventListener('dblclick', (e) => { e.preventDefault(); $('#optPocketRow').classList.remove('hidden'); });
   $('#btnMoreClose').onclick = () => screen('menu');
   $('#optMark').addEventListener('change', () => { Extras.mark = $('#optMark').checked; saveExtras(); syncExtras(); });
-  $('#optEdge').addEventListener('change', () => { Extras.edge = $('#optEdge').checked; saveExtras(); syncExtras(); });
-  $('#optPocket').addEventListener('change', () => { Extras.pocket = $('#optPocket').checked; saveExtras(); syncExtras(); });
   syncExtras();
   App.talk = new CageTalk.Talk();
   App.talk.mount();
@@ -1237,7 +1176,6 @@
     for (let k = 0; k < n; k++) {
       if (App.autoPilot) { const o = App.autoPilot.update(sim.state, 1 / 60); sim.setInput(0, o.held, o.pressed); } else sim.setInput(0, App.held & SIM_MASK, App.pressed & SIM_MASK);
       if (App.brain) { const o = App.brain.update(sim.state, 1 / 60); sim.setInput(1, o.held, o.pressed); }
-      applyExtras(sim);
       sim.acc = 0; sim.step(1 / 60);
       const evs = sim.drainEvents(); if (evs.length) processEvents(evs, sim.state);
     }

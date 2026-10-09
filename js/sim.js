@@ -56,8 +56,8 @@
     }
     return out;
   }
-  // right foot forward? (a fighter with the lead prop or pocket item out stays orthodox: it lives in the left hand)
-  function isSouthpaw(f) { return !!f.southpaw && !f.edge && !f.pocket; }
+  // right foot forward?
+  function isSouthpaw(f) { return !!f.southpaw; }
   const OTHER_SIDE = { lh: 'rh', rh: 'lh', ll: 'rl', rl: 'll' };
   function modOf(held) { return (held & IN.MOD3) ? 'mod3' : (held & IN.MOD2) ? 'mod2' : (held & IN.MOD1) ? 'mod1' : 'none'; }
 
@@ -331,10 +331,6 @@
       blocking: false,
       checking: false,    // lead leg lifted to check low kicks (CHECK held)
       southpaw: false,   // stance: right foot forward (see isSouthpaw)
-      edge: false,        // lead prop out
-      pocket: false,      // pocket item out; it replaces the lead prop
-      ownEdge: false,
-      ownPocket: false,
       blockTap: -9,       // sim time of the last BLOCK press (double tap = push)
       dirTap: -9, dirTapBit: 0, // sim time and key of the last direction press (the same key twice = lunge that way)
       lungeReady: -9,     // sim time the next lunge may start
@@ -376,16 +372,6 @@
   const BODY_TOUGHNESS = 0.5; // body damage bar fills this much per point of damage (the stamina drain still uses the full hit)
   const LEG_TOUGHNESS = 1 / 1.3; // legs take 30% more punishment before the bar fills
   const PART_TOUGHNESS = { body: BODY_TOUGHNESS, legs: LEG_TOUGHNESS };
-  // Sword in the lead (forward) hand. This direction is "forward and up" in the orthodox guard,
-  // so the blade rests pointing at the other fighter. The swing carries that blade across him.
-  const EDGE_DIR = [-0.091, -0.597, -0.797];
-  const EDGE_HILT = [EDGE_DIR[0] * 0.08, -0.18 + EDGE_DIR[1] * 0.08, EDGE_DIR[2] * 0.08];
-  const EDGE_TIP = [EDGE_DIR[0] * 0.86, -0.18 + EDGE_DIR[1] * 0.86, EDGE_DIR[2] * 0.86];
-  const EDGE_PARRY = 0.18; // props closer than this (m) to each other lock
-  const EDGE_HEAD_R = 0.20;
-  const EDGE_HIT = 20;     // damage per clean cut (damage bars run 0..100)
-  const POP_HIT = 50;       // damage per pocket-shot hit (0..100 bar)
-  const EDGE_BODY_R = 0.30;
   // push: BLOCK tapped twice in quick succession stiff-arms the opponent off you
   const PUSH_TAP_T = 0.3;   // the second BLOCK tap has to come within this many seconds of the first
   const PUSH_DIST = 1.0;    // arm's length — any further and the push grabs air
@@ -471,7 +457,6 @@
       this.roundScore = [{}, {}];
       this._resetRoundScore();
       this.inputs = [{ held: 0, pressed: 0 }, { held: 0, pressed: 0 }];
-      this._bits = [];
       // physics (standing game). Off for guest placeholders / menu demos.
       const PH = root.MMAPhys;
       this.phys = null;
@@ -661,9 +646,6 @@
       if (S.ground) this._groundTick(dt);
       else this._standTick(dt, dist, ux, uz);
 
-      // no ragdoll: the blade is tested before strikes resolve so a cut can mark the punch as spent
-      if (!this.phys && !S.ground) this._edgeExchange();
-
       // actions progress
       for (const f of F) {
         const a = f.act;
@@ -678,11 +660,7 @@
             // physical strike: contacts are resolved in _physTick after the world steps
           } else if (!a.hit && !S.ground) {
             const t0 = st.w * tf * 0.45, t1 = (st.w + st.a) * tf;
-            if (a.pop || a.edge) {
-              // the lead prop, or the pocket hit, already resolved this; a lead hand that never arrived is just a miss
-              if (a.pop && !a.popFired && a.t >= 0.08 * (a.tf || 1)) this._releaseShot(f);
-              if (!a.hit && a.t >= t1) { a.hit = true; if (!a.popFired) this._whiff(f, st); }
-            } else if (a.t >= t0) {
+            if (a.t >= t0) {
               this._traceStrike(f, st, dt);
               if (!a.hit && a.t >= t1) { a.hit = true; this._whiff(f, st); }
             }
@@ -698,7 +676,6 @@
 
       // standing physics: ragdolls move, strike, collide; contacts become hits
       if (this.phys && !S.ground) this._physTick(dt);
-      else if (S.phase === 'fight' && !S.ground) { this._releaseShots(); this._stepBullets(dt); }
 
       // round / finish checks
       if (S.phase === 'fight') {
@@ -718,8 +695,8 @@
       for (const f of S.f) {
         const o = S.f[1 - f.idx];
         let method = null;
-        if (f.dmg.head >= 100) method = f._fatality ? 'FATALITY' : 'KO';
-        else if (f.dmg.body >= 100) method = f._fatality ? 'FATALITY' : 'TKO (body)';
+        if (f.dmg.head >= 100) method = 'KO';
+        else if (f.dmg.body >= 100) method = 'TKO (body)';
         else if (f.dmg.legs >= 100) method = 'TKO (leg kicks)';
         else if (f.ground && f.dmg.head >= 92 && f.act.type === 'hit') method = 'TKO (ground strikes)';
         if (method) {
@@ -921,23 +898,18 @@
       f.combo = chained ? Math.min(3, f.combo + 1) : 0;
       f.comboT = 0.45;
       f.buf = null;
-      const drawn = !!f.pocket;
-      const baseKind = (f.moveset && f.moveset.none && f.moveset.none.lh) || 'uppercut';
-      const popFire = !!(drawn && st.limb === 'lh' && st.kind === baseKind && !st.ground);
-      const edgeSwing = !!(f.edge && !drawn && st.limb === 'lh' && !st.ground && !popFire);
-      const edgeDef = edgeSwing && root.MMAPhys.EDGE_MOVES && root.MMAPhys.EDGE_MOVES[st.kind];
-      const pdef = this.phys && !st.ground ? (edgeDef || root.MMAPhys.STRIKES[key]) : null;
-      const baseCost = (!edgeSwing && pdef && pdef.cost) ? pdef.cost : st.stam;
+      const pdef = this.phys && !st.ground ? root.MMAPhys.STRIKES[key] : null;
+      const baseCost = (pdef && pdef.cost) ? pdef.cost : st.stam;
       const cost = baseCost * (f.stam < 25 ? 0.6 : 1) * (chained ? 1.1 : 1);
       if (cost > f.stam) f.stamMax = Math.max(STAM_MAX_FLOOR, f.stamMax - (cost - f.stam) * OVERDRAW_COST); // overdrawing the tank erodes it
       f.stam = Math.max(0, Math.min(f.stam, f.stamMax) - cost);
       if (pdef) {
         const wind = pdef.active ? pdef.active[0] : pdef.w;
         const live = pdef.active ? pdef.active[1] - pdef.active[0] : pdef.a;
-        f.act = { type: 'strike', name: key, t: 0, dur: pdef.dur * tf, tf, hit: false, slipped: false, chained: !!chained, cost, phys: true, cancelAt: (wind + live) * tf, pop: popFire, edge: edgeSwing };
+        f.act = { type: 'strike', name: key, t: 0, dur: pdef.dur * tf, tf, hit: false, slipped: false, chained: !!chained, cost, phys: true, cancelAt: (wind + live) * tf };
         this.phys.fighters[f.idx].startStrike(pdef, tf);
       } else {
-        f.act = { type: 'strike', name: key, t: 0, dur: (edgeSwing ? 0.66 : (st.w + st.a + st.r)) * tf, tf, hit: false, tip: null, tipT: null, slipped: false, chained: !!chained, cost, cancelAt: (edgeSwing ? 0.40 : (st.w + st.a)) * tf, pop: popFire, edge: edgeSwing };
+        f.act = { type: 'strike', name: key, t: 0, dur: (st.w + st.a + st.r) * tf, tf, hit: false, tip: null, tipT: null, slipped: false, chained: !!chained, cost, cancelAt: (st.w + st.a) * tf };
       }
       f.repeatN = key === f.lastStrike ? f.repeatN + 1 : 1;
       f.lastStrike = key;
@@ -1045,141 +1017,6 @@
     }
 
     // ---------------------------------------------------------
-    //  Lead props. A clean connection fills part of a bar. Crossed props lock.
-    // ---------------------------------------------------------
-    _qrot(q, v) {
-      const x = q.x, y = q.y, z = q.z, w = q.w;
-      const vx = v[0], vy = v[1], vz = v[2];
-      const tx = 2 * (y * vz - z * vy), ty = 2 * (z * vx - x * vz), tz = 2 * (x * vy - y * vx);
-      return [
-        vx + w * tx + (y * tz - z * ty),
-        vy + w * ty + (z * tx - x * tz),
-        vz + w * tz + (x * ty - y * tx)
-      ];
-    }
-    _dot3(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
-    _pointSeg(p, a, b) {
-      const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-      const ap = [p[0] - a[0], p[1] - a[1], p[2] - a[2]];
-      const ab2 = this._dot3(ab, ab) || 1e-8;
-      const s = Math.max(0, Math.min(1, this._dot3(ap, ab) / ab2));
-      const q = [a[0] + ab[0] * s, a[1] + ab[1] * s, a[2] + ab[2] * s];
-      return { d: Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]), s, q };
-    }
-    _segDist(a, b, c, d) {
-      const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-      const v = [d[0] - c[0], d[1] - c[1], d[2] - c[2]];
-      const w = [a[0] - c[0], a[1] - c[1], a[2] - c[2]];
-      const uu = this._dot3(u, u) || 1e-8, uv = this._dot3(u, v), vv = this._dot3(v, v) || 1e-8;
-      const uw = this._dot3(u, w), vw = this._dot3(v, w);
-      const den = uu * vv - uv * uv;
-      let s = 0, t = 0;
-      if (den > 1e-8) { s = (uv * vw - vv * uw) / den; t = (uu * vw - uv * uw) / den; }
-      // an interior solution is the crossing; only clamp when a closest point falls off an end
-      if (s < 0 || s > 1 || t < 0 || t > 1) {
-        s = Math.max(0, Math.min(1, s));
-        t = Math.max(0, Math.min(1, (uv * s + vw) / vv));
-        s = Math.max(0, Math.min(1, (uv * t - uw) / uu));
-        t = Math.max(0, Math.min(1, (uv * s + vw) / vv));
-      }
-      const p = [a[0] + u[0] * s, a[1] + u[1] * s, a[2] + u[2] * s];
-      const q = [c[0] + v[0] * t, c[1] + v[1] * t, c[2] + v[2] * t];
-      return { d: Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]), p, s, t };
-    }
-    _bladeFromBody(body) {
-      const p = body.translation(), r = body.rotation();
-      const h = this._qrot(r, EDGE_HILT), t = this._qrot(r, EDGE_TIP);
-      return { h: [p.x + h[0], p.y + h[1], p.z + h[2]], t: [p.x + t[0], p.y + t[1], p.z + t[2]] };
-    }
-    _bladeKinematic(f, o) {
-      const fr = this._frame(f, o);
-      const striking = !!(f.act && f.act.edge);
-      const reach = striking ? 0.9 : 0.72;
-      const hx = f.x + fr.lx * 0.28 + fr.fx * 0.36, hy = 1.45, hz = f.z + fr.lz * 0.28 + fr.fz * 0.36;
-      const out = striking ? (f.act.t < 0.22 ? 0.4 : -0.5) : -0.12;
-      return { h: [hx, hy, hz], t: [hx + fr.lx * out + fr.fx * reach, hy + 0.04, hz + fr.lz * out + fr.fz * reach] };
-    }
-    _edgeBlades() {
-      const F = this.state.f;
-      if (this.phys) return [0, 1].map(i => this._bladeFromBody(this.phys.fighters[i].bodies.lForearm));
-      return [0, 1].map(i => this._bladeKinematic(F[i], F[1 - i]));
-    }
-    _vitals(i) {
-      if (this.phys) {
-        const rag = this.phys.fighters[i];
-        const h = rag.bodies.head.translation(), c = rag.bodies.chest.translation();
-        return { head: [h.x, h.y, h.z], chest: [c.x, c.y, c.z] };
-      }
-      const f = this.state.f[i];
-      return { head: [f.x, 1.55, f.z], chest: [f.x, 1.18, f.z] };
-    }
-    _edgeSwing(f, blade) {
-      const striking = !!(f.act && f.act.edge && !f.act.hit);
-      const vit = this._vitals(1 - f.idx);
-      const gap = this._pointSeg(vit.chest, blade.h, blade.t).d;
-      const closing = f._edgeGap != null && (f._edgeGap - gap) > 0.015 && gap < EDGE_BODY_R + 0.04;
-      f._edgeGap = gap;
-      // a live lead swing that meets them, or someone walking onto the point
-      return striking || closing;
-    }
-    _edgeCut(f, o, part, at) {
-      const S = this.state;
-      if (!o || (o.act && (o.act.type === 'down' || o.act.type === 'celebrate' || o.act.type === 'kd'))) return;
-      if (f._edgeAt != null && S.t - f._edgeAt < 0.45) return;
-      f._edgeAt = S.t;
-      o.dmg[part] = clamp(o.dmg[part] + EDGE_HIT, 0, 100);
-      const finish = o.dmg[part] >= 100;
-      f.rs.landed++;
-      f.rs.sig += EDGE_HIT;
-      if (f.act && f.act.edge) f.act.hit = true;
-      if (finish) o._fatality = true;
-      if (this.phys && finish) {
-        const rag = this.phys.fighters[o.idx];
-        if (rag && !rag.ko) rag.knockOut();
-      }
-      o.act = { type: 'hit', name: part, t: 0, dur: 0.35, hit: false };
-      o.blocking = false;
-      const p = at || [o.x, part === 'head' ? 1.55 : 1.15, o.z];
-      this._emit({ k: 'hit', i: f.idx, j: o.idx, name: 'cut', kind: 'cut', part, intended: part, dmg: EDGE_HIT, big: true, edge: true,
-        at: [Math.round(p[0] * 100) / 100, Math.round(p[1] * 100) / 100, Math.round(p[2] * 100) / 100] });
-    }
-    _edgeExchange() {
-      const S = this.state, F = S.f;
-      this._edgeLocked = false;
-      if (S.phase !== 'fight' || S.ground || !F.some(f => f.edge)) return;
-      const blades = this._edgeBlades();
-      for (let i = 0; i < 2; i++) if (!F[i].edge || F[i].pocket) blades[i] = { h: [0, -20, 0], t: [0, -20, 0] };
-      const swing = [0, 1].map(i => !!F[i].edge && !F[i].pocket && this._edgeSwing(F[i], blades[i]));
-      const cross = this._segDist(blades[0].h, blades[0].t, blades[1].h, blades[1].t);
-      if (cross.d < EDGE_PARRY) {
-        this._edgeLocked = true;
-        if (swing[0] || swing[1]) {
-          for (let i = 0; i < 2; i++) {
-            const a = F[i].act;
-            if (a && a.edge) a.hit = true;
-          }
-          if (this._parryAt == null || S.t - this._parryAt >= 0.32) {
-            this._parryAt = S.t;
-            const p = cross.p;
-            const attacker = swing[0] ? 0 : 1;
-            this._emit({ k: 'block', i: attacker, j: 1 - attacker, name: 'cut', parry: true,
-              at: [Math.round(p[0] * 100) / 100, Math.round(p[1] * 100) / 100, Math.round(p[2] * 100) / 100] });
-          }
-        }
-        return;
-      }
-      for (let i = 0; i < 2; i++) {
-        if (!swing[i]) continue;
-        const f = F[i], o = F[1 - i];
-        const vit = this._vitals(o.idx);
-        const head = this._pointSeg(vit.head, blades[i].h, blades[i].t);
-        const chest = this._pointSeg(vit.chest, blades[i].h, blades[i].t);
-        if (head.d < EDGE_HEAD_R && head.s > 0.08) this._edgeCut(f, o, 'head', head.q);
-        else if (chest.d < EDGE_BODY_R && chest.s > 0.08) this._edgeCut(f, o, 'body', chest.q);
-      }
-    }
-
-    // ---------------------------------------------------------
     //  PHYSICS (standing): drive the ragdolls from the fighters' state, step the world,
     //  turn contacts into hits, and publish bone poses for the renderer / network.
     // ---------------------------------------------------------
@@ -1200,7 +1037,6 @@
         else if (a.type === 'stumble') ov = 'STUMBLE';
         else if (a.type === 'sprawl') ov = 'SPRAWL';
         else if (a.type === 'celebrate' || (S.phase === 'over' && S.result && S.result.winner === i)) ov = 'CELEBRATE';
-        if (!ov && f.edge && !f.pocket && f.blocking && a.type !== 'strike') ov = 'EDGE_GUARD';
         rag.override = ov;
         if (a.type === 'down' && !rag.ko) rag.knockOut();
         rag.wobble = f.rocked > 0 ? (f.rockLight ? ROCK_LIGHT_WOBBLE : Math.min(1, 0.4 + f.rocked * 0.25)) : 0;
@@ -1215,18 +1051,11 @@
         const p = rag.position(), v = rag.velocity();
         f.x = p.x; f.z = p.z; f.vx = v.x; f.vz = v.z;
       }
-      this._edgeExchange();
-      if (S.phase === 'fight') { this._releaseShots(); this._stepBullets(dt); }
       for (let i = 0; i < 2; i++) {
         const f = F[i], o = F[1 - i], a = f.act, h = hits[i];
         if (a.type !== 'strike' || !a.phys || a.hit) continue;
         const def = root.MMAPhys.STRIKES[a.name];
         const st = STRIKES[a.name];
-        // a lead prop or a pocket hit replaces the glove on that hand
-        if (a.pop || a.edge) {
-          if (a.t >= a.cancelAt) { a.hit = true; if (!a.popFired) this._whiff(f, a.edge ? { name: 'cut' } : st); }
-          continue;
-        }
         if (h && !h.glance && S.phase === 'fight' && o.act.type !== 'kd') { a.hit = true; this._landPhys(f, o, def, h); }
         else if (a.t >= a.cancelAt) { a.hit = true; this._whiff(f, STRIKES[a.name] || def); }
       }
@@ -1285,139 +1114,6 @@
       const ev = this._emit({ k: 'hit', i: f.idx, j: o.idx, name: def.name, kind: def.kind, part, intended: def.part, dmg: Math.round(dmg * 10) / 10, counter, big: dmg >= 3.6,
         vn: Math.round(h.vn * 10) / 10, clean: Math.round(h.clean * 100) / 100, momentum: h.vn >= 8, combo: f.combo, kickCancel, at, phys: true });
       this._afterHit(f, o, part, dmg, ev, false);
-    }
-
-    // Lead-hand pocket. The base lead punch sends one straight ahead.
-    drawPocket(i) { const f = this.state.f[i]; if (f) { f.pocket = true; f.edge = false; f.heldPocket = true; } }
-    popShot(i) { this.drawPocket(i); return this._releaseShot(this.state.f[i], true); }
-    _muzzle(i) {
-      if (this.phys) {
-        const b = this.phys.fighters[i].bodies.lForearm;
-        const p = b.translation(), r = b.rotation();
-        const aim = this._qrot(r, [0, -1, 0]);
-        const off = this._qrot(r, [0.04, -0.38, 0.02]);
-        const len = Math.hypot(aim[0], aim[1], aim[2]) || 1;
-        return { p: [p.x + off[0], p.y + off[1], p.z + off[2]], aim: [aim[0] / len, aim[1] / len, aim[2] / len] };
-      }
-      const f = this.state.f[i], o = this.state.f[1 - i];
-      const fr = this._frame(f, o);
-      return { p: [f.x + fr.lx * 0.28 + fr.fx * 0.5, 1.45, f.z + fr.lz * 0.28 + fr.fz * 0.5], aim: [fr.fx, 0.08, fr.fz] };
-    }
-    _headDir(i, from) {
-      const vit = this._vitals(1 - i);
-      const to = [vit.head[0] - from[0], vit.head[1] - from[1], vit.head[2] - from[2]];
-      const l = Math.hypot(to[0], to[1], to[2]) || 1;
-      return [to[0] / l, to[1] / l, to[2] / l];
-    }
-    // Pull the barrel toward a point, but only by a few degrees, so a jab that is already
-    // pointed at them connects and a jab pointed away still misses.
-    _steer(aim, want, maxDeg) {
-      const dot = Math.max(-1, Math.min(1, aim[0] * want[0] + aim[1] * want[1] + aim[2] * want[2]));
-      const ang = Math.acos(dot);
-      const t = ang < 1e-4 ? 1 : Math.min(1, (maxDeg * Math.PI / 180) / ang);
-      const x = aim[0] + (want[0] - aim[0]) * t, y = aim[1] + (want[1] - aim[1]) * t, z = aim[2] + (want[2] - aim[2]) * t;
-      const l = Math.hypot(x, y, z) || 1;
-      return [x / l, y / l, z / l];
-    }
-    _facingAim(i, from) {
-      let fx, fz;
-      if (this.phys) {
-        const yaw = this.phys.fighters[i].yaw;
-        fx = Math.sin(yaw); fz = Math.cos(yaw);
-      } else {
-        const fr = this._frame(this.state.f[i], this.state.f[1 - i]);
-        fx = fr.fx; fz = fr.fz;
-      }
-      const to = [fx * 2.4, 1.45 - from[1], fz * 2.4];
-      const l = Math.hypot(to[0], to[1], to[2]) || 1;
-      return [to[0] / l, to[1] / l, to[2] / l];
-    }
-    _releaseShots() {
-      const F = this.state.f;
-      for (let i = 0; i < 2; i++) {
-        const a = F[i].act;
-        if (!a || !a.pop || a.popFired) continue;
-        if (a.t < 0.08 * (a.tf || 1)) continue;
-        const m = this._muzzle(i);
-        this._releaseShot(F[i], false, this._facingAim(i, m.p), m.p);
-      }
-    }
-    _releaseShot(f, manual, aimOverride, fromOverride) {
-      const S = this.state;
-      if (!S || S.phase !== 'fight' || !f) return false;
-      if (f.act && (f.act.type === 'down' || f.act.type === 'celebrate')) return false;
-      if (f._popAt != null && S.t - f._popAt < 0.42) return false;
-      f._popAt = S.t;
-      if (f.act && f.act.pop) f.act.popFired = true;
-      const m = this._muzzle(f.idx);
-      const p = (fromOverride || m.p).slice();
-      // A chosen aim is the punch's forward line. Otherwise nudge it toward them.
-      const aim = aimOverride || this._steer(m.aim, this._headDir(f.idx, p), manual ? 12 : 20);
-      const speed = 80;
-      this._bits.push({ i: f.idx, p: p.slice(), v: [aim[0] * speed, aim[1] * speed, aim[2] * speed], life: 0.18 });
-      const to = [p[0] + aim[0] * 6, p[1] + aim[1] * 6, p[2] + aim[2] * 6];
-      this._emit({ k: 'line', i: f.idx, from: p.map(n => Math.round(n * 100) / 100), to: to.map(n => Math.round(n * 100) / 100), manual: !!manual });
-      return true;
-    }
-    _stepBullets(dt) {
-      if (!this._bits.length) return;
-      const keep = [];
-      for (let n = 0; n < this._bits.length; n++) {
-        const b = this._bits[n];
-        b.life -= dt;
-        const nxt = [b.p[0] + b.v[0] * dt, b.p[1] + b.v[1] * dt, b.p[2] + b.v[2] * dt];
-        const hit = this._bitTouch(b, nxt);
-        if (hit) { this._bitHit(b.i, hit); continue; }
-        b.p = nxt;
-        if (b.life > 0 && nxt[1] > 0.05) keep.push(b);
-      }
-      this._bits = keep;
-    }
-    _bitTouch(b, nxt) {
-      const o = this.state.f[1 - b.i];
-      if (!o || (o.act && (o.act.type === 'down' || o.act.type === 'celebrate'))) return null;
-      const vit = this._vitals(o.idx);
-      let pelvis;
-      if (this.phys) {
-        const p = this.phys.fighters[o.idx].bodies.pelvis.translation();
-        pelvis = [p.x, p.y, p.z];
-      } else pelvis = [o.x, 0.95, o.z];
-      const parts = [
-        { part: 'head', p: vit.head, r: 0.22, pri: 2 },
-        { part: 'body', p: vit.chest, r: 0.30, pri: 1 },
-        { part: 'body', p: pelvis, r: 0.24, pri: 0 }
-      ];
-      let best = null;
-      for (let k = 0; k < parts.length; k++) {
-        const c = parts[k];
-        const hit = this._pointSeg(c.p, b.p, nxt);
-        if (hit.d > c.r) continue;
-        if (!best || c.pri > best.pri || (c.pri === best.pri && hit.d < best.d)) best = { part: c.part, at: hit.q, d: hit.d, pri: c.pri };
-      }
-      return best;
-    }
-    _bitHit(i, hit) {
-      const S = this.state, f = S.f[i], o = S.f[1 - i];
-      if (!o) return;
-      const part = hit.part;
-      // The health bar is the head meter. This spends its damage there so a body hit still shows.
-      o.dmg.head = clamp(o.dmg.head + POP_HIT, 0, 100);
-      const finish = o.dmg.head >= 100;
-      if (finish) o._fatality = true;
-      f.rs.landed++;
-      f.rs.sig += POP_HIT;
-      if (this.phys && finish) {
-        const rag = this.phys.fighters[o.idx];
-        if (rag && !rag.ko) rag.knockOut();
-      }
-      const onGround = !!S.ground;
-      if (!onGround && o.act && o.act.type !== 'down' && o.act.type !== 'celebrate') {
-        o.act = { type: 'hit', name: part, t: 0, dur: 0.35, hit: false };
-        o.blocking = false;
-      }
-      const at = hit.at || [o.x, part === 'head' ? 1.55 : 1.2, o.z];
-      this._emit({ k: 'hit', i: f.idx, j: o.idx, name: 'pop', kind: 'pop', part, intended: part, dmg: POP_HIT, big: true, pop: true, fatal: finish, gore: true,
-        at: [Math.round(at[0] * 100) / 100, Math.round(at[1] * 100) / 100, Math.round(at[2] * 100) / 100] });
     }
 
     _afterHit(f, o, part, dmg, ev, onGround) {
@@ -1760,8 +1456,6 @@
       case 'round': return 'Round ' + ev.round + ' coming up.';
       case 'stance': return n(ev.i) + ' switches to ' + (ev.southpaw ? 'southpaw' : 'orthodox') + '.';
       case 'hit': {
-        if (ev.pop) return n(ev.i) + ' connects on ' + n(ev.j) + '!';
-        if (ev.edge) return n(ev.i) + ' cuts ' + n(ev.j) + ' clean!';
         const where = ev.part && ev.intended && ev.part !== ev.intended ? ' to the ' + (ev.part === 'legs' ? 'leg' : ev.part) : '';
         if (ev.rocked) return n(ev.i) + ' ROCKS ' + n(ev.j) + ' with a ' + ev.name + where + '!';
         if (ev.kickCancel) return n(ev.i) + ' catches ' + n(ev.j) + ' on one leg with a ' + ev.name + where + '!';
@@ -1774,7 +1468,7 @@
         if (ev.jammed) return n(ev.i) + "'s " + ev.name + ' is smothered' + where + ' — no room on it.';
         return n(ev.i) + ' lands a ' + ev.name + where + '.';
       }
-      case 'block': return ev.checked ? n(ev.j) + ' checks the ' + ev.name + '!' : ev.parry ?'They lock — neither one gets through.' : ev.passive ? n(ev.i) + "'s " + ev.name + ' is picked off by the arms.' : n(ev.j) + ' blocks the ' + ev.name + '.';
+      case 'block': return ev.checked ? n(ev.j) + ' checks the ' + ev.name + '!' : ev.passive ? n(ev.i) + "'s " + ev.name + ' is picked off by the arms.' : n(ev.j) + ' blocks the ' + ev.name + '.';
       case 'push': return ev.ok ? n(ev.i) + ' shoves ' + n(ev.j) + ' off.' : n(ev.i) + ' pushes at air.';
       case 'miss': return ev.slipped ? n(ev.j) + ' slips the ' + ev.name + '.' : n(ev.i) + ' misses with the ' + ev.name + '.';
       case 'rocked': return null;
@@ -1800,7 +1494,7 @@
       case 'sub': return n(ev.i) + ' is hunting for a ' + ev.name + '!';
       case 'subfail': return ev.stuffed ? n(ev.j) + ' sees the ' + ev.name + ' coming and shuts it down.' : n(ev.j) + ' works free of the ' + ev.name + '.';
       case 'tap': return "IT'S OVER! " + n(ev.j) + ' taps to the ' + ev.name + '!';
-      case 'ko': return ev.method === 'FATALITY' ? 'FATALITY!' : "IT'S ALL OVER! " + n(ev.i) + ' wins by ' + ev.method + '!';
+      case 'ko': return "IT'S ALL OVER! " + n(ev.i) + ' wins by ' + ev.method + '!';
       case 'end': return null;
     }
     return null;

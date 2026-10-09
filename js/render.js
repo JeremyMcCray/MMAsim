@@ -285,45 +285,6 @@
     return { rings: out, pole: [r.c[0] + dir[0] * len, r.c[1] + dir[1] * len, r.c[2] + dir[2] * len] };
   }
 
-  function makeProp() {
-    const g = new THREE.Group();
-    const steel = new THREE.MeshStandardMaterial({ color: 0xe7edf4, metalness: 0.72, roughness: 0.2 });
-    const goldMat = new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.6, roughness: 0.32 });
-    const gripMat = new THREE.MeshStandardMaterial({ color: 0x4a2c18, roughness: 0.72 });
-    // Blade runs along local -Y (the forearm's down axis).
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.78, 0.014), steel);
-    bar.position.y = -0.52;
-    const edge = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.78, 0.05), steel);
-    edge.position.y = -0.52;
-    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.02, 0.045), goldMat);
-    guard.position.y = -0.12;
-    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.02, 0.13, 8), gripMat);
-    grip.position.y = -0.04;
-    const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.028, 8, 6), goldMat);
-    pommel.position.y = 0.04;
-    g.add(bar, edge, guard, grip, pommel);
-    g.visible = false;
-    return g;
-  }
-  function makePop() {
-    const g = new THREE.Group();
-    // Long axis along local -Z, which is the direction Object3D.lookAt aims.
-    const metal = new THREE.MeshStandardMaterial({ color: 0x4a4a52, metalness: 0.72, roughness: 0.28 });
-    const gripMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1c, roughness: 0.8 });
-    const slide = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.075, 0.26), metal);
-    slide.position.z = -0.05;
-    const tube = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.026, 0.12), metal);
-    tube.position.z = -0.22;
-    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.12, 0.055), gripMat);
-    grip.position.set(0, -0.09, 0.03);
-    grip.rotation.x = -0.22;
-    const sight = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.02, 0.02), new THREE.MeshBasicMaterial({ color: 0xffb24a }));
-    sight.position.set(0, 0.05, -0.26);
-    g.add(slide, tube, grip, sight);
-    g.scale.setScalar(1.28);
-    g.visible = false;
-    return g;
-  }
   function BloodField(scene) {
     this.canvas = document.createElement('canvas');
     this.canvas.width = this.canvas.height = 512;
@@ -365,27 +326,6 @@
     g.fill();
     this.tex.needsUpdate = true;
     this.mesh.visible = true;
-  };
-  BloodField.prototype.explode = function (origin) {
-    if (!origin) return;
-    this.mesh.visible = true;
-    this.stamp(origin.x, origin.z, 6);
-    for (let i = 0; i < 28; i++) {
-      const ang = Math.random() * Math.PI * 2;
-      const rad = 0.15 + Math.random() * 1.8;
-      this.stamp(origin.x + Math.cos(ang) * rad, origin.z + Math.sin(ang) * rad, 1.4 + Math.random() * 2.2);
-    }
-    for (let i = 0; i < this.drops.length; i++) {
-      const d = this.drops[i];
-      d.life = 0.7 + Math.random() * 0.8;
-      d.m.visible = true;
-      d.m.position.copy(origin);
-      const sc = 1.6 + Math.random() * 3.4;
-      d.m.scale.setScalar(sc);
-      const ang = Math.random() * Math.PI * 2;
-      const sp = 2.4 + Math.random() * 7;
-      d.v.set(Math.cos(ang) * sp, 2.2 + Math.random() * 6.5, Math.sin(ang) * sp);
-    }
   };
   BloodField.prototype.burst = function (origin, power) {
     if (!this.on || !origin) return;
@@ -686,28 +626,9 @@
       this._dmgC = new THREE.Color(); this._red = new THREE.Color(0.75, 0.25, 0.22); this._bruise = new THREE.Color(0.38, 0.22, 0.42);
       this._eul = new THREE.Euler(); this._qHip = new THREE.Quaternion(); this._yAxis = new THREE.Vector3(0, 1, 0);
       this._tipArr = [0, 0, 0];
-      this.prop = makeProp();
-      // Lead hand; the quaternion tilts the blade so it points forward in the orthodox guard.
-      this.prop.position.set(0, RIG.fistY, 0);
-      this.prop.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), new THREE.Vector3(-0.091, -0.597, -0.797).normalize());
-      this.segs.lForearm.add(this.prop);
-      this.pop = makePop();
-      // Barrel runs out past the fist (forearm -Y), so a lead punch points it forward.
-      this.pop.position.set(0.045, RIG.fistY - 0.02, 0.02);
-      this.pop.rotation.x = -Math.PI / 2;
-      this.segs.lForearm.add(this.pop);
-      this.pocket = false;
-    }
-
-    carry(f) {
-      const pocket = !!(f && f.pocket);
-      const edge = !!(f && f.edge) && !pocket;
-      if (this.pop) this.pop.visible = pocket;
-      if (this.prop) this.prop.visible = edge;
     }
 
     dispose() {
-      if (this.pop && this.pop.parent) this.pop.parent.remove(this.pop);
       for (const n in this.segs) this.scene.remove(this.segs[n]);
       this.scene.remove(this.root); this.scene.remove(this.blob);
       this.scene.remove(this.skinMesh); this.skinMesh.geometry.dispose();
@@ -1506,14 +1427,6 @@
       this.scene = new THREE.Scene();
       this.blood = new BloodField(this.scene);
       this.stain = false;
-      this.tracer = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 1), new THREE.MeshBasicMaterial({ color: 0xffe28a }));
-      this.tracer.visible = false;
-      this.tracer.frustumCulled = false;
-      this.scene.add(this.tracer);
-      this.spark = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), new THREE.MeshBasicMaterial({ color: 0xfff1c4 }));
-      this.spark.visible = false;
-      this.scene.add(this.spark);
-      this._line = null;
       this.legacy = true;
       this._legacyColor = new THREE.Color(0x07070a);
       this._legacyFog = new THREE.Fog(0x07070a, 18, 42);
@@ -1599,20 +1512,6 @@
       }
     }
 
-    showPop(i, from, to) {
-      const m = this.models[i];
-      if (!m || !m.pop) return;
-      if (m.prop) m.prop.visible = false;
-      if (m.pop) m.pop.visible = true;
-      if (!from || !to) return;
-      m.segs.lForearm.updateMatrixWorld(true);
-      const origin = from ? new THREE.Vector3(from[0], from[1], from[2]) : m.pop.localToWorld(new THREE.Vector3(0, 0.02, -0.42));
-      const end = to ? new THREE.Vector3(to[0], to[1], to[2]) : origin.clone().add(new THREE.Vector3(0, 0, 1));
-      this._line = { from: origin, to: end, t: 0, dur: 0.18 };
-      this.spark.position.copy(origin);
-      this.spark.visible = true;
-    }
-
     impact(pos, big, color) {
       const geo = new THREE.SphereGeometry(big ? 0.22 : 0.13, 10, 8);
       const mat = new THREE.MeshBasicMaterial({ color: color || 0xffe9b0, transparent: true, opacity: 0.9 });
@@ -1635,10 +1534,9 @@
         const victim = this.models[ev.j];
         const p = ev.at ? new THREE.Vector3(ev.at[0], ev.at[1], ev.at[2])
           : ev.part === 'head' ? victim.headWorld(this._tmp.clone()) : ev.part === 'legs' ? new THREE.Vector3(victim.px, 0.5, victim.pz) : victim.torsoWorld(this._tmp.clone());
-        this.impact(p, ev.big || ev.rocked, ev.edge ? 0xf4f7ff : ev.rocked ? 0xff5533 : ev.jammed ? 0xaaaaaa : ev.momentum ? 0xffb347 : 0xffe9b0);
+        this.impact(p, ev.big || ev.rocked, ev.rocked ? 0xff5533 : ev.jammed ? 0xaaaaaa : ev.momentum ? 0xffb347 : 0xffe9b0);
         victim.flash = ev.rocked ? 1 : 0.5;
-        if (ev.pop && this.blood) this.blood.explode(p);
-        else if (this.stain && this.blood && (ev.big || ev.rocked)) {
+        if (this.stain && this.blood && (ev.big || ev.rocked)) {
           const power = Math.max(0.45, Math.min(1.35, (ev.dmg || 4) / 7));
           this.blood.burst(p, power);
         }
@@ -1647,12 +1545,10 @@
         else if (ev.big) power = Math.max(power, 0.62);
         if (ev.jammed) power *= 0.4;
         this._voidImpact(p, power);
-      } else if (ev.k === 'line') {
-        this.showPop(ev.i, ev.from, ev.to);
       } else if (ev.k === 'block') {
         const victim = this.models[ev.j];
         const p = ev.at ? new THREE.Vector3(ev.at[0], ev.at[1], ev.at[2]) : victim.headWorld(this._tmp.clone()).add(new THREE.Vector3(0, -0.1, 0));
-        this.impact(p, !!ev.parry, ev.parry ? 0xf0d060 : 0x88aaff);
+        this.impact(p, false, 0x88aaff);
         this._voidImpact(p, 0.22);
       } else if (ev.k === 'kd' || ev.k === 'td' || ev.k === 'sweep') {
         this.shake = 1;
@@ -1670,19 +1566,6 @@
       if (this.musicBg) this.musicBg.step();
       this.time += dt;
       if (this.blood) this.blood.step(dt);
-      if (this._line) {
-        this._line.t += dt;
-        const u = this._line.t / this._line.dur;
-        if (u >= 1) { this.tracer.visible = false; this.spark.visible = false; this._line = null; }
-        else {
-          const a = this._line.from, b = this._line.to;
-          this.tracer.visible = true;
-          this.tracer.position.copy(a).lerp(b, 0.5);
-          this.tracer.lookAt(b);
-          this.tracer.scale.set(1, 1, Math.max(0.2, a.distanceTo(b)));
-          this.spark.visible = u < 0.4;
-        }
-      }
       if (!this.models.length) return;
       const F = S.f;
       // ground axis: frozen to the top fighter's facing when the ground phase starts.
@@ -1698,7 +1581,6 @@
       for (let i = 0; i < 2; i++) {
         this.models[i].inputHint = inputs ? inputs[i] : 0;
         this.models[i].update(F[i], S, F[1 - i], dt, this.time, this.groundAxis, this.posLerp);
-        this.models[i].carry(F[i]);
       }
 
       // fx

@@ -27,7 +27,6 @@ h1 { font-family: var(--font-head); font-weight: 900; font-size: 84px; line-heig
 h1 span { color: var(--red); display: block; font-size: 64px; letter-spacing: .22em; }
 button.letter { font-family: inherit; font-weight: inherit; font-size: inherit; letter-spacing: inherit; line-height: inherit; color: inherit; background: transparent; border: 0; border-radius: 0; padding: 0; margin: 0; text-transform: none; display: inline; vertical-align: baseline; cursor: pointer; }
 button.letter:hover { transform: none; filter: none; color: var(--gold); }
-.mark-smile { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); color: #ff2a2a; font-size: 34px; line-height: 1; text-shadow: 0 0 12px rgba(255, 40, 40, .65); pointer-events: none; }
 .more-title { font-family: var(--font-head); font-weight: 900; font-size: 36px; letter-spacing: .06em; text-transform: uppercase; margin: 0 0 8px; }
 .more-opts { text-align: left; margin: 18px 0 22px; }
 .more-opts .fine { margin: 2px 0 14px 26px; text-align: left; }
