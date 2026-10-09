@@ -5,8 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cage Rules — 1v1 MMA</title>
 <meta name="description" content="Cage Rules: a 3D one-on-one mixed martial arts simulation you can play online against a friend, right in the browser.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700;900&family=Barlow:wght@400;600&display=swap" rel="stylesheet">
+<link href="lib/fonts/fonts.css" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css?v=23">
 </head>
 <body>
@@ -61,6 +60,7 @@
       <button class="big ghost" id="btnPractice">PRACTICE vs CPU</button>
       <button class="big ghost" id="btnWatch">WATCH AI vs AI</button>
       <button class="ghost" id="btnOptions">OPTIONS · CONTROLS</button>
+      <button class="ghost hidden" id="btnQuit">QUIT TO DESKTOP</button>
     </div>
     <label class="mute-music"><input type="checkbox" id="muteMusic"> Mute music</label>
     <div class="join-row hidden" id="joinRow">
@@ -284,13 +284,9 @@
 
 <div id="toast" class="hidden"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
-<script>
-  // CDN fallbacks (optional local copies in lib/ if you vendor them)
-  if (typeof THREE === 'undefined') document.write('<script src="lib/three.min.js"><\/script>');
-  if (typeof Peer === 'undefined') document.write('<script src="lib/peerjs.min.js"><\/script>');
-</script>
+<!-- Vendored three.js r128 and PeerJS 1.5.x, so the desktop build runs offline. -->
+<script src="lib/three.min.js"></script>
+<script src="lib/peerjs.min.js"></script>
 <script src="js/physics.js?v=16"></script>
 <script src="js/sim.js?v=28"></script>
 <script src="js/ai.js?v=12"></script>
@@ -302,7 +298,7 @@
 <script src="js/net.js?v=12"></script>
 <script src="js/audio.js?v=18"></script>
 <script src="js/chat.js?v=1"></script>
-<script src="js/main.js?v=30"></script>
+<script src="js/main.js?v=31"></script>
 <script src="lib/rapier3d-compat.js?v=12"></script>
 <script>
   // Rapier physics engine (vendored, WASM inlined, plain script so the game also runs from file://).

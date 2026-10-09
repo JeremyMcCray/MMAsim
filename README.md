@@ -19,9 +19,28 @@ and block is decided by real contact (see [Fight model](#fight-model)).
    branch*, Branch = `main`, folder = `/ (root)`. Save.
 3. After a minute the game is live at `https://<your-user>.github.io/cage-rules/`.
 
-Three.js and PeerJS load from cdnjs; copies of `three.min.js` (r128) and
-`peerjs.min.js` (1.5.x) are vendored in `lib/` and the page falls back to
-them automatically if the CDN is unreachable.
+Everything the page needs is vendored in `lib/` (`three.min.js` r128,
+`peerjs.min.js` 1.5.x, Rapier, and the Barlow fonts in `lib/fonts/`), so it
+loads with no CDN and runs offline.
+
+## Desktop build (Windows / Steam)
+
+`desktop/` wraps the game in Electron: a Studio Prozu splash screen, then the
+game in a fullscreen window (F11 or Alt+Enter toggles), with a **QUIT TO
+DESKTOP** button on the main menu. The page is served from `app://game/`, so
+saves in `localStorage` stay put between runs.
+
+```
+cd desktop
+npm install
+npm start            # run from the repo files
+npm run dist:win     # build to desktop/dist/win-unpacked/CageRules.exe
+```
+
+The build copies only `index.html`, `css/`, `js/`, `lib/` and `audio/` into
+`resources/game/`. `win-unpacked/` is the folder you upload to Steam.
+If Electron prints a Node version or says `app` is undefined, the shell has
+`ELECTRON_RUN_AS_NODE=1` set (VS Code extension hosts do this); unset it.
 
 ## Online play
 * One player creates a room and shares its 5‑letter code; the other joins with it.

@@ -991,6 +991,10 @@
   $('#btnPractice').onclick = () => { App.audio.init(); enterLobby('practice'); };
   $('#btnWatch').onclick = () => { App.audio.init(); enterLobby('watch'); };
   $('#btnOptions').onclick = () => openOptions();
+  if (window.desktop) { // Electron build (desktop/preload.js)
+    $('#btnQuit').classList.remove('hidden');
+    $('#btnQuit').onclick = () => window.desktop.quit();
+  }
   $('#btnLobbyOptions').onclick = () => openOptions();
   $('#btnOptClose').onclick = () => closeOptions();
   $('#btnOptReset').onclick = () => resetControls();

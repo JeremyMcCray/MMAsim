@@ -1,0 +1,52 @@
+{
+  "name": "cage-rules",
+  "productName": "Cage Rules",
+  "version": "0.1.0",
+  "description": "Cage Rules — 1v1 MMA",
+  "author": "Studio Prozu",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win dir"
+  },
+  "build": {
+    "appId": "com.studioprozu.cagerules",
+    "productName": "Cage Rules",
+    "copyright": "Copyright © 2026 Studio Prozu",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "splash/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "..",
+        "to": "game",
+        "filter": [
+          "index.html",
+          "css/**",
+          "js/**",
+          "lib/**",
+          "audio/**"
+        ]
+      }
+    ],
+    "win": {
+      "target": "dir",
+      "executableName": "CageRules",
+      "signAndEditExecutable": true
+    },
+    "electronLanguages": [
+      "en-US"
+    ]
+  },
+  "devDependencies": {
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3"
+  }
+}
