@@ -149,23 +149,31 @@ const KICKS = {
       { t: 0.64, yaw: -8, tilt: [0, 0, 4], chest: [4, 2, -2], head: [6, 0, 0], lUA: [-40, -16, -4], rUA: [-32, -12, 0], ankle: 5,
         kick: { knee: [0.18, -0.40, 0.10], foot: [0.22, -0.95, -0.06] }, sup: { knee: [-0.12, -0.54, 0.16], foot: [-0.12, -1.03, 0.18], heading: -20 } },
       { t: 0.80, S: true }] },
-  // lead (left) leg low kick into the opponent's lead thigh: the same turnover mirrored, kept low and chopping down
-  ll_lkick: { side: 'l', dur: 0.72, active: [0.21, 0.40],
+  // rear-leg Thai low kick into the outside of the opponent's lead thigh (the lead version is this one mirrored):
+  //   step    small step out with the lead foot, toes turning out, weight onto it; the rear heel comes up
+  //   swing   NO high chamber: the hips open and the leg comes round from the kicker's right side, long, the knee
+  //           only slightly bent, the foot trailing out wide at knee height; the rear arm starts to swing down
+  //   impact  hips turned over (support heel at the opponent), the near-straight leg angles down and the shin
+  //           chops ACROSS the target from the outside, kneecap facing the way it travels; rear arm swung down and
+  //           back past the hip as the counterweight, lead glove covering the jaw, a slight lean away
+  //   through the shin carries on across the thigh line (on the mirrored lead kick this is the inside of the thigh)
+  //   return  the knee folds and the leg comes back the way it went, landing back in stance
+  rl_lkick: { side: 'r', dur: 0.70, active: [0.18, 0.34],
     frames: [
       { t: 0.00, S: true },
-      { t: 0.10, yaw: 24, tilt: [0, 0, -6], chest: [-2, 10, 4], head: [6, -12, 0], lUA: [-30, 0, 40], rUA: [-66, -8, -14], ankle: 20,
-        kick: { knee: [-0.16, -0.24, 0.34], foot: [-0.20, -0.64, 0.06] }, sup: { knee: [0.12, -0.56, -0.12], foot: [0.12, -1.04, -0.20], heading: 20 } },
-      { t: 0.20, yaw: 46, tilt: [-2, 0, -22], chest: [-4, 18, 8], head: [8, -24, 2], lUA: [-30, 0, 50], rUA: [-70, -10, -20], ankle: 45,
-        kick: { knee: [-0.10, -0.04, 0.50], foot: [-0.50, -0.26, 0.34] }, sup: { knee: [0.10, -0.56, -0.14], foot: [0.08, -1.04, -0.22], heading: 70 } },
-      { t: 0.29, yaw: 72, tilt: [-4, 0, -30], chest: [-6, 24, 12], head: [8, -30, 4], lUA: [-30, 0, 50], rUA: [-70, -10, -20], ankle: 50,
-        kick: { knee: [0.10, -0.12, 0.55], foot: [0.22, -0.42, 0.86] }, sup: { knee: [0.04, -0.56, -0.16], foot: [0.00, -1.04, -0.24], heading: 120 } },
-      { t: 0.37, yaw: 82, tilt: [-4, 0, -30], chest: [-6, 26, 12], head: [8, -30, 4], lUA: [-30, 0, 50], rUA: [-70, -10, -20], ankle: 50,
-        kick: { knee: [0.22, -0.16, 0.50], foot: [0.50, -0.46, 0.70] }, sup: { knee: [0.04, -0.56, -0.16], foot: [0.00, -1.04, -0.24], heading: 130 } },
-      { t: 0.48, yaw: 42, tilt: [-2, 0, -16], chest: [-2, 16, 6], head: [8, -16, 0], lUA: [-34, -6, 20], rUA: [-60, -10, -14], ankle: 25,
-        kick: { knee: [0.00, -0.26, 0.42], foot: [0.00, -0.66, 0.20] }, sup: { knee: [0.10, -0.56, -0.14], foot: [0.08, -1.04, -0.22], heading: 70 } },
-      { t: 0.60, yaw: 18, tilt: [0, 0, -4], chest: [2, 14, 2], head: [8, -12, 0], lUA: [-34, -18, -6], rUA: [-36, -14, 6], ankle: 5,
-        kick: { knee: [-0.10, -0.46, 0.24], foot: [-0.12, -0.96, 0.20] }, sup: { knee: [0.12, -0.56, -0.12], foot: [0.12, -1.04, -0.20], heading: 20 } },
-      { t: 0.72, S: true }] }
+      { t: 0.08, yaw: -14, tilt: [0, 0, 4], chest: [6, 2, -2], head: [8, 10, 0], lUA: [-76, 3, 12], ankle: 15, rUA: [-24, -10, 14], rFA: [-128, 0, -14],
+        kick: { knee: [0.20, -0.50, 0.02], foot: [0.28, -0.95, -0.16] }, sup: { knee: [-0.22, -0.56, 0.24], foot: [-0.26, -1.03, 0.24], heading: -30 } },
+      { t: 0.16, yaw: -50, tilt: [-2, 0, 12], chest: [6, 8, -6], head: [8, 26, 4], lUA: [-80, 10, 18], ankle: 35, rUA: [-2, 0, 22], rFA: [-80, 0, 0],
+        kick: { knee: [0.32, -0.32, 0.30], foot: [0.66, -0.50, 0.24] }, sup: { knee: [-0.22, -0.54, 0.12], foot: [-0.26, -1.02, 0.10], heading: -70 } },
+      { t: 0.25, yaw: -80, tilt: [-4, 0, 20], chest: [6, 12, -10], head: [8, 32, 8], lUA: [-82, 12, 22], ankle: 40, rUA: [34, 0, 16], rFA: [-24, 0, 0],
+        kick: { knee: [0.10, -0.20, 0.52], foot: [0.36, -0.40, 0.92], face: [-0.85, -0.25, 0.35] }, sup: { knee: [-0.22, -0.52, 0.04], foot: [-0.26, -1.00, 0.00], heading: -105 } },
+      { t: 0.32, yaw: -90, tilt: [-4, 0, 20], chest: [6, 14, -10], head: [8, 32, 8], lUA: [-82, 12, 22], ankle: 40, rUA: [40, 0, 14], rFA: [-20, 0, 0],
+        kick: { knee: [-0.04, -0.24, 0.52], foot: [-0.10, -0.48, 0.96], face: [-0.8, -0.4, 0.3] }, sup: { knee: [-0.22, -0.52, 0.02], foot: [-0.26, -1.00, -0.02], heading: -112 } },
+      { t: 0.43, yaw: -52, tilt: [-2, 0, 10], chest: [6, 8, -6], head: [8, 22, 4], lUA: [-80, 10, 18], ankle: 25, rUA: [-6, -4, 18], rFA: [-90, 0, 0],
+        kick: { knee: [0.22, -0.34, 0.34], foot: [0.38, -0.74, 0.12] }, sup: { knee: [-0.22, -0.54, 0.12], foot: [-0.26, -1.02, 0.10], heading: -70 } },
+      { t: 0.55, yaw: -16, tilt: [0, 0, 4], chest: [6, 4, -2], head: [8, 6, 0], lUA: [-76, 3, 12], ankle: 8, rUA: [-28, -14, 8], rFA: [-134, 0, -20],
+        kick: { knee: [0.18, -0.50, 0.02], foot: [0.24, -0.98, -0.16] }, sup: { knee: [-0.20, -0.55, 0.20], foot: [-0.24, -1.03, 0.20], heading: -30 } },
+      { t: 0.70, S: true }] }
 };
 
 if (require.main === module) {
