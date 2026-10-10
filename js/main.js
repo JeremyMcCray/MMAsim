@@ -319,6 +319,8 @@
     ];
     // same archetype -> alternate shorts colour so they're distinguishable
     if (players[0].fighter === players[1].fighter) players[1].color = 0x8e44ad;
+    // practice: both fighters get a fresh random look (hair / beard / build / colours) and skin tone every fight
+    if (App.mode === 'practice') for (const p of players) { p.look = Career.randomLook(); p.skin = Career.SKINS[(Math.random() * Career.SKINS.length) | 0]; }
     const msg = { t: 'start', seed: (Math.random() * 1e9) | 0, players, settings: { rounds: L.settings.rounds, len: L.settings.len, grappling: L.settings.grappling !== false } };
     if (App.mode === 'host') App.net.send(msg);
     beginFight(msg);
@@ -905,7 +907,11 @@
   const pct100 = (v) => Math.round(v * 100);
   function careerSave() { if (CareerUI.C) Career.save(CareerUI.C); }
   function careerLoad() { if (!CareerUI.C) CareerUI.C = Career.load(); return CareerUI.C; }
-  function refreshMenuCareer() { const b = $('#btnCareer'); if (b) b.textContent = careerLoad() ? 'CONTINUE CAREER' : 'START A CAREER'; }
+  function refreshMenuCareer() {
+    const has = !!careerLoad();
+    const b = $('#btnCareer'); if (b) b.textContent = has ? 'CONTINUE CAREER' : 'START A CAREER';
+    const n = $('#btnCareerNew'); if (n) { n.classList.toggle('hidden', !has); n.textContent = 'NEW CAREER'; CareerUI.confirmNew = 0; }
+  }
 
   // ---- new fighter ----
   function swatches(el, list, sel, onPick) {
@@ -1263,6 +1269,14 @@
   function leaveCareerFight() { settleCareerFight(); stopFight(); openCareer(); }
   $('#btnCareer').onclick = () => { App.audio.init(); if (careerLoad()) openCareer(); else openCareerNew(); };
   $('#btnCareerNewBack').onclick = () => { LookPreview.stop(); screen('menu'); };
+  // NEW CAREER on the main menu: shown only when a save exists. Click twice to confirm; the old save is
+  // kept until the new fighter is actually started, so backing out of the creation screen loses nothing.
+  $('#btnCareerNew').onclick = () => {
+    const b = $('#btnCareerNew');
+    if ((CareerUI.confirmNew = (CareerUI.confirmNew || 0) + 1) < 2) { b.textContent = 'CLICK AGAIN · REPLACES CURRENT SAVE'; setTimeout(() => { CareerUI.confirmNew = 0; b.textContent = 'NEW CAREER'; }, 4000); return; }
+    CareerUI.confirmNew = 0; b.textContent = 'NEW CAREER';
+    App.audio.init(); CareerUI.pick = { base: 'striker', color: null, skin: null, look: null }; openCareerNew();
+  };
   $('#btnCareerStart').onclick = () => startCareer();
   $('#careerName').addEventListener('keydown', (e) => { if (e.key === 'Enter') startCareer(); });
   $('#btnCareerMenu').onclick = () => { careerSave(); screen('menu'); };

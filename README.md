@@ -110,9 +110,7 @@ works from any camera angle.
 * **Combos flow.** As soon as a strike has landed (or whiffed) you can throw
   the next one straight out of the recovery, and a press made while a strike
   is still in the air is buffered and fires the instant it can. Kicks are
-  the exception: you can only kick with both feet on the mat. Chained
-  strikes come out a little quicker (up to three in a rhythm) when you
-  switch limbs. A strike that gets slipped has to be ridden out. Hits on an
+  the exception: you can only kick with both feet on the mat. Hits on an
   already‑stunned opponent stun for less, so stun‑locks wear off.
 * Landing on an opponent mid‑windup is a **counter** (+35 %). A hard punch
   that catches someone mid‑kick cancels the kick, hits harder still
