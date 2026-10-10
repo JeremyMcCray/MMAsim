@@ -685,7 +685,14 @@
     if (App.setBackground) App.setBackground('legacy');
     buildOptions(); updateHint(); toast('Options reset to defaults', 1500);
   }
+  function menuHint() {
+    const h = $('#menuHint'); if (!h) return;
+    h.innerHTML = Pad.active
+      ? '<span><b>D-PAD</b>select</span><span><b>A</b>confirm</span><span><b>START</b>options</span>'
+      : '<span><b>\u2191\u2193</b>select</span><span><b>ENTER</b>confirm</span><span><b>ESC</b>options</span>' + (window.desktop ? '<span><b>F11</b>fullscreen</span>' : '');
+  }
   function updateHint() {
+    menuHint();
     const B = id => '<b>' + bindName(id) + '</b>';
     const ms = Controls.moveset;
     const kind = k => KIND_LABEL[k].toLowerCase();
@@ -724,6 +731,10 @@
       return;
     }
     if (e.code === 'Escape') { e.preventDefault(); if (!e.repeat) pressEscape(); return; }
+    if (/^Arrow(Up|Down|Left|Right)$/.test(e.code) && !(App.gym && App.gym.active)) {
+      const onScreen = App.optionsOpen || ['menu', 'lobby', 'end', 'career', 'careerNew', 'more'].some(id => !$('#' + id).classList.contains('hidden'));
+      if (onScreen) { e.preventDefault(); padFocusMove(e.code.slice(5).toLowerCase()); return; }
+    }
     if (App.optionsOpen) return;
     if (e.code === 'KeyH' && !Controls.keyMap.KeyH) { if (!e.repeat) { App.hintsHidden = !App.hintsHidden; $('#controlsHint').style.display = App.hintsHidden ? 'none' : ''; } return; }
     if (e.code === 'KeyM' && !Controls.keyMap.KeyM) { if (!e.repeat) { App.audio.setMuted(!App.audio.muted); toast(App.audio.muted ? 'Muted' : 'Sound on', 1200); } return; }
@@ -814,7 +825,7 @@
   }
   const PAD_FOCUSABLE = 'button, a[href], input[type=range], input[type=checkbox], select, .card';
   function padFocusMove(dir) {
-    const els = Array.from(document.querySelectorAll(PAD_FOCUSABLE)).filter(e => { if (e.disabled || e.closest('.hidden')) return false; const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+    const els = Array.from(document.querySelectorAll(PAD_FOCUSABLE)).filter(e => { if (e.disabled || e.closest('.hidden') || e.classList.contains('letter')) return false; /* the title's G is an easter egg, not a menu item */ const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
     if (!els.length) return;
     const cur = document.activeElement, from = cur && els.includes(cur) ? cur.getBoundingClientRect() : null;
     if (!from) { els[0].focus(); return; }
@@ -1296,7 +1307,7 @@
   //  Wire up buttons
   // ============================================================
   $('#btnHost').onclick = () => { App.audio.init(); startHost(); };
-  $('#btnJoin').onclick = () => { App.audio.init(); $('#joinRow').classList.toggle('hidden'); $('#joinCode').focus(); };
+  $('#btnJoin').onclick = () => { App.audio.init(); const open = !$('#joinRow').classList.toggle('hidden'); $('#btnJoin').setAttribute('aria-expanded', open ? 'true' : 'false'); if (open) $('#joinCode').focus(); };
   $('#btnJoinGo').onclick = () => { const c = $('#joinCode').value.trim(); if (c.length < 4) { toast('Enter the 5-letter room code.'); return; } startJoin(c); };
   $('#joinCode').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#btnJoinGo').click(); });
   $('#btnPractice').onclick = () => { App.audio.init(); enterLobby('practice'); };
@@ -1305,9 +1316,17 @@
   if (window.desktop) { // Electron build (desktop/preload.js)
     $('#btnQuit').classList.remove('hidden');
     $('#btnQuit').onclick = () => window.desktop.quit();
+    if (window.desktop.version) $('#menuVersion').textContent = 'v' + window.desktop.version;
   }
   $('#btnLobbyOptions').onclick = () => openOptions();
   $('#btnOptClose').onclick = () => closeOptions();
+  // options pages: the chosen tab sticks for the session
+  function showOptTab(name) {
+    cancelCapture(); App.optTab = name;
+    document.querySelectorAll('#optTabs .opt-tab').forEach(b => { const on = b.dataset.tab === name; b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
+    document.querySelectorAll('#options .opt-page').forEach(p => p.classList.toggle('hidden', p.dataset.page !== name));
+  }
+  document.querySelectorAll('#optTabs .opt-tab').forEach(b => b.onclick = () => showOptTab(b.dataset.tab));
   $('#btnOptReset').onclick = () => resetControls();
   (function bindMusicVolume() {
     const sl = $('#musicVol'), lbl = $('#musicVolLbl');
@@ -1491,6 +1510,7 @@
   $('#optRef').addEventListener('change', () => { Extras.ref = $('#optRef').checked; saveExtras(); syncExtras(); });
   $('#optSphere').addEventListener('change', () => { Extras.sphere = $('#optSphere').checked; saveExtras(); syncExtras(); });
   syncExtras();
+  menuHint();
   App.talk = new CageTalk.Talk();
   App.talk.mount();
   App.talk.onLine = postLine;

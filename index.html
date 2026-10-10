@@ -6,7 +6,7 @@
 <title>Cage Rules — 1v1 MMA</title>
 <meta name="description" content="Cage Rules: a 3D one-on-one mixed martial arts simulation you can play online against a friend, right in the browser.">
 <link href="lib/fonts/fonts.css" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=27">
+<link rel="stylesheet" href="css/style.css?v=29">
 </head>
 <body>
 <canvas id="musicbg" aria-hidden="true" hidden></canvas>
@@ -48,32 +48,32 @@
   </div>
 </div>
 
-<!-- ===== MAIN MENU ===== -->
+<!-- ===== MAIN MENU (Steam-style rail over the live arena) ===== -->
 <div id="menu" class="layer screen">
-  <div class="panel">
+  <div class="menu-rail">
     <h1>CA<button type="button" class="letter" id="titleG">G</button>E<span>RULES</span></h1>
-    <p class="sub">3D one-on-one mixed martial arts · online</p>
-    <div class="menu-btns">
-      <button class="big" id="btnHost">CREATE ROOM</button>
-      <button class="big" id="btnJoin">JOIN ROOM</button>
+    <nav class="menu-btns" aria-label="Main menu">
       <button class="big gold" id="btnCareer">CAREER</button>
-      <button class="ghost hidden" id="btnCareerNew">NEW CAREER</button>
-      <button class="big ghost" id="btnPractice">PRACTICE vs CPU</button>
-      <button class="big ghost" id="btnWatch">WATCH AI vs AI</button>
+      <button class="ghost small hidden" id="btnCareerNew">NEW CAREER</button>
+      <button class="big" id="btnPractice">PRACTICE VS CPU</button>
+      <button class="big" id="btnWatch">WATCH AI VS AI</button>
+      <div class="menu-sep">ONLINE</div>
+      <button class="big" id="btnHost">CREATE ROOM</button>
+      <button class="big" id="btnJoin" aria-expanded="false" aria-controls="joinRow">JOIN ROOM</button>
+      <div class="join-row hidden" id="joinRow">
+        <input id="joinCode" maxlength="5" placeholder="CODE" autocomplete="off" spellcheck="false" aria-label="Room code">
+        <button id="btnJoinGo">CONNECT</button>
+      </div>
+      <div class="menu-sep"></div>
       <button class="ghost" id="btnOptions">OPTIONS · CONTROLS</button>
       <button class="ghost hidden" id="btnQuit">QUIT TO DESKTOP</button>
-    </div>
-    <label class="mute-music"><input type="checkbox" id="muteMusic"> Mute music</label>
-    <div class="join-row hidden" id="joinRow">
-      <input id="joinCode" maxlength="5" placeholder="ROOM CODE" autocomplete="off" spellcheck="false">
-      <button id="btnJoinGo">CONNECT</button>
-    </div>
-    <p class="fine">Peer-to-peer over WebRTC — the host's browser runs the fight. Desktop keyboard recommended.</p>
-    <div class="credits">
-      <div class="credits-title">CREDITS</div>
-      <p>Music by <b>MintoDog</b></p>
+    </nav>
+    <div class="menu-foot">
+      <label class="mute-music"><input type="checkbox" id="muteMusic"> Mute music</label>
+      <div class="menu-meta"><span id="menuVersion"></span>Music by <b>MintoDog</b></div>
     </div>
   </div>
+  <div class="menu-hint" id="menuHint"></div>
 </div>
 
 <!-- ===== EXTRA OPTIONS (opened from the G in the title) ===== -->
@@ -248,54 +248,71 @@
       </div>
       <div class="opt-note">Press <b>ESC</b> at any time to open or close this panel. In practice the fight pauses.</div>
     </div>
-    <div class="opt-audio">
-      <h3>AUDIO</h3>
-      <label class="vol-row">Music volume
-        <input type="range" id="musicVol" min="0" max="100" step="1" value="20" aria-label="Music volume">
-        <span id="musicVolLbl">20</span>
-      </label>
-      <label class="mute-music"><input type="checkbox" id="muteMusicOpt"> Mute music</label>
+    <div class="opt-tabs" id="optTabs" role="tablist" aria-label="Options pages">
+      <button type="button" class="opt-tab on" data-tab="game" role="tab" aria-selected="true">GAME</button>
+      <button type="button" class="opt-tab" data-tab="keys" role="tab" aria-selected="false">KEY BINDINGS</button>
+      <button type="button" class="opt-tab" data-tab="strikes" role="tab" aria-selected="false">STRIKES</button>
     </div>
-    <div class="opt-look">
-      <h3>BACKGROUND</h3>
-      <p class="opt-help">Legacy is the original arena. Any other color is a flat void, light grey by default. Music particles follow the track, and impact particles burst when a strike lands. Both stay off on Legacy.</p>
-      <div class="fx-row">
-        <label class="mute-music"><input type="checkbox" id="bgMusicFx" disabled> Music particles</label>
-        <label class="mute-music"><input type="checkbox" id="bgImpactFx" disabled> Impact particles</label>
-      </div>
-      <label class="mute-music"><input type="checkbox" id="optRef" checked> Show referee</label>
-      <label class="mute-music"><input type="checkbox" id="optSphere" checked> Impact sphere</label>
-      <div class="bg-menu-wrap">
-        <button type="button" class="bg-menu" id="bgColorBtn" aria-expanded="false" aria-controls="bgColorSub">
-          <span>Colors</span><b id="bgColorName">Legacy</b>
-        </button>
-        <div class="bg-sub hidden" id="bgColorSub">
-          <div class="bg-swatches" id="bgSwatches" role="radiogroup" aria-label="Background color"></div>
-          <div class="bg-preview" id="bgPreview"></div>
+    <div class="opt-page" data-page="game" role="tabpanel">
+      <div class="opt-cols game">
+        <div class="opt-col">
+          <div class="opt-audio">
+            <h3>AUDIO</h3>
+            <label class="vol-row">Music volume
+              <input type="range" id="musicVol" min="0" max="100" step="1" value="20" aria-label="Music volume">
+              <span id="musicVolLbl">20</span>
+            </label>
+            <label class="mute-music"><input type="checkbox" id="muteMusicOpt"> Mute music</label>
+          </div>
+        </div>
+        <div class="opt-col">
+          <div class="opt-look">
+            <h3>BACKGROUND</h3>
+            <p class="opt-help">Legacy is the original arena. Any other color is a flat void, light grey by default. Music particles follow the track, and impact particles burst when a strike lands. Both stay off on Legacy.</p>
+            <div class="fx-row">
+              <label class="mute-music"><input type="checkbox" id="bgMusicFx" disabled> Music particles</label>
+              <label class="mute-music"><input type="checkbox" id="bgImpactFx" disabled> Impact particles</label>
+            </div>
+            <label class="mute-music"><input type="checkbox" id="optRef" checked> Show referee</label>
+            <label class="mute-music"><input type="checkbox" id="optSphere" checked> Impact sphere</label>
+            <div class="bg-menu-wrap">
+              <button type="button" class="bg-menu" id="bgColorBtn" aria-expanded="false" aria-controls="bgColorSub">
+                <span>Colors</span><b id="bgColorName">Legacy</b>
+              </button>
+              <div class="bg-sub hidden" id="bgColorSub">
+                <div class="bg-swatches" id="bgSwatches" role="radiogroup" aria-label="Background color"></div>
+                <div class="bg-preview" id="bgPreview"></div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
-    <div class="opt-cols">
-      <div class="opt-col">
-        <h3>KEY BINDINGS</h3>
-        <p class="opt-help">Click a key to rebind it. <b>Backspace</b> clears a slot, <b>Esc</b> cancels.</p>
-        <table class="keys" id="keyTable"></table>
-        <p class="opt-help" id="padStatus"></p>
+    <div class="opt-page hidden" data-page="keys" role="tabpanel">
+      <div class="opt-cols keys">
+        <div class="opt-col">
+          <h3>KEY BINDINGS</h3>
+          <p class="opt-help">Click a key to rebind it. <b>Backspace</b> clears a slot, <b>Esc</b> cancels.</p>
+          <table class="keys" id="keyTable"></table>
+          <p class="opt-help" id="padStatus"></p>
+        </div>
+        <div class="opt-col opt-kb">
+          <h3>KEYBOARD</h3>
+          <p class="opt-help">Your current keys. Hover a key for details, and hover a modifier to see what each limb throws while you hold it.</p>
+          <div class="kb-scroll"><div class="kb" id="kbMap"></div></div>
+          <div class="kb-info" id="kbInfo"></div>
+          <div class="kb-legend" id="kbLegend"></div>
+        </div>
       </div>
-      <div class="opt-col">
+    </div>
+    <div class="opt-page hidden" data-page="strikes" role="tabpanel">
+      <div class="opt-strikes">
         <h3>STRIKES</h3>
         <p class="opt-help">Each limb key throws a different strike depending on which modifier you are holding. Strikes only do damage when the hand or foot actually reaches the target: step in to add power, and don't throw long shots from the clinch. Press the next strike while one is still landing to chain it.</p>
         <table class="moves" id="moveTable"></table>
         <h3>ON THE GROUND</h3>
         <p class="opt-help">Positions: closed guard → half guard → side control → mount, or back control. <b>Takedown key + a direction</b> attempts a pass, escape, sweep or stand-up (the other fighter holds block to base and deny it; attempts have a short cooldown). <b>Takedown key alone</b> goes for a submission from that position; hold it to squeeze, the defender holds block and times escapes. The hands punch; hold <b data-mod="mod1">Q</b> for elbows, <b data-mod="mod2">E</b> for hammer fists, <b data-mod="mod3">R</b> for body shots; leg keys knee the body. Strikes hit hardest from mount; the bottom fighter can only strike from guard.</p>
       </div>
-    </div>
-    <div class="opt-kb">
-      <h3>KEYBOARD</h3>
-      <p class="opt-help">Your current keys. Hover a key for details, and hover a modifier to see what each limb throws while you hold it.</p>
-      <div class="kb-scroll"><div class="kb" id="kbMap"></div></div>
-      <div class="kb-info" id="kbInfo"></div>
-      <div class="kb-legend" id="kbLegend"></div>
     </div>
     <div class="lobby-btns">
       <button class="ghost" id="btnOptReset">RESET DEFAULTS</button>
@@ -321,7 +338,7 @@
 <script src="js/net.js?v=12"></script>
 <script src="js/audio.js?v=19"></script>
 <script src="js/chat.js?v=1"></script>
-<script src="js/main.js?v=33"></script>
+<script src="js/main.js?v=35"></script>
 <script src="lib/rapier3d-compat.js?v=12"></script>
 <script>
   // Rapier physics engine (vendored, WASM inlined, plain script so the game also runs from file://).

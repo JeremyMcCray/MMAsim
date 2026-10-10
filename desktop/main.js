@@ -90,6 +90,7 @@ function createGameWindow(settings) {
 
 app.whenReady().then(() => {
   serveGame();
+  ipcMain.on('version', (e) => { e.returnValue = app.getVersion(); });
   const splash = createSplash();
   const win = createGameWindow(loadSettings());
   const shown = Date.now();

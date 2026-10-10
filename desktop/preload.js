@@ -4,5 +4,6 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('desktop', {
   quit: () => ipcRenderer.send('quit'),
-  toggleFullscreen: () => ipcRenderer.send('toggle-fullscreen')
+  toggleFullscreen: () => ipcRenderer.send('toggle-fullscreen'),
+  version: ipcRenderer.sendSync('version') // shown in the main menu footer
 });
