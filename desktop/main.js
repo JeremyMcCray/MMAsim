@@ -56,7 +56,7 @@ function createGameWindow(settings) {
   const win = new BrowserWindow({
     width: settings.width, height: settings.height, minWidth: 960, minHeight: 540,
     fullscreen: settings.fullscreen, show: false, backgroundColor: '#000000',
-    title: 'Cage Rules', autoHideMenuBar: true,
+    title: 'Cage Rules', autoHideMenuBar: true, icon: path.join(__dirname, 'build', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true, sandbox: true, nodeIntegration: false,

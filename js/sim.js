@@ -287,6 +287,7 @@
       idx, key: r.key, name: name || r.name, style: extra.style || r.style,
       stats,
       color: color != null ? color : r.color, skin: extra.skin != null ? extra.skin : r.skin,
+      look: extra.look && typeof extra.look === 'object' ? extra.look : null, // hair / beard / build / glove and trim colours (js/render.js); null = the default body
       moveset: normalizeMoveset(moveset),
       x: idx === 0 ? -1.3 : 1.3, z: 0,
       vx: 0, vz: 0,
@@ -301,8 +302,7 @@
       checking: false,    // lead leg lifted to check low kicks (CHECK held)
       southpaw: false,   // stance: right foot forward (see isSouthpaw)
       blockTap: -9,       // sim time of the last BLOCK press (double tap = push)
-      dirTap: -9, dirTapBit: 0, // sim time and key of the last direction press (the same key twice = lunge that way)
-      lungeReady: -9,     // sim time the next lunge may start
+      lungeReady: -9,     // sim time the next dash may start
       kickReady: -9,      // sim time the kicking foot is back on the mat: no kick can start before it
       restT: 0,           // seconds since he last blocked or threw: stamina regen ramps up the longer this runs
       rocked: 0,          // seconds remaining rocked
@@ -348,14 +348,19 @@
   const PUSH_SHOVE = 2.8;   // impulse per kg given to the opponent (cf. PHYS_PUSH for a teep)
   const PUSH_DUR = 0.38;    // seconds the pusher is committed
   const PUSH_STUN_DIST = PUSH_DIST * 0.5; // stumble / stagger applies only inside this range; beyond it the push just shoves
-  // lunge: a direction key tapped twice quickly bursts that way to close / make distance or angle off
-  const LUNGE_TAP_T = 0.28;  // the second tap has to come within this many seconds of the first
+  // dash: the DASH key bursts the way he is stepping (in / out / left / right, diagonals too) to close / make distance
+  // or angle off; with no direction held he hops straight back
   const LUNGE_DUR = 0.32;    // seconds the burst lasts (it tapers off over the back half)
   const LUNGE_IN = 3.2;      // extra speed (m/s) on top of his step, lunging in
   const LUNGE_OUT = 2.7;     // ... and backing out
   const LUNGE_SIDE = 2.9;    // ... and angling off to either side
   const LUNGE_COST = 4;      // stamina
-  const LUNGE_CD = 0.55;     // seconds from one lunge to the next
+  const LUNGE_CD = 0.55;     // seconds from one dash to the next
+  // slip: BLOCK pressed while a strike is on its way also moves the head off the line, outside the striking limb
+  const SLIP_COST = 5;
+  const SLIP_DUR = 0.45;
+  const SLIP_SIDE = 0.4;     // impulse per kg sideways ...
+  const SLIP_BACK = 0.3;     // ... and back
   // stamina economy
   const MISS_PENALTY = 0.30;   // a whiffed strike costs this much extra (fraction of its cost)
   const CLEAN_REFUND = 0.33;   // an unblocked landing gives this much of its cost back
@@ -398,7 +403,7 @@
   const KD_DOWN_RECOVER = 2.5;  // rocked timer drains this many times faster while he stays down
   const KD_FOLLOW_DIST = 2.3;   // the attacker can dive on him from this far (takedown key)
   const KD_SHOVE = 0.5;         // impulse per kg the knockdown blow gives the falling body
-  const KD_RISE_KEYS = DIR_BITS | IN.DODGE; // a direction or the stand-up key gets a downed fighter up
+  const KD_RISE_KEYS = DIR_BITS | IN.DODGE; // a direction or the dash key gets a downed fighter up
 
   class Sim {
     constructor(opts) {
@@ -465,7 +470,7 @@
       while (this.acc >= DT && n < 8) {
         this._tick(DT); this.acc -= DT; n++;
         // a press belongs to the first tick only: a frame that runs two ticks must not see one tap twice
-        // (that turned a single tap into a double-tap push / lunge and threw two strikes for one press)
+        // (that turned a single tap into a double-tap push and threw two strikes for one press)
         this.inputs[0].pressed = 0; this.inputs[1].pressed = 0;
       }
     }
@@ -702,18 +707,15 @@
         // lateral (circle) vector = fighter's right (fwd x up)
         const lx = -fz, lz = fx;
 
-        f.blocking = !busy && !!(held & IN.BLOCK) && f.rocked <= 0.4;
+        f.blocking = (!busy || f.act.type === 'dodge') && !!(held & IN.BLOCK) && f.rocked <= 0.4; // the guard stays up through a slip
         f.checking = !busy && !striking && !!(held & IN.CHECK) && f.rocked <= 0.4;
         // BLOCK tapped twice quickly = push (the taps are remembered even mid-strike, the push waits until he is free)
         let push = false;
         if (pressed & IN.BLOCK) { push = S.t - f.blockTap <= PUSH_TAP_T; f.blockTap = push ? -9 : S.t; }
-        // a direction key tapped twice quickly = lunge that way (in / out / left / right)
-        let lunge = 0;
-        for (const bit of [IN.FWD, IN.BACK, IN.LEFT, IN.RIGHT]) {
-          if (!(pressed & bit)) continue;
-          if (f.dirTapBit === bit && S.t - f.dirTap <= LUNGE_TAP_T) { lunge = bit; f.dirTap = -9; f.dirTapBit = 0; }
-          else { f.dirTap = S.t; f.dirTapBit = bit; }
-        }
+        // a single BLOCK press while the opponent's strike is still on its way = block and slip it
+        const opp = F[1 - i];
+        const incoming = opp.act.type === 'strike' && !opp.act.hit && opp.act.t < (opp.act.cancelAt != null ? opp.act.cancelAt : opp.act.dur);
+        const slip = !push && !!(pressed & IN.BLOCK) && incoming && dist < 2.2;
         const rag = this.phys.fighters[i];
         rag.move[0] = 0; rag.move[1] = 0;
 
@@ -733,12 +735,15 @@
           rag.move[0] = rx; rag.move[1] = rz; rag.moveSpeed = spd / 1.9;
           if (rx || rz) { if (!busy) f.act = { type: 'move', name: '', t: 0, dur: 0, hit: false }; }
           else if (f.act.type === 'move') f.act = idleAct();
-          if (lunge && S.t >= f.lungeReady && f.stam > LUNGE_COST && f.rocked <= 0) {
+          // DASH: burst the way he is stepping (straight back when standing still)
+          if ((pressed & IN.DODGE) && S.t >= f.lungeReady && f.stam > LUNGE_COST && f.rocked <= 0) {
             f.stam -= LUNGE_COST; f.restT = 0; f.lungeReady = S.t + LUNGE_CD;
             const legs = 1 - f.dmg.legs / 140;
             const k = (0.85 + f.stats.spd * 0.3) * legs;
-            const fwd = lunge === IN.FWD ? LUNGE_IN : lunge === IN.BACK ? -LUNGE_OUT : 0;
-            const side = lunge === IN.RIGHT ? LUNGE_SIDE : lunge === IN.LEFT ? -LUNGE_SIDE : 0;
+            let fwd = rz > 0 ? LUNGE_IN : rz < 0 ? -LUNGE_OUT : 0;
+            let side = rx > 0 ? LUNGE_SIDE : rx < 0 ? -LUNGE_SIDE : 0;
+            if (!rx && !rz) fwd = -LUNGE_OUT;
+            if (fwd && side) { fwd *= Math.SQRT1_2; side *= Math.SQRT1_2; }
             rag.dash(fwd * k, LUNGE_DUR, side * k);
           }
         }
@@ -751,12 +756,17 @@
           // actions (press-triggered)
           if (push && f.stam > PUSH_COST && f.rocked <= 0) {
             this._push(f, F[1 - i], dist, fx, fz);
-          } else if (pressed & IN.DODGE && f.stam > 6 && f.rocked <= 0) {
-            f.stam -= 5;
-            f.act = { type: 'dodge', name: '', t: 0, dur: 0.45, hit: false };
-            f.blocking = false;
-            const out = isSouthpaw(f) ? 0.4 : -0.4;
-            rag.shove(lx * out - fx * 0.3, lz * out - fz * 0.3, 1.1); // slip outside the lead shoulder
+          } else if (slip && f.stam > SLIP_COST + 1 && f.rocked <= 0) {
+            f.stam -= SLIP_COST;
+            // slip outside the limb that is coming: his right hand / leg is on my left, so I go left (-l), and vice versa
+            const oSt = STRIKES[opp.act.name];
+            const oLimb = oSt && oSt.limb ? (isSouthpaw(opp) ? OTHER_SIDE[oSt.limb] : oSt.limb) : 'rh'; // the physical limb
+            const out = oLimb[0] === 'r' ? -SLIP_SIDE : SLIP_SIDE;
+            // the ragdoll's SLIP pose leans past the lead shoulder (mirrored for southpaw): pick the pose for the other side when needed
+            const toLead = (out < 0) === !isSouthpaw(f);
+            f.act = { type: 'dodge', name: toLead ? 'SLIP' : 'SLIP_R', t: 0, dur: SLIP_DUR, hit: false };
+            rag.shove(lx * out - fx * SLIP_BACK, lz * out - fz * SLIP_BACK, 1.1);
+            this._emit({ k: 'slip', i, j: 1 - i, name: oSt ? oSt.name : '' });
           } else if (pressed & IN.GRAPPLE && S.grappling && this._canFollow(f, F[1 - i], dist)) {
             // dive on a knocked-down opponent: flat on his back he gives up side control, half guard if he was already rising
             const o = F[1 - i];
@@ -913,7 +923,7 @@
         rag.check = f.checking && a.type !== 'strike';
         // body language from the action
         let ov = null;
-        if (a.type === 'dodge') ov = a.t < 0.32 ? 'SLIP' : null;
+        if (a.type === 'dodge') ov = a.t < 0.32 ? (a.name || 'SLIP') : null;
         else if (a.type === 'push') ov = a.t < 0.26 ? 'PUSH' : null;
         else if (a.type === 'takedown') ov = a.t < 0.32 ? 'SHOOT' : 'STUMBLE';
         else if (a.type === 'stumble') ov = 'STUMBLE';
@@ -1351,6 +1361,7 @@
         return n(ev.i) + ' lands a ' + ev.name + where + '.';
       }
       case 'block': return ev.checked ? n(ev.j) + ' checks the ' + ev.name + '!' : ev.passive ? n(ev.i) + "'s " + ev.name + ' is picked off by the arms.' : n(ev.j) + ' blocks the ' + ev.name + '.';
+      case 'slip': return n(ev.i) + ' slips the ' + ev.name + '.';
       case 'push': return ev.ok ? n(ev.i) + ' shoves ' + n(ev.j) + ' off.' : n(ev.i) + ' pushes at air.';
       case 'miss': return ev.slipped ? n(ev.j) + ' slips the ' + ev.name + '.' : n(ev.i) + ' misses with the ' + ev.name + '.';
       case 'rocked': return null;

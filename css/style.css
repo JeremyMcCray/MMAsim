@@ -124,6 +124,9 @@ table.moves .muted { color: var(--muted); font-size: 13px; letter-spacing: 0; fo
 table.moves select { width: 100%; font-size: 13px; padding: 5px 6px; }
 .keybtn { font-size: 14px; padding: 5px 10px; min-width: 76px; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2); color: #fff; letter-spacing: .1em; }
 .keybtn.cap { background: var(--gold); color: #000; animation: blink .6s steps(2) infinite; }
+.keybtn.pad { background: rgba(224,178,58,.1); border-color: rgba(224,178,58,.35); }
+/* a dropdown or slider a controller has "opened" (the d-pad changes it until A or B closes it) */
+.pad-edit { outline: 2px solid var(--gold) !important; outline-offset: 2px; box-shadow: 0 0 0 4px rgba(224,178,58,.25); }
 @media (max-width: 900px) { .opt-cols { grid-template-columns: 1fr; } }
 /* keyboard diagram in the options panel */
 .opt-kb { margin-top: 22px; }
@@ -247,7 +250,7 @@ table td:first-child, table th:first-child { text-align: left; color: var(--mute
 button.gold { background: var(--gold); color: #141408; }
 button.danger { border-color: rgba(226,59,59,.5); color: #ff8a8a; }
 .swatches { display: inline-flex; gap: 6px; }
-.swatches i { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; display: inline-block; }
+.swatches i { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; display: inline-block; box-shadow: inset 0 0 0 1px rgba(255,255,255,.28); }
 .swatches i.sel { border-color: #fff; box-shadow: 0 0 0 2px var(--gold); }
 .panel.wide.career { width: min(1120px, 97vw); }
 .career-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; flex-wrap: wrap; }
@@ -388,3 +391,20 @@ table.hist td.w { color: #52d273; font-family: var(--font-head); font-weight: 70
 .station-title { font-family: var(--font-head); font-weight: 700; font-size: 16px; letter-spacing: .2em; color: var(--gold); border-bottom: 1px solid rgba(255,255,255,.1); padding-bottom: 8px; margin-bottom: 12px; }
 #career.over-gym .panel { background: rgba(14,14,20,.92); }
 @media (max-width: 760px) { .gym-help { display: none; } .gym-kpis .kpi { min-width: 70px; } }
+
+/* ---- new career: the look editor ---- */
+.look { display: grid; grid-template-columns: 300px 1fr; gap: 22px; margin-top: 18px; align-items: start; }
+.look-preview { position: relative; background: radial-gradient(ellipse at 50% 30%, rgba(255,255,255,.07), rgba(0,0,0,.35) 75%); border: 1px solid rgba(255,255,255,.08); border-radius: 12px; overflow: hidden; aspect-ratio: 3 / 4; cursor: grab; }
+.look-preview:active { cursor: grabbing; }
+.look-preview canvas { width: 100%; height: 100%; display: block; }
+.look-hint { position: absolute; left: 0; right: 0; bottom: 8px; text-align: center; font-family: var(--font-head); font-size: 11px; letter-spacing: .2em; color: var(--muted); text-transform: uppercase; pointer-events: none; }
+.look-opts { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.look-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.look-row > label { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .08em; width: 96px; flex: 0 0 auto; }
+.look-row.names { gap: 20px; margin-bottom: 4px; }
+.look-row.names label { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .08em; display: flex; align-items: center; gap: 8px; width: auto; }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.seg button { font-size: 13px; letter-spacing: .08em; padding: 6px 12px; background: rgba(255,255,255,.04); border: 2px solid rgba(255,255,255,.14); color: var(--text); border-radius: 8px; }
+.seg button.on { border-color: var(--gold); color: #fff; box-shadow: 0 0 0 1px var(--gold); }
+button.small { font-size: 13px; padding: 6px 12px; }
+@media (max-width: 760px) { .look { grid-template-columns: 1fr; } .look-preview { max-width: 260px; margin: 0 auto; } }

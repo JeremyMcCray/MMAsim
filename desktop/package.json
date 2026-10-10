@@ -39,7 +39,8 @@
     "win": {
       "target": "dir",
       "executableName": "CageRules",
-      "signAndEditExecutable": true
+      "signAndEditExecutable": true,
+      "icon": "build/icon.ico"
     },
     "electronLanguages": [
       "en-US"

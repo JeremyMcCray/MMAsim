@@ -325,7 +325,7 @@
         if (this.R.setArenaVisible) this.R.setArenaVisible(false);
         // mirrors the sim's fighter 0 each frame (stations, lock-on and the camera read it)
         this.player = { x: SPAWN.x, z: SPAWN.z, yaw: SPAWN.yaw, act: { type: 'idle', t: 0 }, blocking: false, stam: 100 };
-        this.model = new FighterModel(this.scene, C.color, C.skin, 0);
+        this.model = new FighterModel(this.scene, C.color, C.skin, 0, { look: C.look });
         this.cam.init = false; this.locked = false;
         this.session = { hits: 0, combo: 0, bestCombo: 0, hardest: 0, last: '', lastT: -9, comboT: 0 };
       }
@@ -355,7 +355,7 @@
         for (const k in f.stats) if (typeof C.stats[k] === 'number') f.stats[k] = clamp(C.stats[k], 0, 1);
         f.moveset = root.MMASim.normalizeMoveset(this.moveset);
       }
-      this.model.setColors(C.color, C.skin);
+      this.model.setColors(C.color, C.skin, C.look);
       this.redrawScreens(C);
     }
     // the options panel changed the strike mapping: apply it to the live sim right away
@@ -566,7 +566,7 @@
       const C = this.C, P = this.player;
       this.sim = new Sim({
         training: true, grappling: false, seed: (Math.random() * 1e9) | 0, spawn: { x: P.x, z: P.z },
-        players: [{ fighter: C.base, name: C.name, stats: C.stats, color: C.color, skin: C.skin, moveset: this.moveset }, { name: 'Heavy bag' }],
+        players: [{ fighter: C.base, name: C.name, stats: C.stats, color: C.color, skin: C.skin, look: C.look, moveset: this.moveset }, { name: 'Heavy bag' }],
         world: { room: { hw: ROOM.hw, hd: ROOM.hd }, bag: { x: BAG.x, z: BAG.z, r: BAG.r, top: BAG.top, bot: BAG.bot, pivot: BAG.pivot }, obstacles: this._physObstacles() }
       });
       const rag = this.sim.phys.fighters[0];

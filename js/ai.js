@@ -87,8 +87,9 @@
       else if (oppWinding && dist < 1.8) {
         const react = 0.25 + d * 0.6;
         if (r() < react) {
-          if (r() < 0.25 + d * 0.2 && me.stam > 15) { this.pressed |= IN.DODGE; }
-          else held |= IN.BLOCK;
+          // a fresh BLOCK press while the strike is coming slips it (sim); holding it just blocks
+          if (r() < 0.25 + d * 0.2 && me.stam > 15 && !(this.held & IN.BLOCK)) this.pressed |= IN.BLOCK;
+          held |= IN.BLOCK;
         }
       }
       if (tired && r() < 0.7) held |= IN.BLOCK;

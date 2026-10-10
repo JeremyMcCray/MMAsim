@@ -202,6 +202,7 @@
   const THIGH_L = RIG.thigh[0] * 2 + 0.06, SHIN_L = RIG.shin[0] + 0.03 - RIG.footPos[1];     // knee -> foot centre
   const SH_X = RIG.shoulder[0], SH_Y = RIG.chestUp + RIG.shoulder[1], HIP_XX = RIG.hip[0], HIP_Y = RIG.hip[1];
   const _q = new THREE.Quaternion(), _pw = new THREE.Vector3(), _off = new THREE.Vector3();
+  const BUILD_SCALE = { lean: 0.93, athletic: 1, heavy: 1.1 }; // body width per look.build (mirrors LOOK.build in js/career.js)
 
   // ---------- procedural skinned body ----------
   // Tubes lofted through cross-section rings (ellipses with separate front / back fullness, optional
@@ -545,9 +546,12 @@
 
   class FighterModel {
     // opts.ref: dressed as the referee (shirt, slacks, shoes, nitrile gloves) instead of a fighter
+    // opts.look: { hair, hairColor, beard, build, gloves, trim } (see LOOK in js/career.js); missing fields take the defaults
     constructor(scene, color, skin, idx, opts) {
       this.idx = idx;
       const isRef = this.isRef = !!(opts && opts.ref);
+      const look = this.look = Object.assign({ hair: 'short', hairColor: 0x1a1210, beard: 'none', build: 'athletic', gloves: null, trim: 0xf2f2f2 }, opts && opts.look);
+      const bw = isRef ? 1 : (BUILD_SCALE[look.build] || 1); // body width: lean / athletic / heavy
       // ---- segment frames (world-space groups), one per physics body, plus a foot hinged on each shin
       this.segs = {}; this.feet = {};
       for (const name of SEG_ORDER) { const g = new THREE.Group(); scene.add(g); this.segs[name] = g; }
@@ -590,9 +594,10 @@
       const headMat = bodyMat.clone(), legMat = bodyMat.clone(), skinMat = bodyMat.clone();
       const shortsMat = new THREE.MeshStandardMaterial({ color, roughness: 0.55, skinning: true, side: THREE.DoubleSide });
       const bandSkinMat = new THREE.MeshStandardMaterial({ color: 0x15151a, roughness: 0.85, skinning: true });
-      const trimSkinMat = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.7, skinning: true });
-      const hairMat = new THREE.MeshStandardMaterial({ color: isRef ? 0x8a8a8e : 0x1a1210, roughness: 0.95, skinning: true });
-      const gloveMat = new THREE.MeshStandardMaterial({ color: isRef ? 0x4f8fe0 : idx === 0 ? 0xc62828 : 0x1e5bd6, roughness: 0.4, metalness: 0.05 });
+      const trimSkinMat = new THREE.MeshStandardMaterial({ color: isRef ? 0xf2f2f2 : look.trim, roughness: 0.7, skinning: true });
+      const hairMat = new THREE.MeshStandardMaterial({ color: isRef ? 0x8a8a8e : look.hairColor, roughness: 0.95, skinning: true });
+      const hairRigidMat = new THREE.MeshStandardMaterial({ color: isRef ? 0x8a8a8e : look.hairColor, roughness: 0.95 }); // beard, top knot
+      const gloveMat = new THREE.MeshStandardMaterial({ color: isRef ? 0x4f8fe0 : look.gloves != null ? look.gloves : idx === 0 ? 0xc62828 : 0x1e5bd6, roughness: 0.4, metalness: 0.05 });
       // the referee: the 'body' (torso) and 'sleeve' groups are his shirt, 'legs' / 'shorts' his slacks, 'feet' his shoes
       const shirtMat = isRef ? new THREE.MeshStandardMaterial({ color: 0x1e2028, roughness: 0.8, skinning: true }) : null;
       const pantsMat = isRef ? new THREE.MeshStandardMaterial({ color: 0x2c2d33, roughness: 0.75, skinning: true, side: THREE.DoubleSide }) : null;
@@ -601,7 +606,7 @@
       const bandMat = new THREE.MeshStandardMaterial({ color: 0x15151a, roughness: 0.85 });
       const eyeWhite = new THREE.MeshStandardMaterial({ color: 0xf4f0ea, roughness: 0.4 });
       const mouthMat = new THREE.MeshStandardMaterial({ color: 0x5a2a2a, roughness: 0.8 });
-      this.mats = { skinMat, shortsMat, gloveMat, headMat, bodyMat, legMat, hairMat };
+      this.mats = { skinMat, shortsMat, gloveMat, headMat, bodyMat, legMat, hairMat, hairRigidMat, trimSkinMat };
       this.skinBase = new THREE.Color(skin);
 
       const B = new MeshBuilder();
@@ -632,15 +637,36 @@
           ring(headY + 0.12, 0.072, 0.078, W1('head'), { mat: 'head' }),
           ring(headY + 0.135, 0.035, 0.04, W1('head'), { mat: 'head' })
         ];
+        // the build widens everything below the neck; a heavy fighter also carries a belly
+        for (const r of T) if (r.c[1] < shY + 0.06) { r.rx *= bw; r.rz *= bw; if (bw > 1 && r.c[1] > hipY && r.c[1] < hipY + 0.35) r.zf = (r.zf || 1) * (1 + (bw - 1) * 1.6); }
         B.loft(T, 36, 'body', [[0, hipY - 0.05, 0], [0, headY + 0.142, 0]]);
         // hair: a thin shell over the crown, open at the forehead, reaching down behind the ears
-        const H = [
+        const style = isRef ? 'short' : look.hair;
+        const crown = [
           { y: headY - 0.01, ha: 80, rx: 0.111, rz: 0.112, zb: 1.04 }, { y: headY + 0.02, ha: 100, rx: 0.114, rz: 0.115, zb: 1.04 },
           { y: headY + 0.05, ha: 125, rx: 0.1135, rz: 0.113, zf: 0.985, zb: 1.07 }, { y: headY + 0.072, ha: 150, rx: 0.11, rz: 0.11, zf: 0.98, zb: 1.075 },
           { y: headY + 0.09, ha: 170, rx: 0.102, rz: 0.106, zb: 1.06 }, { y: headY + 0.105, ha: 180, rx: 0.09, rz: 0.096, zb: 1.03 },
           { y: headY + 0.122, ha: 180, rx: 0.068, rz: 0.075 }, { y: headY + 0.136, ha: 180, rx: 0.033, rz: 0.038 }
-        ].map((h) => ring(h.y + 0.003, h.rx * 1.025, h.rz * 1.025, W1('head'), { ha: h.ha, zf: h.zf, zb: h.zb, mat: 'hair' }));
-        B.loft(H, 36, 'hair', [null, [0, headY + 0.146, 0]]);
+        ];
+        // the long style hangs the shell down the back of the neck; the afro is the whole shell puffed out
+        const mane = [
+          { y: headY - 0.21, ha: 45, rx: 0.108, rz: 0.108, zb: 1.15 }, { y: headY - 0.15, ha: 55, rx: 0.118, rz: 0.118, zb: 1.15 },
+          { y: headY - 0.09, ha: 65, rx: 0.12, rz: 0.12, zb: 1.12 }, { y: headY - 0.04, ha: 75, rx: 0.118, rz: 0.118, zb: 1.08 }
+        ];
+        const shell = (rings, k, lift) => rings.map((h) => ring(h.y + (lift || 0.003), h.rx * k, h.rz * k, W1('head'), { ha: h.ha, zf: h.zf, zb: h.zb, mat: 'hair' }));
+        let H = null;
+        if (style === 'short') H = shell(crown, 1.04);
+        else if (style === 'buzz' || style === 'bun') H = shell(crown, 1.012);
+        else if (style === 'long') H = shell(mane, 1.0).concat(shell(crown, 1.05));
+        else if (style === 'afro') H = shell([[-0.07, 95, 0.12], [-0.03, 110, 0.15], [0.02, 128, 0.165], [0.07, 142, 0.168], [0.12, 165, 0.158], [0.16, 180, 0.135], [0.19, 180, 0.1], [0.21, 180, 0.055]]
+          .map(([y, ha, r]) => ({ y: headY + y, ha, rx: r, rz: r, zf: 0.96 })), 1.0, 0); // a round mass well clear of the skull, open at the face
+        if (H) B.loft(H, 36, 'hair', [null, [0, headY + (style === 'afro' ? 0.222 : 0.146), 0]]);
+        if (style === 'mohawk') {
+          // a crest lofted front to back along the midline, each ring standing upright in the x/y plane (its lower half is inside the skull)
+          const M = [[0.105, 0.072, 0.03], [0.075, 0.106, 0.05], [0.04, 0.127, 0.065], [0, 0.137, 0.075], [-0.04, 0.131, 0.07], [-0.075, 0.113, 0.06], [-0.105, 0.082, 0.045], [-0.122, 0.045, 0.028]]
+            .map(([z, y, h]) => ({ c: [0, headY + y, z], u: [1, 0, 0], v: [0, 1, 0], rx: 0.02, rz: h, zf: 1.7, zb: 0.6, n: 2.6, w: W1('head'), mat: 'hair' }));
+          B.loft(M, 12, 'hair', [[0, headY + 0.078, 0.115], [0, headY + 0.03, -0.13]]);
+        }
       }
       for (const side of ['l', 'r']) {
         const sx = side === 'l' ? 1 : -1, ua = side + 'UpperArm', fa = side + 'Forearm', th = side + 'Thigh', sh = side + 'Shin', ft = side + 'Foot';
@@ -666,6 +692,7 @@
             r(fistY + 0.06, 0.036, 0.034, W1(fa))
           ];
           for (let i = 0; i < 5; i++) A[i].mat = 'sleeve'; // shoulder to mid upper arm: a short sleeve on the referee
+          for (const r of A) { r.rx *= bw; r.rz *= bw; r.c[0] += sx * (bw - 1) * 0.12; } // the build: thicker arms, set a little wider on a broad chest
           const d = dome(A[A.length - 1], [0, -1, 0], 0.04);
           B.loft(A.concat(d.rings), 24, 'arm', [[sx * (shX - 0.03), shY + 0.075, 0], d.pole]);
         }
@@ -692,6 +719,7 @@
             r(ankleY, 0.04, 0.045, W2(sh, ft, 0.4), { c: [x, ankleY, ankleZ] }),
             r(ankleY - 0.03, 0.038, 0.042, W2(sh, ft, 0.7), { c: [x, ankleY - 0.03, ankleZ] })
           ];
+          for (const r of G) if (r.c[1] > ankleY + 0.1) { r.rx *= bw; r.rz *= bw; }
           const d = dome(G[G.length - 1], [0, -1, 0], 0.04, W2(sh, ft, 0.85));
           B.loft(G.concat(d.rings), 24, 'legs', [[x, hipY + 0.09, 0], d.pole]);
           // -- foot: cross-sections from the heel to the toes, flat sole, arched instep
@@ -706,7 +734,7 @@
         // -- shorts leg: a loose tube from inside the trunk to just above the knee, with a hem stripe
         {
           const { hipX, hipY } = L, x = sx * (hipX - 0.005);
-          const r = (y, rx, rz, w, o) => Object.assign({ c: [x, y, 0], rx, rz, w }, o || {});
+          const r = (y, rx, rz, w, o) => Object.assign({ c: [x, y, 0], rx: rx * bw, rz: rz * bw, w }, o || {});
           B.loft([
             r(hipY + 0.01, 0.095, 0.104, W2('pelvis', th, 0.45)),
             r(hipY - 0.05, 0.105, 0.112, W2('pelvis', th, 0.7)),
@@ -721,6 +749,8 @@
       // -- shorts trunk: waistband, hips, closed under the crotch
       {
         const { hipY } = L, waistY = hipY + 0.16, th0 = 'rThigh';
+        const belly = bw > 1 ? 1 + (bw - 1) * 1.4 : 1;
+        const ring = (y, rx, rz, w, o) => Object.assign({ c: [0, y, 0], rx: rx * bw, rz: rz * bw }, o || {}, { w, zf: ((o && o.zf) || 1) * belly });
         B.loft([
           ring(waistY + 0.012, 0.165, 0.112, W2('pelvis', 'chest', 0.3), { mat: 'band' }),
           ring(waistY - 0.018, 0.172, 0.117, W2('pelvis', 'chest', 0.2), { mat: 'band' }),
@@ -753,6 +783,16 @@
         addMesh(head, new THREE.SphereGeometry(0.011, 10, 8), darkMat, [sx * 0.045, 0.02, 0.117]);
       }
       addMesh(head, new THREE.BoxGeometry(0.05, 0.008, 0.01), mouthMat, [0, -0.065, 0.104]);                     // mouth
+      if (!isRef) {
+        const beard = look.beard;
+        if (beard === 'mustache' || beard === 'goatee' || beard === 'full') addMesh(head, new THREE.SphereGeometry(0.02, 12, 10), hairRigidMat, [0, -0.047, 0.106], [1.7, 0.38, 0.55]);
+        if (beard === 'goatee') addMesh(head, new THREE.SphereGeometry(0.03, 12, 10), hairRigidMat, [0, -0.094, 0.088], [1.0, 0.8, 0.6]);
+        if (beard === 'full') {
+          addMesh(head, new THREE.SphereGeometry(0.05, 14, 12), hairRigidMat, [0, -0.1, 0.05], [1.45, 0.72, 0.9]);                 // under the chin
+          for (const sx of [-1, 1]) addMesh(head, new THREE.SphereGeometry(0.045, 12, 10), hairRigidMat, [sx * 0.08, -0.058, 0.025], [0.6, 1.1, 1.5]); // along the jaw
+        }
+        if (look.hair === 'bun') addMesh(head, new THREE.SphereGeometry(0.036, 12, 10), hairRigidMat, [0, 0.152, -0.015], [1, 0.85, 1]);
+      }
       // MMA gloves: padded fist with a squared knuckle block, thumb and a wrist strap, on the forearm frame
       for (const side of ['l', 'r']) {
         const sx = side === 'l' ? 1 : -1, g = this.segs[side + 'Forearm'], GB = new MeshBuilder(), fy = R.fistY, w = [[0, 1]];
@@ -810,7 +850,15 @@
       this.skinMesh.visible = v; this.blob.visible = v;
     }
 
-    setColors(color, skin) { this.mats.shortsMat.color.setHex(color); this.skinBase.setHex(skin); for (const k of ['skinMat', 'headMat', 'bodyMat', 'legMat']) this.mats[k].color.setHex(skin); this.faceMat.color.setHex(skin); }
+    // look: only its colours can change on a built model (hair style, beard and build are baked into the mesh)
+    setColors(color, skin, look) {
+      this.mats.shortsMat.color.setHex(color); this.skinBase.setHex(skin); for (const k of ['skinMat', 'headMat', 'bodyMat', 'legMat']) this.mats[k].color.setHex(skin); this.faceMat.color.setHex(skin);
+      if (look && !this.isRef) {
+        if (typeof look.hairColor === 'number') { this.mats.hairMat.color.setHex(look.hairColor); this.mats.hairRigidMat.color.setHex(look.hairColor); }
+        if (typeof look.gloves === 'number') this.mats.gloveMat.color.setHex(look.gloves);
+        if (typeof look.trim === 'number') this.mats.trimSkinMat.color.setHex(look.trim);
+      }
+    }
 
     // the skin: hit flash, a faint flush over a region as its damage climbs, the bruise map and the face wounds
     updateDamage(f, dt) {
@@ -1668,6 +1716,7 @@
       this.models = [];
       this.ref = new Referee(this.scene);
       this.ref.setVisible(false);
+      this.sphereOn = true; // the 'Impact sphere' option: off skips the glowing contact sphere (camera shake stays)
       this.refOn = true; // the 'Show referee' option: off hides him (he still runs the post-fight line-up, unseen)
       // black card in front of the lens for the cut to the post-fight line-up
       this.fadeCard = new THREE.Mesh(new THREE.PlaneGeometry(4, 4), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0, depthTest: false, depthWrite: false, fog: false }));
@@ -1714,7 +1763,7 @@
 
     setFighters(S) {
       for (const m of this.models) m.dispose();
-      this.models = S.f.map((f, i) => new FighterModel(this.scene, f.color, f.skin, i));
+      this.models = S.f.map((f, i) => new FighterModel(this.scene, f.color, f.skin, i, { look: f.look }));
       this.lastGround = false;
       this.ref.reset();
       this.ref.setVisible(this.refOn && this.arena.visible);
@@ -1729,12 +1778,15 @@
       }
     }
 
+    setImpactSphere(on) { this.sphereOn = !!on; }
+
     impact(pos, big, color) {
+      if (big) this.shake = Math.min(1, this.shake + 0.6);
+      if (!this.sphereOn) return;
       const geo = new THREE.SphereGeometry(big ? 0.22 : 0.13, 10, 8);
       const mat = new THREE.MeshBasicMaterial({ color: color || 0xffe9b0, transparent: true, opacity: 0.9 });
       const m = new THREE.Mesh(geo, mat); m.position.copy(pos); this.scene.add(m);
       this.fx.push({ m, t: 0, dur: big ? 0.35 : 0.22 });
-      if (big) this.shake = Math.min(1, this.shake + 0.6);
     }
 
     // Project a contact into the void and let the background particles take the hit.

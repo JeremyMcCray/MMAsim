@@ -181,7 +181,9 @@
   const KD_TURTLE   = { pelvisYaw: 0, pelvisTilt: [80, 0, 0], chest: [8, 0, 0], head: [-45, 0, 0], lUpperArm: [-85, 0, 12], lForearm: [-5, 0, 0], rUpperArm: [-85, 0, -12], rForearm: [-5, 0, 0], lThigh: [-85, 0, 10], lShin: [95, 0, 0], rThigh: [-85, 0, -10], rShin: [95, 0, 0] };
   // Backward: sits down with the arms out behind him, chin tucked, then lies back into an open guard, feet toward the opponent.
   const KD_FALL_BACK = { pelvisYaw: 0, pelvisTilt: [-45, 0, 0], chest: [-5, 0, 0], head: [30, 0, 0], lUpperArm: [40, 0, 60], lForearm: [-25, 0, 0], rUpperArm: [40, 0, -60], rForearm: [-25, 0, 0], lThigh: [-65, 0, 14], lShin: [75, 0, 0], rThigh: [-65, 0, -14], rShin: [75, 0, 0] };
-  const KD_GUARD     = { pelvisYaw: 0, pelvisTilt: [-88, 0, 0], chest: [6, 0, 0], head: [28, 0, 0], lUpperArm: [-105, 0, 15], lForearm: [-70, 0, 10], rUpperArm: [-105, 0, -15], rForearm: [-70, 0, -10], lThigh: [-65, 0, 22], lShin: [70, 0, 0], rThigh: [-65, 0, -22], rShin: [70, 0, 0] };
+  // On his back the knees come up and the feet stay planted flat on the mat (thigh up 45 deg, shin back down to the
+  // floor, ankles dorsiflexed so the soles sit flat) rather than hanging in the air at a right angle.
+  const KD_GUARD     = { pelvisYaw: 0, pelvisTilt: [-88, 0, 0], chest: [6, 0, 0], head: [28, 0, 0], lUpperArm: [-105, 0, 15], lForearm: [-70, 0, 10], rUpperArm: [-105, 0, -15], rForearm: [-70, 0, -10], lThigh: [-45, 0, 12], lShin: [115, 0, 0], rThigh: [-45, 0, -12], rShin: [115, 0, 0], lAnkle: -25, rAnkle: -25 };
   const KD_HIP_HEIGHT = { fwd: 0.5, back: 0.16 }; // where the hips settle: kneeling / flat on the back
   const CELEBRATE = { pelvisYaw: 0, chest: [-8, 0, 0], head: [-12, 0, 0], lUpperArm: [-170, 0, -30], lForearm: [-20, 0, 0], rUpperArm: [-170, 0, 30], rForearm: [-20, 0, 0], lThigh: [-5, 0, 8], lShin: [8, 0, 0], rThigh: [-5, 0, -8], rShin: [8, 0, 0] };
   // rocked: chin up, hands low, knees soft
@@ -467,6 +469,7 @@
   }
   const flipSide = (name) => (name[0] === 'l' ? 'r' : 'l') + name.slice(1);
   const SOUTHPAW_POSE = new Map(); // orthodox pose -> its mirror
+  POSES.SLIP_R = mirrorFrame(SLIP); // the slip past the rear shoulder
   for (const k in POSES) SOUTHPAW_POSE.set(POSES[k], mirrorFrame(POSES[k]));
   for (const k in STRIKES) {
     const d = STRIKES[k];
@@ -497,7 +500,7 @@
       this.guard = false;
       this.guardLow = false;    // with guard: cover the body instead of the head
       this.check = false;       // lead leg lifted to check low kicks
-      this.override = null;     // pose name: SLIP | SHOOT | SPRAWL | PUSH | STUMBLE | CELEBRATE | WOBBLE
+      this.override = null;     // pose name: SLIP | SLIP_R | SHOOT | SPRAWL | PUSH | STUMBLE | CELEBRATE | WOBBLE
       this.ko = false;
       this.downT = 0; this.downTotal = 1; this.riseT = 0; this.riseTotal = 1; // knocked down: catching himself, then climbing back up
       this.lying = false;       // knocked down and staying down (turtled / on his back until getUp() is called)
@@ -779,7 +782,7 @@
       let base = this.#basePose();
       if (!this.ko && (this.downT > 0 || this.lying || (this.riseT > 0 && this.riseProgress() < 0.55))) base = this.#animateDown(base);
       const st = this.strike;
-      const out = { pelvisYaw: base.pelvisYaw, pelvisTilt: base.pelvisTilt || null, lift: 0, lAnkle: 0, rAnkle: 0, q: {}, speed: {}, zeta: {} };
+      const out = { pelvisYaw: base.pelvisYaw, pelvisTilt: base.pelvisTilt || null, lift: 0, lAnkle: base.lAnkle || 0, rAnkle: base.rAnkle || 0, q: {}, speed: {}, zeta: {} };
       const inStrike = st ? st.def.keys : [];
       // walk cycle
       const spd = Math.hypot(this.move[0], this.move[1]);
