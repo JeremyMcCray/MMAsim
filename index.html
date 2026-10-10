@@ -5,9 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cage Rules — 1v1 MMA</title>
 <meta name="description" content="Cage Rules: a 3D one-on-one mixed martial arts simulation you can play online against a friend, right in the browser.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700;900&family=Barlow:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=23">
+<link href="lib/fonts/fonts.css" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css?v=27">
 </head>
 <body>
 <canvas id="musicbg" aria-hidden="true" hidden></canvas>
@@ -58,9 +57,11 @@
       <button class="big" id="btnHost">CREATE ROOM</button>
       <button class="big" id="btnJoin">JOIN ROOM</button>
       <button class="big gold" id="btnCareer">CAREER</button>
+      <button class="ghost hidden" id="btnCareerNew">NEW CAREER</button>
       <button class="big ghost" id="btnPractice">PRACTICE vs CPU</button>
       <button class="big ghost" id="btnWatch">WATCH AI vs AI</button>
       <button class="ghost" id="btnOptions">OPTIONS · CONTROLS</button>
+      <button class="ghost hidden" id="btnQuit">QUIT TO DESKTOP</button>
     </div>
     <label class="mute-music"><input type="checkbox" id="muteMusic"> Mute music</label>
     <div class="join-row hidden" id="joinRow">
@@ -129,11 +130,23 @@
       </div>
     </div>
     <div class="roster" id="careerBases"></div>
-    <div class="lobby-opts">
-      <label>Name <input id="careerName" maxlength="14" placeholder="Fighter name"></label>
-      <label>Nickname <input id="careerNick" maxlength="16" placeholder="optional"></label>
-      <label>Trunks <span class="swatches" id="careerColors"></span></label>
-      <label>Skin <span class="swatches" id="careerSkins"></span></label>
+    <div class="look">
+      <div class="look-preview"><canvas id="careerPreview"></canvas><div class="look-hint">drag to turn</div></div>
+      <div class="look-opts">
+        <div class="look-row names">
+          <label>Name <input id="careerName" maxlength="14" placeholder="Fighter name"></label>
+          <label>Nickname <input id="careerNick" maxlength="16" placeholder="optional"></label>
+        </div>
+        <div class="look-row"><label>Build</label><span class="seg" id="lkBuild"></span></div>
+        <div class="look-row"><label>Hair</label><span class="seg" id="lkHair"></span></div>
+        <div class="look-row"><label>Hair colour</label><span class="swatches" id="lkHairColor"></span></div>
+        <div class="look-row"><label>Facial hair</label><span class="seg" id="lkBeard"></span></div>
+        <div class="look-row"><label>Skin</label><span class="swatches" id="careerSkins"></span></div>
+        <div class="look-row"><label>Trunks</label><span class="swatches" id="careerColors"></span></div>
+        <div class="look-row"><label>Trim</label><span class="swatches" id="lkTrim"></span></div>
+        <div class="look-row"><label>Gloves</label><span class="swatches" id="lkGloves"></span></div>
+        <div class="look-row"><label></label><button class="ghost small" id="btnLookRandom">RANDOMISE LOOK</button></div>
+      </div>
     </div>
     <div class="lobby-btns">
       <button class="ghost" id="btnCareerNewBack">BACK</button>
@@ -250,6 +263,8 @@
         <label class="mute-music"><input type="checkbox" id="bgMusicFx" disabled> Music particles</label>
         <label class="mute-music"><input type="checkbox" id="bgImpactFx" disabled> Impact particles</label>
       </div>
+      <label class="mute-music"><input type="checkbox" id="optRef" checked> Show referee</label>
+      <label class="mute-music"><input type="checkbox" id="optSphere" checked> Impact sphere</label>
       <div class="bg-menu-wrap">
         <button type="button" class="bg-menu" id="bgColorBtn" aria-expanded="false" aria-controls="bgColorSub">
           <span>Colors</span><b id="bgColorName">Legacy</b>
@@ -265,6 +280,7 @@
         <h3>KEY BINDINGS</h3>
         <p class="opt-help">Click a key to rebind it. <b>Backspace</b> clears a slot, <b>Esc</b> cancels.</p>
         <table class="keys" id="keyTable"></table>
+        <p class="opt-help" id="padStatus"></p>
       </div>
       <div class="opt-col">
         <h3>STRIKES</h3>
@@ -273,6 +289,13 @@
         <h3>ON THE GROUND</h3>
         <p class="opt-help">Positions: closed guard → half guard → side control → mount, or back control. <b>Takedown key + a direction</b> attempts a pass, escape, sweep or stand-up (the other fighter holds block to base and deny it; attempts have a short cooldown). <b>Takedown key alone</b> goes for a submission from that position; hold it to squeeze, the defender holds block and times escapes. The hands punch; hold <b data-mod="mod1">Q</b> for elbows, <b data-mod="mod2">E</b> for hammer fists, <b data-mod="mod3">R</b> for body shots; leg keys knee the body. Strikes hit hardest from mount; the bottom fighter can only strike from guard.</p>
       </div>
+    </div>
+    <div class="opt-kb">
+      <h3>KEYBOARD</h3>
+      <p class="opt-help">Your current keys. Hover a key for details, and hover a modifier to see what each limb throws while you hold it.</p>
+      <div class="kb-scroll"><div class="kb" id="kbMap"></div></div>
+      <div class="kb-info" id="kbInfo"></div>
+      <div class="kb-legend" id="kbLegend"></div>
     </div>
     <div class="lobby-btns">
       <button class="ghost" id="btnOptReset">RESET DEFAULTS</button>
@@ -284,14 +307,10 @@
 
 <div id="toast" class="hidden"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
-<script>
-  // CDN fallbacks (optional local copies in lib/ if you vendor them)
-  if (typeof THREE === 'undefined') document.write('<script src="lib/three.min.js"><\/script>');
-  if (typeof Peer === 'undefined') document.write('<script src="lib/peerjs.min.js"><\/script>');
-</script>
-<script src="js/physics.js?v=16"></script>
+<!-- Vendored three.js r128 and PeerJS 1.5.x, so the desktop build runs offline. -->
+<script src="lib/three.min.js"></script>
+<script src="lib/peerjs.min.js"></script>
+<script src="js/physics.js?v=17"></script>
 <script src="js/sim.js?v=28"></script>
 <script src="js/ai.js?v=12"></script>
 <script src="js/career.js?v=17"></script>
@@ -300,9 +319,9 @@
 <script src="js/render.js?v=30"></script>
 <script src="js/gym.js?v=21"></script>
 <script src="js/net.js?v=12"></script>
-<script src="js/audio.js?v=18"></script>
+<script src="js/audio.js?v=19"></script>
 <script src="js/chat.js?v=1"></script>
-<script src="js/main.js?v=30"></script>
+<script src="js/main.js?v=33"></script>
 <script src="lib/rapier3d-compat.js?v=12"></script>
 <script>
   // Rapier physics engine (vendored, WASM inlined, plain script so the game also runs from file://).

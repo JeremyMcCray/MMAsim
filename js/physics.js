@@ -30,6 +30,8 @@
   const HIT_IMPULSE_CAP = 5;          // damage above this adds no more physical shove (keeps knockdowns on the spot)
   const VMIN = 2.2;                   // m/s along the contact normal
   const MIN_CLEAN = 0.35;             // vn / |v_rel| below this is a glancing blow
+  const KNEE_DRIVE_TAU = 0.1;         // s: how fast a knee's built-up drive fades once the kneecap slows
+  const KNEE_CARRY = 0.8;             // share of that drive a knee lands with when the body arrives after the peak
   const ZETA = 1.0;                   // damping ratio of every joint controller
   const HOVER_HEIGHT = 1.08; // hip height in stance (legs are human-proportioned: a head kick must be reachable)
   const HOVER_FRACTION = 0.7;
@@ -111,22 +113,22 @@
     head:      { parent: 'chest',     shape: ['ball', 0.12], mass: 5, w0: 44, part: 'head',
                  anchorParent: [0, 0.21, 0], anchorSelf: [0, -0.13, 0] },
     lUpperArm: { parent: 'chest',     shape: ['capsule', 0.12, 0.05], mass: 2.5, w0: 52, part: 'upperArm',
-                 anchorParent: [-0.23, 0.17, 0], anchorSelf: [0, 0.14, 0] },
+                 anchorParent: [0.23, 0.17, 0], anchorSelf: [0, 0.14, 0] },
     lForearm:  { parent: 'lUpperArm', shape: ['capsule', 0.12, 0.045], mass: 2.0, w0: 60, part: 'forearm',
                  anchorParent: [0, -0.14, 0], anchorSelf: [0, 0.14, 0],
                  extra: { name: 'lFist', shape: ['ball', 0.062], pos: [0, -0.18, 0], mass: 0.5, part: 'fist' } },
     rUpperArm: { parent: 'chest',     shape: ['capsule', 0.12, 0.05], mass: 2.5, w0: 52, part: 'upperArm',
-                 anchorParent: [0.23, 0.17, 0], anchorSelf: [0, 0.14, 0] },
+                 anchorParent: [-0.23, 0.17, 0], anchorSelf: [0, 0.14, 0] },
     rForearm:  { parent: 'rUpperArm', shape: ['capsule', 0.12, 0.045], mass: 2.0, w0: 60, part: 'forearm',
                  anchorParent: [0, -0.14, 0], anchorSelf: [0, 0.14, 0],
                  extra: { name: 'rFist', shape: ['ball', 0.062], pos: [0, -0.18, 0], mass: 0.5, part: 'fist' } },
     lThigh:    { parent: 'pelvis',    shape: ['capsule', 0.21, 0.075], mass: 8, w0: 42, part: 'thigh',
-                 anchorParent: [-0.10, -0.08, 0], anchorSelf: [0, 0.24, 0] },
+                 anchorParent: [0.10, -0.08, 0], anchorSelf: [0, 0.24, 0] },
     lShin:     { parent: 'lThigh',    shape: ['capsule', 0.21, 0.055], mass: 4, w0: 50, part: 'shin',
                  anchorParent: [0, -0.24, 0], anchorSelf: [0, 0.24, 0],
                  extra: { name: 'lFoot', shape: ['cuboid', 0.05, 0.035, 0.11], pos: [0, -0.25, 0.05], mass: 1, part: 'foot' } },
     rThigh:    { parent: 'pelvis',    shape: ['capsule', 0.21, 0.075], mass: 8, w0: 42, part: 'thigh',
-                 anchorParent: [0.10, -0.08, 0], anchorSelf: [0, 0.24, 0] },
+                 anchorParent: [-0.10, -0.08, 0], anchorSelf: [0, 0.24, 0] },
     rShin:     { parent: 'rThigh',    shape: ['capsule', 0.21, 0.055], mass: 4, w0: 50, part: 'shin',
                  anchorParent: [0, -0.24, 0], anchorSelf: [0, 0.24, 0],
                  extra: { name: 'rFoot', shape: ['cuboid', 0.05, 0.035, 0.11], pos: [0, -0.25, 0.05], mass: 1, part: 'foot' } }
@@ -141,50 +143,53 @@
   const SCALAR_KEYS = { lift: 1, lAnkle: 1, rAnkle: 1 };
 
   // ---------------------------------------------------------------- poses
-  // Fighter local frame: +Z = toward the opponent, +Y = up, +X = fighter's right. Every limb hangs
-  // straight down at identity. Euler angles are degrees in the parent segment's frame, order XYZ:
-  //   rotX negative -> limb swings forward (+Z);  rotZ positive -> toward +X;  rotY -> twist.
-  // Torso rotY positive brings the LEFT shoulder forward (orthodox blading).
+  // Fighter local frame (right-handed, as in three.js / Rapier): +Z = toward the opponent, +Y = up, so +X is the
+  // fighter's LEFT and the l* limbs sit at +X. Every limb hangs straight down at identity. Euler angles are degrees in
+  // the parent segment's frame, order XYZ:
+  //   rotX negative -> limb swings forward (+Z);  rotZ positive -> toward +X (the fighter's left);  rotY -> twist.
+  // Torso rotY negative brings the LEFT shoulder forward (orthodox blading).
   // A fighter's own segments pass through each other, so an upper arm folded across the chest clips through it:
   // keep elbows beside / in front of the ribs, outside the chest box (check with tools/posecheck.js).
-  const STANCE = { pelvisYaw: 14, chest: [4, 16, 0], head: [8, -14, 0], lUpperArm: [-32, -22, -10], lForearm: [-132, 0, 0], rUpperArm: [-30, -16, 6], rForearm: [-138, 0, -22], lThigh: [-22, 0, -4], lShin: [26, 0, 0], rThigh: [12, 0, 8], rShin: [6, 0, 0] };
+  const STANCE = { pelvisYaw: -14, chest: [4, -16, 0], head: [8, 14, 0], lUpperArm: [-32, 22, 10], lForearm: [-132, 0, 0], rUpperArm: [-30, 16, -6], rForearm: [-138, 0, 22], lThigh: [-22, 0, 4], lShin: [26, 0, 0], rThigh: [12, 0, -8], rShin: [6, 0, 0] };
   // high guard: elbows in front of the ribs and pulled in, forearms rising close together in front of the face,
   // gloves up at the temples — a glove's width apart, level with the top of the head — so the shell closes the
   // middle against straights, the sides against hooks and the top against head kicks. Tuned with
   // tools/guard-test.js: elbows at chest-local (+-0.18, 0.08, 0.25), gloves at (+-0.15, 0.42, 0.12).
   // The upper arms intentionally overlap the front corners of the chest box by ~3 cm.
-  const GUARD  = { pelvisYaw: 16, chest: [12, 18, 0], head: [16, -16, 0], lUpperArm: [-76, 3, 12], lForearm: [-128, 0, 9], rUpperArm: [-76, -3, -12], rForearm: [-128, 0, -9], lThigh: [-20, 0, -4], lShin: [30, 0, 0], rThigh: [10, 0, 8], rShin: [10, 0, 0] };
+  const GUARD  = { pelvisYaw: -16, chest: [12, -18, 0], head: [16, 16, 0], lUpperArm: [-76, -3, -12], lForearm: [-128, 0, -9], rUpperArm: [-76, 3, 12], rForearm: [-128, 0, 9], lThigh: [-20, 0, 4], lShin: [30, 0, 0], rThigh: [10, 0, -8], rShin: [10, 0, 0] };
   // low guard (BLOCK + MOD3), Philly shell: bladed hard, lead shoulder rolled up in front of the chin, lead arm
   // across the belly (elbow at the hip, forearm along the belt line, glove at the far hip), rear glove up at the
   // cheek. Body kicks, teeps and knees land at belt height, which is what the lead arm covers; the head sits
   // behind the shoulder and the rear glove but is open to anything that comes around them.
-  const GUARD_LOW = { pelvisYaw: 26, chest: [6, 34, -12], head: [14, -30, 10], lUpperArm: [-30, 22, 2], lForearm: [-57, 0, 52], rUpperArm: [-42, -7, -13], rForearm: [-139, 0, -19], lThigh: [-26, 0, -4], lShin: [34, 0, 0], rThigh: [10, 0, 10], rShin: [12, 0, 0] };
-  const LIMP   = { pelvisYaw: 0, chest: [0, 0, 0], head: [0, 0, 0], lUpperArm: [0, 0, 20], lForearm: [-20, 0, 0], rUpperArm: [0, 0, -20], rForearm: [-20, 0, 0], lThigh: [0, 0, 0], lShin: [10, 0, 0], rThigh: [0, 0, 0], rShin: [10, 0, 0] };
+  const GUARD_LOW = { pelvisYaw: -26, chest: [6, -34, 12], head: [14, 30, -10], lUpperArm: [-30, -22, -2], lForearm: [-57, 0, -52], rUpperArm: [-42, 7, 13], rForearm: [-139, 0, 19], lThigh: [-26, 0, 4], lShin: [34, 0, 0], rThigh: [10, 0, -10], rShin: [12, 0, 0] };
+  const LIMP   = { pelvisYaw: 0, chest: [0, 0, 0], head: [0, 0, 0], lUpperArm: [0, 0, -20], lForearm: [-20, 0, 0], rUpperArm: [0, 0, 20], rForearm: [-20, 0, 0], lThigh: [0, 0, 0], lShin: [10, 0, 0], rThigh: [0, 0, 0], rShin: [10, 0, 0] };
   // slip: head off the centre line (outside the lead shoulder), hands up
-  const SLIP   = { pelvisYaw: 30, chest: [22, 30, -22], head: [10, -20, -10], lUpperArm: [-70, 10, 28], lForearm: [-125, 0, 14], rUpperArm: [-62, -14, -34], rForearm: [-135, 0, -14], lThigh: [-30, 0, -6], lShin: [40, 0, 0], rThigh: [8, 0, 10], rShin: [14, 0, 0] };
+  const SLIP   = { pelvisYaw: -30, chest: [22, -30, 22], head: [10, 20, 10], lUpperArm: [-70, -10, -28], lForearm: [-125, 0, -14], rUpperArm: [-62, 14, 34], rForearm: [-135, 0, 14], lThigh: [-30, 0, 6], lShin: [40, 0, 0], rThigh: [8, 0, -10], rShin: [14, 0, 0] };
   // level change / shot: hips drop, chest pitches forward, arms reach for the legs
-  const SHOOT  = { pelvisYaw: 0, chest: [55, 0, 0], head: [-30, 0, 0], lUpperArm: [-85, 0, 10], lForearm: [-20, 0, 0], rUpperArm: [-85, 0, -10], rForearm: [-20, 0, 0], lThigh: [-70, 0, -6], lShin: [70, 0, 0], rThigh: [-20, 0, 8], rShin: [60, 0, 0] };
+  const SHOOT  = { pelvisYaw: 0, chest: [55, 0, 0], head: [-30, 0, 0], lUpperArm: [-85, 0, -10], lForearm: [-20, 0, 0], rUpperArm: [-85, 0, 10], rForearm: [-20, 0, 0], lThigh: [-70, 0, 6], lShin: [70, 0, 0], rThigh: [-20, 0, -8], rShin: [60, 0, 0] };
   // sprawl: hips back, chest down on the shooter
-  const SPRAWL = { pelvisYaw: 0, chest: [70, 0, 0], head: [-35, 0, 0], lUpperArm: [-110, 0, 20], lForearm: [-30, 0, 0], rUpperArm: [-110, 0, -20], rForearm: [-30, 0, 0], lThigh: [30, 0, -10], lShin: [20, 0, 0], rThigh: [30, 0, 10], rShin: [20, 0, 0] };
+  const SPRAWL = { pelvisYaw: 0, chest: [70, 0, 0], head: [-35, 0, 0], lUpperArm: [-110, 0, -20], lForearm: [-30, 0, 0], rUpperArm: [-110, 0, 20], rForearm: [-30, 0, 0], lThigh: [30, 0, 10], lShin: [20, 0, 0], rThigh: [30, 0, -10], rShin: [20, 0, 0] };
   // push: both arms driven straight out at chest height, weight forward, feet staggered to drive
-  const PUSH   = { pelvisYaw: 6, chest: [18, 6, 0], head: [-6, -6, 0], lUpperArm: [-92, -6, 8], lForearm: [-12, 0, 0], rUpperArm: [-90, 4, -8], rForearm: [-12, 0, 0], lThigh: [-34, 0, -6], lShin: [40, 0, 0], rThigh: [14, 0, 10], rShin: [10, 0, 0] };
+  const PUSH   = { pelvisYaw: -6, chest: [18, -6, 0], head: [-6, 6, 0], lUpperArm: [-92, 6, -8], lForearm: [-12, 0, 0], rUpperArm: [-90, -4, 8], rForearm: [-12, 0, 0], lThigh: [-34, 0, 6], lShin: [40, 0, 0], rThigh: [14, 0, -10], rShin: [10, 0, 0] };
   // stumble: bent over, arms down, feet wide
-  const STUMBLE = { pelvisYaw: 0, chest: [40, 0, 0], head: [10, 0, 0], lUpperArm: [-30, 0, 30], lForearm: [-40, 0, 0], rUpperArm: [-30, 0, -30], rForearm: [-40, 0, 0], lThigh: [-35, 0, -12], lShin: [40, 0, 0], rThigh: [20, 0, 12], rShin: [30, 0, 0] };
+  const STUMBLE = { pelvisYaw: 0, chest: [40, 0, 0], head: [10, 0, 0], lUpperArm: [-30, 0, -30], lForearm: [-40, 0, 0], rUpperArm: [-30, 0, 30], rForearm: [-40, 0, 0], lThigh: [-35, 0, 12], lShin: [40, 0, 0], rThigh: [20, 0, -12], rShin: [30, 0, 0] };
   // getting back up after a knockdown: crouched, hands coming off the mat
-  const GETUP = { pelvisYaw: 0, chest: [45, 0, 0], head: [-25, 0, 0], lUpperArm: [-70, 0, 20], lForearm: [-40, 0, 0], rUpperArm: [-70, 0, -20], rForearm: [-40, 0, 0], lThigh: [-95, 0, -14], lShin: [110, 0, 0], rThigh: [-60, 0, 14], rShin: [100, 0, 0] };
+  const GETUP = { pelvisYaw: 0, chest: [45, 0, 0], head: [-25, 0, 0], lUpperArm: [-70, 0, -20], lForearm: [-40, 0, 0], rUpperArm: [-70, 0, 20], rForearm: [-40, 0, 0], lThigh: [-95, 0, 14], lShin: [110, 0, 0], rThigh: [-60, 0, -14], rShin: [100, 0, 0] };
   // knocked down but still conscious (a KO is the only time he goes fully limp): he tries to catch himself.
   // Forward: hands shoot out, knees buckle, and he settles on his hands and knees (turtle).
-  const KD_FALL_FWD = { pelvisYaw: 0, pelvisTilt: [40, 0, 0], chest: [30, 0, 0], head: [-35, 0, 0], lUpperArm: [-95, 0, -20], lForearm: [-15, 0, 0], rUpperArm: [-95, 0, 20], rForearm: [-15, 0, 0], lThigh: [-55, 0, -12], lShin: [70, 0, 0], rThigh: [-55, 0, 12], rShin: [70, 0, 0] };
-  const KD_TURTLE   = { pelvisYaw: 0, pelvisTilt: [80, 0, 0], chest: [8, 0, 0], head: [-45, 0, 0], lUpperArm: [-85, 0, -12], lForearm: [-5, 0, 0], rUpperArm: [-85, 0, 12], rForearm: [-5, 0, 0], lThigh: [-85, 0, -10], lShin: [95, 0, 0], rThigh: [-85, 0, 10], rShin: [95, 0, 0] };
+  const KD_FALL_FWD = { pelvisYaw: 0, pelvisTilt: [40, 0, 0], chest: [30, 0, 0], head: [-35, 0, 0], lUpperArm: [-95, 0, 20], lForearm: [-15, 0, 0], rUpperArm: [-95, 0, -20], rForearm: [-15, 0, 0], lThigh: [-55, 0, 12], lShin: [70, 0, 0], rThigh: [-55, 0, -12], rShin: [70, 0, 0] };
+  const KD_TURTLE   = { pelvisYaw: 0, pelvisTilt: [80, 0, 0], chest: [8, 0, 0], head: [-45, 0, 0], lUpperArm: [-85, 0, 12], lForearm: [-5, 0, 0], rUpperArm: [-85, 0, -12], rForearm: [-5, 0, 0], lThigh: [-85, 0, 10], lShin: [95, 0, 0], rThigh: [-85, 0, -10], rShin: [95, 0, 0] };
   // Backward: sits down with the arms out behind him, chin tucked, then lies back into an open guard, feet toward the opponent.
-  const KD_FALL_BACK = { pelvisYaw: 0, pelvisTilt: [-45, 0, 0], chest: [-5, 0, 0], head: [30, 0, 0], lUpperArm: [40, 0, -60], lForearm: [-25, 0, 0], rUpperArm: [40, 0, 60], rForearm: [-25, 0, 0], lThigh: [-65, 0, -14], lShin: [75, 0, 0], rThigh: [-65, 0, 14], rShin: [75, 0, 0] };
-  const KD_GUARD     = { pelvisYaw: 0, pelvisTilt: [-88, 0, 0], chest: [6, 0, 0], head: [28, 0, 0], lUpperArm: [-105, 0, -15], lForearm: [-70, 0, -10], rUpperArm: [-105, 0, 15], rForearm: [-70, 0, 10], lThigh: [-65, 0, -22], lShin: [70, 0, 0], rThigh: [-65, 0, 22], rShin: [70, 0, 0] };
+  const KD_FALL_BACK = { pelvisYaw: 0, pelvisTilt: [-45, 0, 0], chest: [-5, 0, 0], head: [30, 0, 0], lUpperArm: [40, 0, 60], lForearm: [-25, 0, 0], rUpperArm: [40, 0, -60], rForearm: [-25, 0, 0], lThigh: [-65, 0, 14], lShin: [75, 0, 0], rThigh: [-65, 0, -14], rShin: [75, 0, 0] };
+  // On his back the knees come up and the feet stay planted flat on the mat (thigh up 45 deg, shin back down to the
+  // floor, ankles dorsiflexed so the soles sit flat) rather than hanging in the air at a right angle.
+  const KD_GUARD     = { pelvisYaw: 0, pelvisTilt: [-88, 0, 0], chest: [6, 0, 0], head: [28, 0, 0], lUpperArm: [-105, 0, 15], lForearm: [-70, 0, 10], rUpperArm: [-105, 0, -15], rForearm: [-70, 0, -10], lThigh: [-45, 0, 12], lShin: [115, 0, 0], rThigh: [-45, 0, -12], rShin: [115, 0, 0], lAnkle: -25, rAnkle: -25 };
   const KD_HIP_HEIGHT = { fwd: 0.5, back: 0.16 }; // where the hips settle: kneeling / flat on the back
-  const CELEBRATE = { pelvisYaw: 0, chest: [-8, 0, 0], head: [-12, 0, 0], lUpperArm: [-170, 0, 30], lForearm: [-20, 0, 0], rUpperArm: [-170, 0, -30], rForearm: [-20, 0, 0], lThigh: [-5, 0, -8], lShin: [8, 0, 0], rThigh: [-5, 0, 8], rShin: [8, 0, 0] };
+  const CELEBRATE = { pelvisYaw: 0, chest: [-8, 0, 0], head: [-12, 0, 0], lUpperArm: [-170, 0, -30], lForearm: [-20, 0, 0], rUpperArm: [-170, 0, 30], rForearm: [-20, 0, 0], lThigh: [-5, 0, 8], lShin: [8, 0, 0], rThigh: [-5, 0, -8], rShin: [8, 0, 0] };
   // rocked: chin up, hands low, knees soft
-  const WOBBLE = { pelvisYaw: 10, chest: [-6, 10, 0], head: [-10, -8, 0], lUpperArm: [-40, 8, -12], lForearm: [-70, 0, 8], rUpperArm: [-30, -10, 10], rForearm: [-80, 0, -6], lThigh: [-30, 0, -6], lShin: [38, 0, 0], rThigh: [4, 0, 10], rShin: [20, 0, 0] };
+  const WOBBLE = { pelvisYaw: -10, chest: [-6, -10, 0], head: [-10, 8, 0], lUpperArm: [-40, -8, 12], lForearm: [-70, 0, -8], rUpperArm: [-30, 10, -10], rForearm: [-80, 0, 6], lThigh: [-30, 0, 6], lShin: [38, 0, 0], rThigh: [4, 0, -10], rShin: [20, 0, 0] };
   // check (CHECK held): the lead knee comes up and turns out so the shin meets an incoming low kick, hands stay up
-  const CHECK_LEGS = { lThigh: [-68, 0, -14], lShin: [74, 0, 0], rThigh: [8, 0, 6], rShin: [10, 0, 0] };
+  const CHECK_LEGS = { lThigh: [-68, 0, 14], lShin: [74, 0, 0], rThigh: [8, 0, -6], rShin: [10, 0, 0] };
   const CHECK = Object.assign({}, STANCE, CHECK_LEGS);
   const CHECK_GUARD = Object.assign({}, GUARD, CHECK_LEGS); // checking with BLOCK held too
   const POSES = { STANCE, GUARD, GUARD_LOW, CHECK, CHECK_GUARD, LIMP, SLIP, SHOOT, SPRAWL, PUSH, STUMBLE, CELEBRATE, WOBBLE, GETUP, KD_FALL_FWD, KD_TURTLE, KD_FALL_BACK, KD_GUARD };
@@ -201,16 +206,16 @@
     lh_straight: { name: 'jab', part: 'head', keys: ['chest', 'head', 'lUpperArm', 'lForearm', 'pelvisYaw'], weapon: 'lFist', weaponMult: 1.0, active: [0.07, 0.23], cost: 3.5, speed: 1.5,
       frames: [
         { t: 0.00, pelvisYaw: S, chest: S, head: S, lUpperArm: S, lForearm: S },
-        { t: 0.05, pelvisYaw: 18, chest: [6, 22, 0], head: [10, -20, 0], lUpperArm: [-36, -30, -35], lForearm: [-150, 0, -1] },
-        { t: 0.12, pelvisYaw: 20, chest: [6, 25, 0], head: [10, -22, 0], lUpperArm: [-108, 6, -30], lForearm: [-2, 0, 1] },
-        { t: 0.19, pelvisYaw: 20, chest: [6, 25, 0], head: [10, -22, 0], lUpperArm: [-108, 6, -30], lForearm: [-2, 0, 1] },
+        { t: 0.05, pelvisYaw: -18, chest: [6, -22, 0], head: [10, 20, 0], lUpperArm: [-36, 30, 35], lForearm: [-150, 0, 1] },
+        { t: 0.12, pelvisYaw: -20, chest: [6, -25, 0], head: [10, 22, 0], lUpperArm: [-108, -6, 30], lForearm: [-2, 0, -1] },
+        { t: 0.19, pelvisYaw: -20, chest: [6, -25, 0], head: [10, 22, 0], lUpperArm: [-108, -6, 30], lForearm: [-2, 0, -1] },
         { t: 0.34, pelvisYaw: S, chest: S, head: S, lUpperArm: S, lForearm: S }] },
     rh_straight: { name: 'cross', part: 'head', keys: ['chest', 'head', 'rUpperArm', 'rForearm', 'lUpperArm', 'pelvisYaw'], weapon: 'rFist', weaponMult: 1.25, active: [0.10, 0.28], cost: 5, speed: 1.3, lunge: 0.6,
       frames: [
         { t: 0.00, pelvisYaw: S, chest: S, head: S, rUpperArm: S, rForearm: S, lUpperArm: S },
-        { t: 0.08, pelvisYaw: -12, chest: [8, -22, 0], head: [12, 6, 0], rUpperArm: [-34, 11, -10], rForearm: [-150, 0, 1], lUpperArm: [-72, 10, 30] },
-        { t: 0.16, pelvisYaw: -18, chest: [8, -30, 0], head: [12, 10, 0], rUpperArm: [-107, -15, 37], rForearm: [0, 0, -5], lUpperArm: [-72, 10, 30] },
-        { t: 0.23, pelvisYaw: -18, chest: [8, -30, 0], head: [12, 10, 0], rUpperArm: [-107, -15, 37], rForearm: [0, 0, -5], lUpperArm: [-72, 10, 30] },
+        { t: 0.08, pelvisYaw: 12, chest: [8, 22, 0], head: [12, -6, 0], rUpperArm: [-34, -11, 10], rForearm: [-150, 0, -1], lUpperArm: [-72, -10, -30] },
+        { t: 0.16, pelvisYaw: 18, chest: [8, 30, 0], head: [12, -10, 0], rUpperArm: [-107, 15, -37], rForearm: [0, 0, 5], lUpperArm: [-72, -10, -30] },
+        { t: 0.23, pelvisYaw: 18, chest: [8, 30, 0], head: [12, -10, 0], rUpperArm: [-107, 15, -37], rForearm: [0, 0, 5], lUpperArm: [-72, -10, -30] },
         { t: 0.46, pelvisYaw: S, chest: S, head: S, rUpperArm: S, rForearm: S, lUpperArm: S }] },
     // ---- hooks: the torso rotates INTO the punch, elbow stays bent at ~90 degrees with the fist at chin height.
     // Keyframes were authored as elbow / fist positions and solved with tools/limbsolve.js. The lead hook is a
@@ -219,43 +224,43 @@
       frames: [
         { t: 0.00, pelvisYaw: S, chest: S, head: S, rUpperArm: S, rForearm: S, lUpperArm: S, lForearm: S, rThigh: S },
         // load: hips and shoulders turn away, elbow drops back, fist stays by the jaw
-        { t: 0.10, pelvisYaw: 24, chest: [4, 28, 0], head: [10, -22, 0], rUpperArm: [-40, -19, 41], rForearm: [-122, 0, 0], lUpperArm: [-60, -20, -10], lForearm: [-140, 0, 40], rThigh: [12, 10, 8] },
+        { t: 0.10, pelvisYaw: -24, chest: [4, -28, 0], head: [10, 22, 0], rUpperArm: [-40, 19, -41], rForearm: [-122, 0, 0], lUpperArm: [-60, 20, 10], lForearm: [-140, 0, -40], rThigh: [12, -10, -8] },
         // drive: the hips and chest whip through first, the arm trails them (still half loaded)
-        { t: 0.20, pelvisYaw: -35, chest: [6, -45, -6], head: [10, 20, 0], rUpperArm: [-42, 4, 95], rForearm: [-114, 0, 0], lUpperArm: [-87, 43, 41], lForearm: [-108, 0, 0], rThigh: [12, -35, 8] },
+        { t: 0.20, pelvisYaw: 35, chest: [6, 45, 6], head: [10, -20, 0], rUpperArm: [-42, -4, -95], rForearm: [-114, 0, 0], lUpperArm: [-87, -43, -41], lForearm: [-108, 0, 0], rThigh: [12, 35, -8] },
         // impact: upper arm horizontal, elbow at ninety degrees, fist across the centre line at chin height
-        { t: 0.27, pelvisYaw: -42, chest: [8, -54, -8], head: [10, 24, 0], rUpperArm: [-44, 26, 150], rForearm: [-105, 0, 0], lUpperArm: [-87, 43, 41], lForearm: [-108, 0, 0], rThigh: [12, -42, 8] },
+        { t: 0.27, pelvisYaw: 42, chest: [8, 54, 8], head: [10, -24, 0], rUpperArm: [-44, -26, -150], rForearm: [-105, 0, 0], lUpperArm: [-87, -43, -41], lForearm: [-108, 0, 0], rThigh: [12, 42, -8] },
         // follow-through: the fist carries on past the target, the lead shoulder rides forward
-        { t: 0.34, pelvisYaw: -48, chest: [8, -60, -8], head: [10, 26, 0], rUpperArm: [-49, 12, 150], rForearm: [-122, 0, 0], lUpperArm: [-87, 43, 41], lForearm: [-108, 0, 0], rThigh: [12, -48, 8] },
+        { t: 0.34, pelvisYaw: 48, chest: [8, 60, 8], head: [10, -26, 0], rUpperArm: [-49, -12, -150], rForearm: [-122, 0, 0], lUpperArm: [-87, -43, -41], lForearm: [-108, 0, 0], rThigh: [12, 48, -8] },
         { t: 0.58, pelvisYaw: S, chest: S, head: S, rUpperArm: S, rForearm: S, lUpperArm: S, lForearm: S, rThigh: S }] },
     // ---- uppercut: the hand drops below the chin, hips and legs drive it up through the centre line
     rh_uppercut: { name: 'rear uppercut', part: 'head', keys: ['chest', 'head', 'rUpperArm', 'rForearm', 'pelvisYaw'], weapon: 'rFist', weaponMult: 1.35, active: [0.13, 0.32], cost: 6, speed: 1.45, lunge: 0.9,
       frames: [
         { t: 0.00, pelvisYaw: S, chest: S, head: S, rUpperArm: S, rForearm: S },
-        { t: 0.10, pelvisYaw: -4, chest: [18, -14, 6], head: [6, 6, 0], rUpperArm: [-1, 14, -16], rForearm: [-95, 0, -20] },
-        { t: 0.24, pelvisYaw: -22, chest: [-8, -30, 0], head: [8, 10, 0], rUpperArm: [-87, 6, 34], rForearm: [-30, 0, -2] },
-        { t: 0.30, pelvisYaw: -22, chest: [-8, -30, 0], head: [8, 10, 0], rUpperArm: [-87, 6, 34], rForearm: [-30, 0, -2] },
+        { t: 0.10, pelvisYaw: 4, chest: [18, 14, -6], head: [6, -6, 0], rUpperArm: [-1, -14, 16], rForearm: [-95, 0, 20] },
+        { t: 0.24, pelvisYaw: 22, chest: [-8, 30, 0], head: [8, -10, 0], rUpperArm: [-87, -6, -34], rForearm: [-30, 0, 2] },
+        { t: 0.30, pelvisYaw: 22, chest: [-8, 30, 0], head: [8, -10, 0], rUpperArm: [-87, -6, -34], rForearm: [-30, 0, 2] },
         { t: 0.54, pelvisYaw: S, chest: S, head: S, rUpperArm: S, rForearm: S }] },
     // ---- overhand: a looping punch on a diagonal. The fist swings out and up beside the rear shoulder, crests with
     // the elbow high and wide, then comes down and across onto the jaw (outside-high to inside-low) while the body dips.
-    // Fist path (fighter frame, x right / y up / z forward): cheek (0.15,0.52,0.14) -> wide (0.44,0.78,0.24) ->
-    // crest (0.24,0.80,0.58) -> impact (-0.06,0.59,0.80) -> through (-0.25,0.52,0.71). Solved with tools/limbsolve.js.
+    // Fist path (fighter frame, x left / y up / z forward): cheek (-0.15,0.52,0.14) -> wide (-0.44,0.78,0.24) ->
+    // crest (-0.24,0.80,0.58) -> impact (0.06,0.59,0.80) -> through (0.25,0.52,0.71). Solved with tools/limbsolve.js.
     // Keep the upper arm's quaternion components below ~0.85: past that the 2*asin motor mapping (qToMotor) goes
     // unstable and the fist flaps instead of holding the arc.
     rh_overhand: { name: 'overhand right', part: 'head', keys: ['chest', 'head', 'rUpperArm', 'rForearm', 'lUpperArm', 'lForearm', 'rThigh', 'pelvisYaw', 'lift'], weapon: 'rFist', weaponMult: 1.4, active: [0.21, 0.37], cost: 7.5, speed: 1.5, lunge: 1.5,
       frames: [
         { t: 0.00, pelvisYaw: S, chest: S, head: S, rUpperArm: S, rForearm: S, lUpperArm: S, lForearm: S, rThigh: S, lift: 0 },
         // load: slight dip and turn away, the elbow starts to open out to the side, the fist stays by the jaw
-        { t: 0.11, pelvisYaw: 12, chest: [10, 14, 6], head: [8, -12, 0], rUpperArm: [-27, 40, 35], rForearm: [-150, 0, 0], lUpperArm: [-60, -20, -10], lForearm: [-140, 0, 40], rThigh: [12, 10, 8], lift: -0.02 },
+        { t: 0.11, pelvisYaw: -12, chest: [10, -14, -6], head: [8, 12, 0], rUpperArm: [-27, -40, -35], rForearm: [-150, 0, 0], lUpperArm: [-60, 20, 10], lForearm: [-140, 0, -40], rThigh: [12, -10, -8], lift: -0.02 },
         // swing out: the elbow lifts wide to shoulder height, the fist rises outside the head, hips start to turn in
-        { t: 0.19, pelvisYaw: 2, chest: [12, -2, -8], head: [10, -2, 0], rUpperArm: [-71, -19, 97], rForearm: [-100, 0, 0], lUpperArm: [-70, 10, 30], lForearm: [-130, 0, 20], rThigh: [12, -10, 8], lift: -0.01 },
+        { t: 0.19, pelvisYaw: -2, chest: [12, 2, 8], head: [10, 2, 0], rUpperArm: [-71, 19, -97], rForearm: [-100, 0, 0], lUpperArm: [-70, -10, -30], lForearm: [-130, 0, -20], rThigh: [12, 10, -8], lift: -0.01 },
         // over the top: the elbow is up and wide, the fist crests above the opponent's guard and starts to come down
-        { t: 0.245, pelvisYaw: -16, chest: [12, -20, 6], head: [11, 12, 0], rUpperArm: [-39, -7, 110], rForearm: [-69, 0, 0], lUpperArm: [-78, 29, 35], lForearm: [-138, 0, 10], rThigh: [12, -25, 8], lift: -0.03 },
+        { t: 0.245, pelvisYaw: 16, chest: [12, 20, -6], head: [11, -12, 0], rUpperArm: [-39, 7, -110], rForearm: [-69, 0, 0], lUpperArm: [-78, -29, -35], lForearm: [-138, 0, -10], rThigh: [12, 25, -8], lift: -0.03 },
         // impact: down and across onto the jaw, elbow up and bent, the body dipping in behind it
-        { t: 0.29, pelvisYaw: -30, chest: [12, -30, 0], head: [14, 20, 0], rUpperArm: [-3, -20, 113], rForearm: [-43, 0, 0], lUpperArm: [-86, 48, 40], lForearm: [-145, 0, 0], rThigh: [12, -35, 8], lift: -0.06 },
+        { t: 0.29, pelvisYaw: 30, chest: [12, 30, 0], head: [14, -20, 0], rUpperArm: [-3, 20, -113], rForearm: [-43, 0, 0], lUpperArm: [-86, -48, -40], lForearm: [-145, 0, 0], rThigh: [12, 35, -8], lift: -0.06 },
         // follow-through: the fist keeps travelling down across the body, the rear shoulder rolls over
-        { t: 0.36, pelvisYaw: -36, chest: [6, -40, 0], head: [16, 24, 0], rUpperArm: [-6, -17, 95], rForearm: [-54, 0, 0], lUpperArm: [-86, 48, 40], lForearm: [-145, 0, 0], rThigh: [12, -40, 8], lift: -0.08 },
+        { t: 0.36, pelvisYaw: 36, chest: [6, 40, 0], head: [16, -24, 0], rUpperArm: [-6, 17, -95], rForearm: [-54, 0, 0], lUpperArm: [-86, -48, -40], lForearm: [-145, 0, 0], rThigh: [12, 40, -8], lift: -0.08 },
         // recover: the elbow drops in front of the ribs and the fist comes back up the centre line to the chin
-        { t: 0.46, pelvisYaw: -14, chest: [10, -16, -4], head: [12, 4, 0], rUpperArm: [-37, -9, 32], rForearm: [-133, 0, 0], lUpperArm: [-70, 10, 30], lForearm: [-130, 0, 20], rThigh: [12, -15, 8], lift: -0.04 },
+        { t: 0.46, pelvisYaw: 14, chest: [10, 16, 4], head: [12, -4, 0], rUpperArm: [-37, 9, -32], rForearm: [-133, 0, 0], lUpperArm: [-70, -10, -30], lForearm: [-130, 0, -20], rThigh: [12, 15, -8], lift: -0.04 },
         { t: 0.60, pelvisYaw: S, chest: S, head: S, rUpperArm: S, rForearm: S, lUpperArm: S, lForearm: S, rThigh: S, lift: 0 }] },
     // ---- rear-leg Thai low kick (tools/kicksolve.js): no high chamber. The hips open and turn over while the leg
     // comes round from the kicker's right side, long and only slightly bent, and the shin chops ACROSS the outside of
@@ -264,12 +269,12 @@
     rl_lkick: { name: 'low kick', part: 'legs', keys: ['chest', 'head', 'rThigh', 'rShin', 'lThigh', 'lShin', 'pelvisYaw', 'pelvisTilt', 'lUpperArm', 'rUpperArm', 'rForearm', 'lift', 'rAnkle'], weapon: 'rShin', weaponMult: 2.0, active: [0.18, 0.34], cost: 8, speed: 2.7, lunge: 0.5,
       frames: [
         { t: 0.00, pelvisYaw: S, pelvisTilt: S, chest: S, head: S, rThigh: S, rShin: S, lThigh: S, lShin: S, lUpperArm: S, rUpperArm: S, rForearm: S, lift: 0, rAnkle: 0 },
-        { t: 0.08, pelvisYaw: -14, pelvisTilt: [0, 0, 4], chest: [6, 2, -2], head: [8, 10, 0], rThigh: [-2, 21, 10], rShin: [33, 0, 0], lThigh: [-32, -11, -12], lShin: [28, 0, 0], lUpperArm: [-76, 3, 12], rUpperArm: [-24, -10, 14], rForearm: [-128, 0, -14], lift: 0, rAnkle: 15 },
-        { t: 0.16, pelvisYaw: -50, pelvisTilt: [-2, 0, 12], chest: [6, 8, -6], head: [8, 26, 4], rThigh: [-4, 3, 40], rShin: [72, 0, 0], lThigh: [-28, -13, -14], lShin: [27, 0, 0], lUpperArm: [-80, 10, 18], rUpperArm: [-2, 0, 22], rForearm: [-80, 0, 0], lift: 0, rAnkle: 35 },
-        { t: 0.25, pelvisYaw: -80, pelvisTilt: [-4, 0, 20], chest: [6, 12, -10], head: [8, 32, 8], rThigh: [13, -4, 47], rShin: [20, 0, 0], lThigh: [-28, -16, -20], lShin: [25, 0, 0], lUpperArm: [-82, 12, 22], rUpperArm: [34, 0, 16], rForearm: [-24, 0, 0], lift: 0, rAnkle: 40 },
-        { t: 0.32, pelvisYaw: -90, pelvisTilt: [-4, 0, 20], chest: [6, 14, -10], head: [8, 32, 8], rThigh: [6, -21, 43], rShin: [25, 0, 0], lThigh: [-26, -14, -18], lShin: [23, 0, 0], lUpperArm: [-82, 12, 22], rUpperArm: [40, 0, 14], rForearm: [-20, 0, 0], lift: 0, rAnkle: 40 },
-        { t: 0.43, pelvisYaw: -52, pelvisTilt: [-2, 0, 10], chest: [6, 8, -6], head: [8, 22, 4], rThigh: [-38, 34, 47], rShin: [83, 0, 0], lThigh: [-27, -12, -11], lShin: [27, 0, 0], lUpperArm: [-80, 10, 18], rUpperArm: [-6, -4, 18], rForearm: [-90, 0, 0], lift: 0, rAnkle: 25 },
-        { t: 0.55, pelvisYaw: -16, pelvisTilt: [0, 0, 4], chest: [6, 4, -2], head: [8, 6, 0], rThigh: [0, 26, 7], rShin: [29, 0, 0], lThigh: [-29, -9, -10], lShin: [28, 0, 0], lUpperArm: [-76, 3, 12], rUpperArm: [-28, -14, 8], rForearm: [-134, 0, -20], lift: 0, rAnkle: 8 },
+        { t: 0.08, pelvisYaw: 14, pelvisTilt: [0, 0, -4], chest: [6, -2, 2], head: [8, -10, 0], rThigh: [-2, -21, -10], rShin: [33, 0, 0], lThigh: [-32, 11, 12], lShin: [28, 0, 0], lUpperArm: [-76, -3, -12], rUpperArm: [-24, 10, -14], rForearm: [-128, 0, 14], lift: 0, rAnkle: 15 },
+        { t: 0.16, pelvisYaw: 50, pelvisTilt: [-2, 0, -12], chest: [6, -8, 6], head: [8, -26, -4], rThigh: [-4, -3, -40], rShin: [72, 0, 0], lThigh: [-28, 13, 14], lShin: [27, 0, 0], lUpperArm: [-80, -10, -18], rUpperArm: [-2, 0, -22], rForearm: [-80, 0, 0], lift: 0, rAnkle: 35 },
+        { t: 0.25, pelvisYaw: 80, pelvisTilt: [-4, 0, -20], chest: [6, -12, 10], head: [8, -32, -8], rThigh: [13, 4, -47], rShin: [20, 0, 0], lThigh: [-28, 16, 20], lShin: [25, 0, 0], lUpperArm: [-82, -12, -22], rUpperArm: [34, 0, -16], rForearm: [-24, 0, 0], lift: 0, rAnkle: 40 },
+        { t: 0.32, pelvisYaw: 90, pelvisTilt: [-4, 0, -20], chest: [6, -14, 10], head: [8, -32, -8], rThigh: [6, 21, -43], rShin: [25, 0, 0], lThigh: [-26, 14, 18], lShin: [23, 0, 0], lUpperArm: [-82, -12, -22], rUpperArm: [40, 0, -14], rForearm: [-20, 0, 0], lift: 0, rAnkle: 40 },
+        { t: 0.43, pelvisYaw: 52, pelvisTilt: [-2, 0, -10], chest: [6, -8, 6], head: [8, -22, -4], rThigh: [-38, -34, -47], rShin: [83, 0, 0], lThigh: [-27, 12, 11], lShin: [27, 0, 0], lUpperArm: [-80, -10, -18], rUpperArm: [-6, 4, -18], rForearm: [-90, 0, 0], lift: 0, rAnkle: 25 },
+        { t: 0.55, pelvisYaw: 16, pelvisTilt: [0, 0, -4], chest: [6, -4, 2], head: [8, -6, 0], rThigh: [0, -26, -7], rShin: [29, 0, 0], lThigh: [-29, 9, 10], lShin: [28, 0, 0], lUpperArm: [-76, -3, -12], rUpperArm: [-28, 14, -8], rForearm: [-134, 0, 20], lift: 0, rAnkle: 8 },
         { t: 0.70, pelvisYaw: S, pelvisTilt: S, chest: S, head: S, rThigh: S, rShin: S, lThigh: S, lShin: S, lUpperArm: S, rUpperArm: S, rForearm: S, lift: 0, rAnkle: 0 }] },
     // ---- roundhouse kicks. Authored by knee / foot position with tools/kicksolve.js, all with the same phases:
     //   load:    weight onto the support leg, the kicking knee starts up and FORWARD with the shin folded, toes pointing
@@ -287,47 +292,50 @@
     rl_hkick: { name: 'head kick', part: 'head', keys: ['chest', 'head', 'rThigh', 'rShin', 'lThigh', 'lShin', 'pelvisYaw', 'pelvisTilt', 'lUpperArm', 'rUpperArm', 'rForearm', 'lift', 'rAnkle'], weapon: 'rShin', weaponMult: 1.8, active: [0.21, 0.43], cost: 10, speed: 2.0, lunge: 0.5,
       frames: [
         { t: 0.00, pelvisYaw: S, pelvisTilt: S, chest: S, head: S, rThigh: S, rShin: S, lThigh: S, lShin: S, lUpperArm: S, rUpperArm: S, rForearm: S, lift: 0, rAnkle: 0 },
-        { t: 0.09, pelvisYaw: -6, pelvisTilt: [0, 0, 4], chest: [4, 0, -4], head: [8, 8, 2], rThigh: [9, 17, 3], rShin: [9, 0, 0], lThigh: [-37, -22, -19], lShin: [24, 0, 0], lUpperArm: [-62, 0, 12], rUpperArm: [-94, 9, 11], rForearm: [-74, 0, 0], lift: 0, rAnkle: 10 },
-        { t: 0.19, pelvisYaw: -52, pelvisTilt: [-6, 0, 42], chest: [16, 8, -8], head: [10, 28, 8], rThigh: [-23, -43, 92], rShin: [144, 0, 0], lThigh: [-36, -5, -53], lShin: [31, 0, 0], lUpperArm: [-86, 12, 26], rUpperArm: [-51, 51, 40], rForearm: [-34, 0, 0], lift: 0, rAnkle: 45 },
-        { t: 0.235, pelvisYaw: -67, pelvisTilt: [-7, 0, 52], chest: [20, 11, -8], head: [10, 30, 10], rThigh: [-37, -22, 74], rShin: [74, 0, 0], lThigh: [-44, -2, -63], lShin: [32, 0, 0], lUpperArm: [-86, 12, 26], rUpperArm: [-40, 90, 40], rForearm: [-14, 0, 0], lift: 0.08, rAnkle: 48 },
-        { t: 0.28, pelvisYaw: -82, pelvisTilt: [-8, 0, 62], chest: [24, 14, -8], head: [10, 32, 12], rThigh: [55, -28, 89], rShin: [2, 0, 0], lThigh: [-51, 3, -71], lShin: [32, 0, 0], lUpperArm: [-86, 12, 26], rUpperArm: [45, -20, -36], rForearm: [-66, 0, 0], lift: 0.08, rAnkle: 45 },
-        { t: 0.38, pelvisYaw: -108, pelvisTilt: [-8, 0, 58], chest: [26, 16, -8], head: [10, 32, 12], rThigh: [61, -38, 103], rShin: [2, 0, 0], lThigh: [-40, -5, -58], lShin: [24, 0, 0], lUpperArm: [-84, 8, 22], rUpperArm: [46, -41, -54], rForearm: [-70, 0, 0], lift: 0.08, rAnkle: 45 },
-        { t: 0.5, pelvisYaw: -96, pelvisTilt: [-4, 0, 30], chest: [18, 10, -4], head: [8, 20, 6], rThigh: [-105, 33, 52], rShin: [127, 0, 0], lThigh: [-26, -13, -28], lShin: [18, 0, 0], lUpperArm: [-70, 0, 10], rUpperArm: [60, 15, 0], rForearm: [-94, 0, 0], lift: 0, rAnkle: 25 },
-        { t: 0.62, pelvisYaw: -48, pelvisTilt: [0, 0, 8], chest: [8, 4, -2], head: [8, 6, 0], rThigh: [-38, 21, -3], rShin: [46, 0, 0], lThigh: [-22, -7, -9], lShin: [28, 0, 0], lUpperArm: [-44, -14, 0], rUpperArm: [-32, -12, -4], rForearm: [-138, 0, -22], lift: 0, rAnkle: 5 },
+        { t: 0.09, pelvisYaw: 6, pelvisTilt: [0, 0, -4], chest: [4, 0, 4], head: [8, -8, -2], rThigh: [9, -17, -3], rShin: [9, 0, 0], lThigh: [-37, 22, 19], lShin: [24, 0, 0], lUpperArm: [-62, 0, -12], rUpperArm: [-94, -9, -11], rForearm: [-74, 0, 0], lift: 0, rAnkle: 10 },
+        { t: 0.19, pelvisYaw: 52, pelvisTilt: [-6, 0, -42], chest: [16, -8, 8], head: [10, -28, -8], rThigh: [-23, 43, -92], rShin: [144, 0, 0], lThigh: [-36, 5, 53], lShin: [31, 0, 0], lUpperArm: [-86, -12, -26], rUpperArm: [-51, -51, -40], rForearm: [-34, 0, 0], lift: 0, rAnkle: 45 },
+        { t: 0.235, pelvisYaw: 67, pelvisTilt: [-7, 0, -52], chest: [20, -11, 8], head: [10, -30, -10], rThigh: [-37, 22, -74], rShin: [74, 0, 0], lThigh: [-44, 2, 63], lShin: [32, 0, 0], lUpperArm: [-86, -12, -26], rUpperArm: [-40, -90, -40], rForearm: [-14, 0, 0], lift: 0.08, rAnkle: 48 },
+        { t: 0.28, pelvisYaw: 82, pelvisTilt: [-8, 0, -62], chest: [24, -14, 8], head: [10, -32, -12], rThigh: [55, 28, -89], rShin: [2, 0, 0], lThigh: [-51, -3, 71], lShin: [32, 0, 0], lUpperArm: [-86, -12, -26], rUpperArm: [45, 20, 36], rForearm: [-66, 0, 0], lift: 0.08, rAnkle: 45 },
+        { t: 0.38, pelvisYaw: 108, pelvisTilt: [-8, 0, -58], chest: [26, -16, 8], head: [10, -32, -12], rThigh: [61, 38, -103], rShin: [2, 0, 0], lThigh: [-40, 5, 58], lShin: [24, 0, 0], lUpperArm: [-84, -8, -22], rUpperArm: [46, 41, 54], rForearm: [-70, 0, 0], lift: 0.08, rAnkle: 45 },
+        { t: 0.5, pelvisYaw: 96, pelvisTilt: [-4, 0, -30], chest: [18, -10, 4], head: [8, -20, -6], rThigh: [-105, -33, -52], rShin: [127, 0, 0], lThigh: [-26, 13, 28], lShin: [18, 0, 0], lUpperArm: [-70, 0, -10], rUpperArm: [60, -15, 0], rForearm: [-94, 0, 0], lift: 0, rAnkle: 25 },
+        { t: 0.62, pelvisYaw: 48, pelvisTilt: [0, 0, -8], chest: [8, -4, 2], head: [8, -6, 0], rThigh: [-38, -21, 3], rShin: [46, 0, 0], lThigh: [-22, 7, 9], lShin: [28, 0, 0], lUpperArm: [-44, 14, 0], rUpperArm: [-32, 12, 4], rForearm: [-138, 0, 22], lift: 0, rAnkle: 5 },
         { t: 0.90, pelvisYaw: S, pelvisTilt: S, chest: S, head: S, rThigh: S, rShin: S, lThigh: S, lShin: S, lUpperArm: S, rUpperArm: S, rForearm: S, lift: 0, rAnkle: 0 }] },
-    // ---- rear-leg roundhouse to the body: the head kick's path brought down to the ribs
+    // ---- rear-leg roundhouse to the body: the head kick's path brought down to the ribs. The leg turns over: from the
+    // mid-swing on the kneecap faces across and down, the shin swings through near level and the pointed instep leads it
+    // across the ribs (tools/kicksolve.js 'face' targets).
     rl_bkick: { name: 'body kick', part: 'body', keys: ['chest', 'head', 'rThigh', 'rShin', 'lThigh', 'lShin', 'pelvisYaw', 'pelvisTilt', 'lUpperArm', 'rUpperArm', 'lift', 'rAnkle'], weapon: 'rShin', weaponMult: 1.5, active: [0.21, 0.42], cost: 8, speed: 1.7, lunge: 0.5,
       frames: [
         { t: 0.00, pelvisYaw: S, pelvisTilt: S, chest: S, head: S, rThigh: S, rShin: S, lThigh: S, lShin: S, lUpperArm: S, rUpperArm: S, lift: 0, rAnkle: 0 },
-        { t: 0.10, pelvisYaw: -14, pelvisTilt: [0, 0, 6], chest: [4, -4, -4], head: [6, 14, 2], rThigh: [-65, 1, 31], rShin: [126, 0, 0], lThigh: [-21, -4, -6], lShin: [25, 0, 0], lUpperArm: [-60, 0, 10], rUpperArm: [-26, -6, -30], lift: 0, rAnkle: 20 },
-        { t: 0.20, pelvisYaw: -48, pelvisTilt: [-4, 0, 28], chest: [8, 4, -8], head: [6, 28, 4], rThigh: [-39, -34, 68], rShin: [137, 0, 0], lThigh: [-28, -11, -38], lShin: [31, 0, 0], lUpperArm: [-80, 10, 20], rUpperArm: [-20, 0, -70], lift: 0, rAnkle: 45 },
-        { t: 0.29, pelvisYaw: -78, pelvisTilt: [-6, 0, 46], chest: [20, 10, -14], head: [6, 30, 6], rThigh: [-130, 13, 84], rShin: [27, 0, 0], lThigh: [-45, -9, -55], lShin: [32, 0, 0], lUpperArm: [-80, 10, 20], rUpperArm: [-20, 0, -70], lift: 0.04, rAnkle: 50 },
-        { t: 0.38, pelvisYaw: -88, pelvisTilt: [-6, 0, 46], chest: [22, 14, -14], head: [6, 30, 6], rThigh: [-151, 17, 80], rShin: [54, 0, 0], lThigh: [-44, -13, -52], lShin: [28, 0, 0], lUpperArm: [-80, 10, 20], rUpperArm: [-20, 0, -70], lift: 0.04, rAnkle: 50 },
-        { t: 0.50, pelvisYaw: -46, pelvisTilt: [-4, 0, 22], chest: [10, 6, -8], head: [6, 14, 2], rThigh: [-71, -1, 44], rShin: [145, 0, 0], lThigh: [-29, -21, -34], lShin: [28, 0, 0], lUpperArm: [-64, -6, 4], rUpperArm: [-36, -8, -30], lift: 0, rAnkle: 25 },
-        { t: 0.64, pelvisYaw: -8, pelvisTilt: [0, 0, 4], chest: [4, 2, -2], head: [6, 0, 0], rThigh: [-19, 21, 12], rShin: [50, 0, 0], lThigh: [-22, -11, -5], lShin: [24, 0, 0], lUpperArm: [-40, -16, -4], rUpperArm: [-32, -12, 0], lift: 0, rAnkle: 5 },
+        { t: 0.1, pelvisYaw: 14, pelvisTilt: [0, 0, -6], chest: [4, 4, 4], head: [6, -14, -2], rThigh: [-65, -1, -31], rShin: [126, 0, 0], lThigh: [-21, 4, 6], lShin: [25, 0, 0], lUpperArm: [-60, 0, -10], rUpperArm: [-26, 6, 30], lift: 0, rAnkle: 20 },
+        { t: 0.2, pelvisYaw: 48, pelvisTilt: [-4, 0, -28], chest: [8, -4, 8], head: [6, -28, -4], rThigh: [-26, 36, -76], rShin: [134, 0, 0], lThigh: [-28, 11, 38], lShin: [31, 0, 0], lUpperArm: [-80, -10, -20], rUpperArm: [-20, 0, 70], lift: 0, rAnkle: 50 },
+        { t: 0.245, pelvisYaw: 64, pelvisTilt: [-5, 0, -38], chest: [14, -7, 11], head: [6, -30, -5], rThigh: [4, 29, -68], rShin: [75, 0, 0], lThigh: [-38, 11, 48], lShin: [31, 0, 0], lUpperArm: [-80, -10, -20], rUpperArm: [-20, 0, 70], lift: 0.02, rAnkle: 55 },
+        { t: 0.29, pelvisYaw: 78, pelvisTilt: [-6, 0, -46], chest: [20, -10, 14], head: [6, -30, -6], rThigh: [35, 47, -76], rShin: [14, 0, 0], lThigh: [-45, 9, 55], lShin: [32, 0, 0], lUpperArm: [-80, -10, -20], rUpperArm: [-20, 0, 70], lift: 0.04, rAnkle: 55 },
+        { t: 0.38, pelvisYaw: 88, pelvisTilt: [-6, 0, -46], chest: [22, -14, 14], head: [6, -30, -6], rThigh: [60, 51, -103], rShin: [8, 0, 0], lThigh: [-44, 13, 52], lShin: [28, 0, 0], lUpperArm: [-80, -10, -20], rUpperArm: [-20, 0, 70], lift: 0.04, rAnkle: 55 },
+        { t: 0.5, pelvisYaw: 46, pelvisTilt: [-4, 0, -22], chest: [10, -6, 8], head: [6, -14, -2], rThigh: [-69, 0, -44], rShin: [144, 0, 0], lThigh: [-29, 21, 34], lShin: [28, 0, 0], lUpperArm: [-64, 6, -4], rUpperArm: [-36, 8, 30], lift: 0, rAnkle: 25 },
+        { t: 0.64, pelvisYaw: 8, pelvisTilt: [0, 0, -4], chest: [4, -2, 2], head: [6, 0, 0], rThigh: [-19, -21, -12], rShin: [49, 0, 0], lThigh: [-22, 11, 5], lShin: [24, 0, 0], lUpperArm: [-40, 16, 4], rUpperArm: [-32, 12, 0], lift: 0, rAnkle: 5 },
         { t: 0.80, pelvisYaw: S, pelvisTilt: S, chest: S, head: S, rThigh: S, rShin: S, lThigh: S, lShin: S, lUpperArm: S, rUpperArm: S, lift: 0, rAnkle: 0 }] },
     // ---- teep: knee comes up in front, the foot drives straight out and shoves
     rl_teep: { name: 'rear teep', part: 'body', push: true, keys: ['chest', 'rThigh', 'rShin', 'lThigh', 'lShin', 'pelvisYaw', 'lUpperArm', 'rUpperArm'], weapon: 'rFoot', weaponMult: 1.15, active: [0.15, 0.36], cost: 6, speed: 1.6, lunge: 0.8,
       frames: [
         { t: 0.00, pelvisYaw: S, chest: S, rThigh: S, rShin: S, lThigh: S, lShin: S, lUpperArm: S, rUpperArm: S },
-        { t: 0.12, pelvisYaw: 4, chest: [10, 4, 0], rThigh: [-130, -2, -11], rShin: [126, 0, 0], lThigh: [-6, 0, -6], lShin: [12, 0, 0], lUpperArm: [-70, 8, 24], rUpperArm: [-55, -10, -30] },
-        { t: 0.26, pelvisYaw: 0, chest: [-14, 0, 0], rThigh: [-98, -19, -2], rShin: [4, 0, 0], lThigh: [-6, 0, -6], lShin: [12, 0, 0], lUpperArm: [-70, 8, 24], rUpperArm: [-55, -10, -30] },
-        { t: 0.34, pelvisYaw: 0, chest: [-14, 0, 0], rThigh: [-98, -19, -2], rShin: [4, 0, 0], lThigh: [-6, 0, -6], lShin: [12, 0, 0], lUpperArm: [-70, 8, 24], rUpperArm: [-55, -10, -30] },
+        { t: 0.12, pelvisYaw: -4, chest: [10, -4, 0], rThigh: [-130, 2, 11], rShin: [126, 0, 0], lThigh: [-6, 0, 6], lShin: [12, 0, 0], lUpperArm: [-70, -8, -24], rUpperArm: [-55, 10, 30] },
+        { t: 0.26, pelvisYaw: 0, chest: [-14, 0, 0], rThigh: [-98, 19, 2], rShin: [4, 0, 0], lThigh: [-6, 0, 6], lShin: [12, 0, 0], lUpperArm: [-70, -8, -24], rUpperArm: [-55, 10, 30] },
+        { t: 0.34, pelvisYaw: 0, chest: [-14, 0, 0], rThigh: [-98, 19, 2], rShin: [4, 0, 0], lThigh: [-6, 0, 6], lShin: [12, 0, 0], lUpperArm: [-70, -8, -24], rUpperArm: [-55, 10, 30] },
         { t: 0.70, pelvisYaw: S, chest: S, rThigh: S, rShin: S, lThigh: S, lShin: S, lUpperArm: S, rUpperArm: S }] },
     // ---- rear-leg Muay Thai straight knee (tools/kicksolve.js): weight onto the lead foot, then the knee drives up the
     // centre line with the shin folded tight under it and the toes pointed at the mat. At impact the knee is above the
     // belt, the hips have thrust through and turned to carry the rear hip and the knee forward, with the torso leaning back behind them, the fighter is up on the ball of the
     // straight support leg, the lead arm is out framing the opponent's head and the rear arm keeps the guard's bent elbow and
     // rotates down at the shoulder as the counterweight, elbow back beside the ribs. The top of the shin (the kneecap) is the weapon.
-    rl_knee: { name: 'knee', part: 'body', keys: ['chest', 'head', 'rThigh', 'rShin', 'lThigh', 'lShin', 'pelvisYaw', 'pelvisTilt', 'lUpperArm', 'rUpperArm', 'rForearm', 'lForearm', 'lift', 'rAnkle'], weapon: 'rShin', weaponMult: 1.35, active: [0.15, 0.32], cost: 6.5, speed: 1.6, lunge: 1.8,
+    rl_knee: { name: 'knee', part: 'body', keys: ['chest', 'head', 'rThigh', 'rShin', 'lThigh', 'lShin', 'pelvisYaw', 'pelvisTilt', 'lUpperArm', 'rUpperArm', 'rForearm', 'lForearm', 'lift', 'rAnkle'], weapon: 'rShin', weaponMult: 2.2, active: [0.12, 0.32], cost: 6.5, speed: 1.6, lunge: 1.8,
       frames: [
         { t: 0.00, pelvisYaw: S, pelvisTilt: S, chest: S, head: S, rThigh: S, rShin: S, lThigh: S, lShin: S, lUpperArm: S, rUpperArm: S, rForearm: S, lForearm: S, lift: 0, rAnkle: 0 },
-        { t: 0.08, pelvisYaw: 2, pelvisTilt: [-4, 0, 2], chest: [6, 10, 0], head: [12, -4, 0], rThigh: [-11, -6, 1], rShin: [63, 0, 0], lThigh: [-17, 7, -2], lShin: [27, 0, 0], lUpperArm: [-51, 0, 5], rUpperArm: [-52, -6, -4], rForearm: [-130, 0, -16], lForearm: [-95, 0, 0], lift: 0, rAnkle: 25 },
-        { t: 0.15, pelvisYaw: -22, pelvisTilt: [-14, 0, 4], chest: [-6, 22, 0], head: [22, -4, 0], rThigh: [-78, 5, 14], rShin: [133, 0, 0], lThigh: [-2, 26, 2], lShin: [27, 0, 0], lUpperArm: [-60, 7, 7], rUpperArm: [-18, -4, 4], rForearm: [-132, 0, -12], lForearm: [-26, 0, 0], lift: 0.03, rAnkle: 50 },
-        { t: 0.22, pelvisYaw: -36, pelvisTilt: [-22, 0, 6], chest: [-14, 30, 0], head: [34, -6, 0], rThigh: [-100, -4, 22], rShin: [150, 0, 0], lThigh: [16, 35, -2], lShin: [22, 0, 0], lUpperArm: [-57, 9, 11], rUpperArm: [14, 0, 10], rForearm: [-134, 0, -10], lForearm: [-2, 0, 0], lift: 0.05, rAnkle: 60 },
-        { t: 0.3, pelvisYaw: -38, pelvisTilt: [-24, 0, 6], chest: [-14, 30, 0], head: [36, -6, 0], rThigh: [-100, -7, 24], rShin: [150, 0, 0], lThigh: [21, 36, -4], lShin: [19, 0, 0], lUpperArm: [-57, 12, 12], rUpperArm: [18, 0, 10], rForearm: [-134, 0, -10], lForearm: [0, 0, 0], lift: 0.05, rAnkle: 60 },
-        { t: 0.4, pelvisYaw: -12, pelvisTilt: [-8, 0, 3], chest: [0, 18, 0], head: [16, -6, 0], rThigh: [-46, 5, 4], rShin: [97, 0, 0], lThigh: [-7, 18, 0], lShin: [25, 0, 0], lUpperArm: [-50, 4, 5], rUpperArm: [-24, -6, 4], rForearm: [-132, 0, -14], lForearm: [-72, 0, 0], lift: 0.02, rAnkle: 35 },
-        { t: 0.5, pelvisYaw: 8, pelvisTilt: [-2, 0, 1], chest: [4, 14, 0], head: [10, -10, 0], rThigh: [4, -8, 4], rShin: [24, 0, 0], lThigh: [-18, 3, -3], lShin: [25, 0, 0], lUpperArm: [-38, -11, -1], rUpperArm: [-30, -14, 6], rForearm: [-136, 0, -20], lForearm: [-117, 0, 0], lift: 0, rAnkle: 10 },
+        { t: 0.08, pelvisYaw: -2, pelvisTilt: [-4, 0, -2], chest: [6, -10, 0], head: [12, 4, 0], rThigh: [-11, 6, -1], rShin: [63, 0, 0], lThigh: [-17, -7, 2], lShin: [27, 0, 0], lUpperArm: [-51, 0, -5], rUpperArm: [-52, 6, 4], rForearm: [-130, 0, 16], lForearm: [-95, 0, 0], lift: 0, rAnkle: 25 },
+        { t: 0.15, pelvisYaw: 22, pelvisTilt: [-14, 0, -4], chest: [-6, -22, 0], head: [22, 4, 0], rThigh: [-78, -5, -14], rShin: [133, 0, 0], lThigh: [-2, -26, -2], lShin: [27, 0, 0], lUpperArm: [-60, -7, -7], rUpperArm: [-18, 4, -4], rForearm: [-132, 0, 12], lForearm: [-26, 0, 0], lift: 0.03, rAnkle: 50 },
+        { t: 0.22, pelvisYaw: 36, pelvisTilt: [-22, 0, -6], chest: [-14, -30, 0], head: [34, 6, 0], rThigh: [-100, 4, -22], rShin: [150, 0, 0], lThigh: [16, -35, 2], lShin: [22, 0, 0], lUpperArm: [-57, -9, -11], rUpperArm: [14, 0, -10], rForearm: [-134, 0, 10], lForearm: [-2, 0, 0], lift: 0.05, rAnkle: 60 },
+        { t: 0.3, pelvisYaw: 38, pelvisTilt: [-24, 0, -6], chest: [-14, -30, 0], head: [36, 6, 0], rThigh: [-100, 7, -24], rShin: [150, 0, 0], lThigh: [21, -36, 4], lShin: [19, 0, 0], lUpperArm: [-57, -12, -12], rUpperArm: [18, 0, -10], rForearm: [-134, 0, 10], lForearm: [0, 0, 0], lift: 0.05, rAnkle: 60 },
+        { t: 0.4, pelvisYaw: 12, pelvisTilt: [-8, 0, -3], chest: [0, -18, 0], head: [16, 6, 0], rThigh: [-46, -5, -4], rShin: [97, 0, 0], lThigh: [-7, -18, 0], lShin: [25, 0, 0], lUpperArm: [-50, -4, -5], rUpperArm: [-24, 6, -4], rForearm: [-132, 0, 14], lForearm: [-72, 0, 0], lift: 0.02, rAnkle: 35 },
+        { t: 0.5, pelvisYaw: -8, pelvisTilt: [-2, 0, -1], chest: [4, -14, 0], head: [10, 10, 0], rThigh: [4, 8, -4], rShin: [24, 0, 0], lThigh: [-18, -3, 3], lShin: [25, 0, 0], lUpperArm: [-38, 11, 1], rUpperArm: [-30, 14, -6], rForearm: [-136, 0, 20], lForearm: [-117, 0, 0], lift: 0, rAnkle: 10 },
         { t: 0.62, pelvisYaw: S, pelvisTilt: S, chest: S, head: S, rThigh: S, rShin: S, lThigh: S, lShin: S, lUpperArm: S, rUpperArm: S, rForearm: S, lForearm: S, lift: 0, rAnkle: 0 }] }
   };
   // ground strikes use the timed (non-physical) model in sim.js
@@ -359,9 +367,9 @@
   // hips lead), peaks through it and eases out in recovery. Both hip joints are counter-rotated by the same amount,
   // so the legs still land exactly on the authored keyframes in world space (ranges, aim and hit detection are
   // unaffected); only the pelvis and everything above it turn over.
-  // Sign: roll positive tips the top of the pelvis toward the fighter's left, i.e. the RIGHT hip comes up.
-  RAW.rl_hkick.turnover = [8, 0, 5];     // the keyframes already roll the hips 62 deg: this is the extra lean and a nose-down pelvis
-  RAW.rl_bkick.turnover = [8, 0, 16];
+  // Sign: roll negative tips the top of the pelvis toward the fighter's left (+X), i.e. the RIGHT hip comes up.
+  RAW.rl_hkick.turnover = [8, 0, -5];    // the keyframes already roll the hips 62 deg: this is the extra lean and a nose-down pelvis
+  RAW.rl_bkick.turnover = [8, 0, -16];
   RAW.rl_hkick.turnoverLead = 0.45;      // how far before the live window the hips start turning (fraction of the windup)
   RAW.rl_bkick.turnoverLead = 0.45;
   const STRIKES = Object.assign({}, RAW);
@@ -372,7 +380,7 @@
   STRIKES.ll_hkick = mirrorStrike(RAW.rl_hkick, 'll_hkick', 'lead head kick', 0.92);
   STRIKES.ll_bkick = mirrorStrike(RAW.rl_bkick, 'll_bkick', 'lead body kick', 0.92);
   STRIKES.ll_teep = mirrorStrike(RAW.rl_teep, 'll_teep', 'teep', 0.9);
-  STRIKES.ll_knee = mirrorStrike(RAW.rl_knee, 'll_knee', 'lead knee', 0.92);
+  STRIKES.ll_knee = mirrorStrike(RAW.rl_knee, 'll_knee', 'lead knee', 0.92); STRIKES.ll_knee.weaponMult = 1.25;
   for (const k in STRIKES) {
     const d = STRIKES[k];
     d.key = k; d.limb = k.slice(0, 2); d.kind = k.slice(3);
@@ -438,7 +446,7 @@
     // measured with tools/probe.js (furthest root-to-root distance at which the strike still lands on its
     // target); overrides the FK estimate above. The AI picks strikes from these.
     const RANGE = { lh_straight: 1.0, rh_straight: 1.0, lh_hook: 0.85, rh_hook: 0.85, rh_uppercut: 0.75, lh_uppercut: 0.9, rh_overhand: 1.3, lh_overhand: 1.25,
-      ll_lkick: 1.2, rl_lkick: 1.2, rl_hkick: 1.4, ll_hkick: 1.3, rl_bkick: 1.0, ll_bkick: 1.2, rl_teep: 1.25, ll_teep: 1.15, rl_knee: 0.8, ll_knee: 0.7 };
+      ll_lkick: 1.2, rl_lkick: 1.2, rl_hkick: 1.4, ll_hkick: 1.3, rl_bkick: 1.4, ll_bkick: 1.2, rl_teep: 1.25, ll_teep: 1.15, rl_knee: 1.05, ll_knee: 1.05 };
     for (const k in RANGE) if (STRIKES[k]) STRIKES[k].range = RANGE[k];
   })();
 
@@ -461,6 +469,7 @@
   }
   const flipSide = (name) => (name[0] === 'l' ? 'r' : 'l') + name.slice(1);
   const SOUTHPAW_POSE = new Map(); // orthodox pose -> its mirror
+  POSES.SLIP_R = mirrorFrame(SLIP); // the slip past the rear shoulder
   for (const k in POSES) SOUTHPAW_POSE.set(POSES[k], mirrorFrame(POSES[k]));
   for (const k in STRIKES) {
     const d = STRIKES[k];
@@ -491,11 +500,13 @@
       this.guard = false;
       this.guardLow = false;    // with guard: cover the body instead of the head
       this.check = false;       // lead leg lifted to check low kicks
-      this.override = null;     // pose name: SLIP | SHOOT | SPRAWL | PUSH | STUMBLE | CELEBRATE | WOBBLE
+      this.override = null;     // pose name: SLIP | SLIP_R | SHOOT | SPRAWL | PUSH | STUMBLE | CELEBRATE | WOBBLE
       this.ko = false;
       this.downT = 0; this.downTotal = 1; this.riseT = 0; this.riseTotal = 1; // knocked down: catching himself, then climbing back up
       this.lying = false;       // knocked down and staying down (turtled / on his back until getUp() is called)
       this.kdDir = 'back';      // which way he went down: 'fwd' (onto hands and knees) or 'back' (onto his back, open guard)
+      this.kdSide = 1;          // the side he favours on the mat (+1 right, -1 left): nobody lands or posts symmetrically
+      this.downClock = 0;       // seconds since the knockdown (drives the dazed movement on the mat)
       this.gainTarget = 1;      // 1 normal, lower when staggered / stunned
       this.gainMult = 1;
       this.staggerT = 0;
@@ -587,7 +598,7 @@
         b.setLinvel(V(0, 0, 0), true); b.setAngvel(V(0, 0, 0), true);
         b.resetForces(true); b.resetTorques(true);
       }
-      this.strike = null; this.override = null; this.ko = false; this.downT = 0; this.riseT = 0; this.lying = false; this.kdDir = 'back'; this.gainMult = 1; this.gainTarget = 1;
+      this.strike = null; this.override = null; this.ko = false; this.downT = 0; this.riseT = 0; this.lying = false; this.kdDir = 'back'; this.downClock = 0; this.gainMult = 1; this.gainTarget = 1;
       this.staggerT = 0; this.stunT = 0; this.wobble = 0; this.move[0] = this.move[1] = 0; this.guard = false; this.check = false;
     }
 
@@ -626,6 +637,7 @@
       if (this.downT > 0) this.downT = Math.max(0, this.downT - dt);
       else if (!this.lying && this.riseT > 0) this.riseT = Math.max(0, this.riseT - dt);
       const down = this.ko || this.downT > 0 || this.lying;
+      if (down) this.downClock += dt;
       let gTarget = this.gainTarget;
       if (this.ko) gTarget = 0;
       else if (down) gTarget = this.downT > 0 ? 0.5 : 0.42; // conscious: still holding himself together on the mat
@@ -658,6 +670,15 @@
         while (d < -Math.PI) d += Math.PI * 2;
         const maxTurn = 10 * dt;
         this.yaw += clamp(d, -maxTurn, maxTurn);
+      } else if (this.opponent && !this.ko && this.lying && this.downT <= 0) {
+        // on the mat he keeps turning to face the threat: on his back he spins on his hips to keep his feet toward the
+        // opponent, on his hands and knees he shuffles round more slowly
+        const a = this.bodies.pelvis.translation(), b = this.opponent.bodies.pelvis.translation();
+        let d = Math.atan2(b.x - a.x, b.z - a.z) - this.yaw;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        const maxTurn = (this.kdDir === 'back' ? 1.6 : 0.7) * dt;
+        this.yaw += clamp(d, -maxTurn, maxTurn);
       }
       const pose = this.#computePose(dt);
       this.#applyControl(pose, dt, rand);
@@ -682,10 +703,86 @@
       return this.guard && !this.strike ? (this.guardLow ? GUARD_LOW : GUARD) : STANCE;
     }
 
+    // Knocked down but conscious, a fighter is never still: the head lolls, his chest
+    // heaves, he rolls onto a hip, tries to sit up on an elbow and sags back, covers his face and pulls his knees up
+    // when the opponent comes close; on his hands and knees his head hangs, he sways, an arm buckles, he tries to
+    // plant a foot. Getting up he posts one hand on the mat and keeps the other up by his face. This layers that
+    // movement onto the base mat pose. Deterministic (driven by downClock and kdSide only).
+    #animateDown(base) {
+      const p = {};
+      for (const k in base) p[k] = Array.isArray(base[k]) ? base[k].slice() : base[k];
+      p.pelvisTilt = p.pelvisTilt ? p.pelvisTilt.slice() : [0, 0, 0];
+      const s = this.kdSide, near = s > 0 ? 'l' : 'r', far = s > 0 ? 'r' : 'l';
+      const add = (k, x, y, z) => { const e = p[k]; e[0] += x; e[1] += y; e[2] += z; };
+      // offsets authored for the right limb; the left one gets the mirror
+      const addS = (side, k, x, y, z) => add(side + k, x, side === 'l' ? -y : y, side === 'l' ? -z : z);
+      // a 0..1 hump `width` of the way into every `period` seconds, starting `delay` seconds in
+      const pulse = (t, period, delay, width) => { const u = (((t - delay) % period) + period) % period / period; return t < delay || u >= width ? 0 : Math.sin(Math.PI * u / width); };
+
+      if (this.riseT > 0) {
+        // getting up: the near hand posts on the mat — out beside the hip when he comes up off his back (straight
+        // forward it ends up in his lap), out in front beside the knee when he comes up off his hands and knees —
+        // and the far one stays up by the face
+        const ax = this.kdDir === 'fwd' ? -60 : 15, az = this.kdDir === 'fwd' ? 25 : 35;
+        p[near + 'UpperArm'] = [ax, 0, near === 'l' ? az : -az]; p[near + 'Forearm'] = [-10, 0, 0];
+        addS(far, 'UpperArm', -12, 0, -15); addS(far, 'Forearm', -90, 0, 0);
+        add('chest', 0, 0, -6 * s); add('head', 0, 8 * s, 0);
+        return p;
+      }
+      const fwd = this.kdDir === 'fwd';
+      if (this.downT > this.downTotal * 0.5) {
+        // the fall: nobody lands square. He twists onto one side, one hand reaches further, one knee gives first
+        add('pelvisTilt', 0, 0, 14 * s); add('chest', 0, 0, 8 * s); add('head', 0, 15 * s, -10 * s);
+        addS(near, 'UpperArm', -15, 0, 0); addS(far, 'UpperArm', 25, 0, 0);
+        addS(near, 'Thigh', -15, 0, 0); addS(near, 'Shin', 20, 0, 0);
+        return p;
+      }
+      const t = Math.max(0, this.downClock - this.downTotal * 0.5); // seconds on the mat
+      const daze = clamp(1 - t / 6, 0.3, 1);                         // the fog lifts the longer he stays down
+      let close = 0;
+      if (this.opponent) {
+        const a = this.bodies.pelvis.translation(), b = this.opponent.bodies.pelvis.translation();
+        close = smooth(clamp((2.6 - Math.hypot(b.x - a.x, b.z - a.z)) / 1.2, 0, 1)); // 1 when the opponent stands over him
+      }
+      // head: a slow dazed loll
+      add('head', 0, 16 * daze * (Math.sin(s - t * 1.1) - 0.4 * Math.sin(t * 2.7)), 10 * daze * Math.sin(1.7 * s - t * 0.8));
+      const breath = Math.sin(t * 3.3) * (1.5 + 3 * daze);
+      if (!fwd) {
+        add('chest', breath, 0, 0);
+        add('pelvisTilt', 0, 0, s * (8 + 6 * Math.sin(t * 0.5)) * (1 - 0.6 * close)); // rolled onto a hip, squares up when threatened
+        // legs: one knee pulled up, the other foot pushing out, swapping as he scoots; both come up as a shield when he's close
+        const lp = Math.sin(t * 0.9 - s) * (1 - 0.5 * close);
+        addS('l', 'Thigh', -18 * lp - 20 * close, 0, 0); addS('l', 'Shin', 22 * lp + 15 * close, 0, 0);
+        addS('r', 'Thigh', 18 * lp - 20 * close, 0, 0); addS('r', 'Shin', -22 * lp + 15 * close, 0, 0);
+        // tries to sit up on his near elbow, chin to chest, then sags back (more often once his head clears)
+        const su = pulse(t, 3.2, 0.6, 0.55) * (1 - close) * (0.6 + 0.4 * (1 - daze));
+        add('chest', 28 * su, 0, 0); add('head', 12 * su, 0, 0); add('pelvisTilt', 10 * su, 0, 0);
+        addS(near, 'UpperArm', 115 * su, 0, -20 * su); addS(near, 'Forearm', -20 * su, 0, 0);
+        addS(far, 'Forearm', -30 * su, 0, 0); // the other hand goes to his face
+        // covering up: forearms fold in front of the face
+        addS('l', 'Forearm', -50 * close, 0, 0); addS('r', 'Forearm', -50 * close, 0, 0);
+        addS('l', 'UpperArm', 0, 0, 8 * close); addS('r', 'UpperArm', 0, 0, 8 * close);
+      } else {
+        add('chest', 3 * Math.sin(t * 3.3), 0, 0);
+        // swaying on hands and knees, head hanging toward the mat, lifting to find the opponent when he comes close
+        const sw = Math.sin(s - t * 1.2);
+        add('pelvisTilt', 0, 0, 8 * sw * daze); add('chest', 0, 0, 14 * sw * daze);
+        add('head', 45 * daze * (0.55 + 0.45 * Math.sin(t * 0.7)) - 25 * close, 0, 0);
+        // the near arm buckles and he dips onto that shoulder, then pushes back up
+        const bk = pulse(t, 2.9, 0.4, 0.3) * daze;
+        addS(near, 'UpperArm', 35 * bk, 0, 0); addS(near, 'Forearm', -75 * bk, 0, 0); add('chest', 12 * bk, 0, 10 * s * bk);
+        // tries to plant the far foot and come up, hips rising
+        const ft = pulse(t, 3.6, 1.8, 0.5) * (1 - 0.6 * daze);
+        addS(far, 'Thigh', -30 * ft, 0, 0); addS(far, 'Shin', -45 * ft, 0, 0); add('pelvisTilt', -10 * ft, 0, 0);
+      }
+      return p;
+    }
+
     #computePose(dt) {
-      const base = this.#basePose();
+      let base = this.#basePose();
+      if (!this.ko && (this.downT > 0 || this.lying || (this.riseT > 0 && this.riseProgress() < 0.55))) base = this.#animateDown(base);
       const st = this.strike;
-      const out = { pelvisYaw: base.pelvisYaw, pelvisTilt: base.pelvisTilt || null, lift: 0, lAnkle: 0, rAnkle: 0, q: {}, speed: {}, zeta: {} };
+      const out = { pelvisYaw: base.pelvisYaw, pelvisTilt: base.pelvisTilt || null, lift: 0, lAnkle: base.lAnkle || 0, rAnkle: base.rAnkle || 0, q: {}, speed: {}, zeta: {} };
       const inStrike = st ? st.def.keys : [];
       // walk cycle
       const spd = Math.hypot(this.move[0], this.move[1]);
@@ -693,12 +790,12 @@
       if (moving) this.walkPhase += dt * (5 + 5 * Math.min(1, spd));
       const amp = moving ? Math.min(1, spd) * 26 : 0;
       // the stride follows the direction of travel: forward / back swings the thighs; sideways is a step-and-close
-      // (the leg on the side he's heading to steps out, the other closes up to it, rotZ + is towards +X), with the
-      // stance held a little wider so the feet never cross. move[0] + carries him towards local -X.
+      // (the leg on the side he's heading to steps out, the other closes up to it, rotZ + is towards +X, his left), with the
+      // stance held a little wider so the feet never cross. move[0] + carries him towards local -X (his right).
       const fw = moving ? Math.abs(this.move[1]) / spd : 0, lat = moving ? -this.move[0] / spd : 0;
       const sw = Math.sin(this.walkPhase), wide = Math.abs(lat) * 0.22, shinAmp = amp * (1.3 - 0.35 * Math.abs(lat));
       const walk = amp ? {
-        lThigh: [sw * amp * fw, 0, (sw * lat * 0.55 - wide) * amp], rThigh: [-sw * amp * fw, 0, (-sw * lat * 0.55 + wide) * amp],
+        lThigh: [sw * amp * fw, 0, (sw * lat * 0.55 + wide) * amp], rThigh: [-sw * amp * fw, 0, (-sw * lat * 0.55 - wide) * amp],
         lShin: [Math.max(0, Math.sin(this.walkPhase + 1.3)) * shinAmp, 0, 0], rShin: [Math.max(0, -Math.sin(this.walkPhase + 1.3)) * shinAmp, 0, 0]
       } : null;
       for (const j of JOINTS) {
@@ -911,6 +1008,15 @@
       const st = this.strike;
       if (!st || st.hit || !this.opponent) return null;
       const tt = st.t / st.tf;
+      const knee = st.def.kind === 'knee';
+      // a knee is driven in by the hips: the kneecap's closing speed peaks on the way up and the body arrives a
+      // moment later, so the drive it built (decaying fast) is what lands, not just the speed at the instant of contact
+      if (knee) {
+        const shin = st.def.weapon, kp = vAdd(this.bodies[shin].translation(), qRot(this.bodies[shin].rotation(), V(0, 0.18, 0)));
+        const v = vSub(this.velAt(shin, kp), this.opponent.velAt('pelvis', kp));
+        const fwd = Math.max(0, v.x * Math.sin(this.yaw) + v.z * Math.cos(this.yaw)), up = Math.max(0, v.y);
+        st.drive = Math.max((st.drive || 0) * Math.exp(-PHYS_DT / KNEE_DRIVE_TAU), Math.hypot(fwd, up));
+      }
       if (tt < st.def.active[0] || tt > st.def.active[1]) return null;
       const opp = this.opponent;
       let result = null;
@@ -918,6 +1024,7 @@
         const weapon = this.colliders[wname];
         for (const pc of opp.partColliders) {
           if (result) break;
+          if (knee && REGION[pc.part] === 'legs') continue; // the knee rides up over the lead thigh into the body
           this.world.contactPair(weapon.collider, pc.collider, (manifold, flipped) => {
           if (result || manifold.numContacts() === 0) return;
           const n0 = manifold.normal();
@@ -929,7 +1036,8 @@
           if (manifold.numSolverContacts() > 0) { const sp = manifold.solverContactPoint(0); point = V(sp.x, sp.y, sp.z); }
           else point = V(wp.x, wp.y, wp.z);
             const vRel = vSub(this.velAt(weapon.seg, point), opp.velAt(pc.seg, point));
-            const vn = vDot(vRel, n), speed = vLen(vRel);
+            let vn = vDot(vRel, n), speed = vLen(vRel);
+            if (knee && vn > -0.5) { vn = Math.max(vn, KNEE_CARRY * st.drive); speed = Math.max(speed, vn); }
             if (vn < 1.0) return; // touching or pulling away, not a blow
             result = { partName: pc.part, region: REGION[pc.part], seg: pc.seg, n, point, vn, speed, clean: speed > 0.01 ? vn / speed : 0, weapon: wname };
           });
@@ -973,7 +1081,7 @@
     knockOut() { this.ko = true; this.strike = null; }
     // go down for `fall` seconds, catching himself — forward onto hands and knees ('fwd') or back onto the mat ('back') —
     // and then stay there until getUp() is called
-    knockDown(fall, dir) { this.dashT = 0; this.downT = fall; this.downTotal = fall; this.kdDir = dir === 'fwd' ? 'fwd' : 'back'; this.lying = true; this.riseT = 0; this.strike = null; this.guard = false; this.check = false; }
+    knockDown(fall, dir, side) { this.dashT = 0; this.downT = fall; this.downTotal = fall; this.kdDir = dir === 'fwd' ? 'fwd' : 'back'; this.kdSide = side < 0 ? -1 : 1; this.downClock = 0; this.lying = true; this.riseT = 0; this.strike = null; this.guard = false; this.check = false; }
     // climb back to the stance over `rise` seconds
     getUp(rise) { this.lying = false; this.downT = 0; this.riseT = rise; this.riseTotal = rise; }
     isDown() { return this.downT > 0 || this.lying; }
@@ -1170,8 +1278,10 @@
     return { dmg: Math.min(dmg, DMG_CAP), region, blocked };
   }
 
-  function init(RAPIER) { R = RAPIER; return R.init ? R.init() : Promise.resolve(); }
+  // ready() flips only once the WASM init has resolved: R is assigned up front, but building a World before then crashes
+  let initDone = false;
+  function init(RAPIER) { R = RAPIER; return (R.init ? R.init() : Promise.resolve()).then((v) => { initDone = true; return v; }); }
 
-  root.MMAPhys = { init, ready: () => !!R, World, Ragdoll, HeavyBag, STRIKES, POSES, SEGS, SEG_ORDER, JOINTS, fk, resolveFrameExport: resolveFrame, impactDamage, PHYS_DT, SUBSTEPS, HOVER_HEIGHT, VMIN, DMG_SCALE, TARGET_R, math: { qMul, qEuler, qRot, qYaw, qSlerp, vAdd } };
+  root.MMAPhys = { init, ready: () => !!R && initDone, World, Ragdoll, HeavyBag, STRIKES, POSES, SEGS, SEG_ORDER, JOINTS, fk, resolveFrameExport: resolveFrame, impactDamage, PHYS_DT, SUBSTEPS, HOVER_HEIGHT, VMIN, DMG_SCALE, TARGET_R, math: { qMul, qEuler, qRot, qYaw, qSlerp, vAdd } };
   if (typeof module !== 'undefined' && module.exports) module.exports = root.MMAPhys;
 })(typeof window !== 'undefined' ? window : globalThis);

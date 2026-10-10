@@ -16,10 +16,10 @@
 
   // ---------- controls (rebindable, saved in localStorage) ----------
   const ACTIONS = [
-    { id: 'fwd', label: 'Move in · lunge in (tap twice)', bit: IN.FWD, def: ['KeyW', 'ArrowUp'] },
-    { id: 'back', label: 'Back off · lunge out (tap twice)', bit: IN.BACK, def: ['KeyS', 'ArrowDown'] },
-    { id: 'left', label: 'Circle left · lunge left (tap twice)', bit: IN.LEFT, def: ['KeyA', 'ArrowLeft'] },
-    { id: 'right', label: 'Circle right · lunge right (tap twice)', bit: IN.RIGHT, def: ['KeyD', 'ArrowRight'] },
+    { id: 'fwd', label: 'Move in', bit: IN.FWD, def: ['KeyW', 'ArrowUp'] },
+    { id: 'back', label: 'Back off', bit: IN.BACK, def: ['KeyS', 'ArrowDown'] },
+    { id: 'left', label: 'Circle left', bit: IN.LEFT, def: ['KeyA', 'ArrowLeft'] },
+    { id: 'right', label: 'Circle right', bit: IN.RIGHT, def: ['KeyD', 'ArrowRight'] },
     { id: 'lh', label: 'Left hand', bit: IN.LHAND, def: ['KeyU', ''] },
     { id: 'rh', label: 'Right hand', bit: IN.RHAND, def: ['KeyI', ''] },
     { id: 'll', label: 'Left leg', bit: IN.LLEG, def: ['KeyJ', ''] },
@@ -27,16 +27,25 @@
     { id: 'mod1', label: 'Modifier 1 (hold)', bit: IN.MOD1, def: ['KeyQ', ''] },
     { id: 'mod2', label: 'Modifier 2 (hold)', bit: IN.MOD2, def: ['KeyE', ''] },
     { id: 'mod3', label: 'Modifier 3 (hold)', bit: IN.MOD3, def: ['KeyR', ''] },
-    { id: 'block', label: 'Block / sprawl / cover (hold) · push (tap twice)', bit: IN.BLOCK, def: ['KeyL', 'Semicolon'] },
+    { id: 'block', label: 'Block / sprawl / cover (hold) · slip (press as a strike comes) · push (tap twice)', bit: IN.BLOCK, def: ['KeyL', 'Semicolon'] },
     { id: 'grapple', label: 'Takedown / submission / sweep', bit: IN.GRAPPLE, def: ['Space', ''] },
-    { id: 'dodge', label: 'Slip / stand up', bit: IN.DODGE, def: ['ShiftLeft', 'ShiftRight'] },
+    { id: 'dodge', label: 'Dash (the way you are stepping) / stand up', bit: IN.DODGE, def: ['ShiftLeft', 'ShiftRight'] },
     { id: 'stance', label: 'Switch stance (orthodox / southpaw)', bit: IN.STANCE, def: ['KeyX', ''] },
     { id: 'check', label: 'Check low kicks: lift the lead leg (hold)', bit: IN.CHECK, def: ['KeyO', ''] },
     { id: 'interact', label: 'Use (gym: computer, whiteboard, desk)', bit: 1 << 14, def: ['Enter', 'KeyF'] },
     { id: 'lock', label: 'Lock on to the heavy bag (gym)', bit: 1 << 15, def: ['KeyT', ''] }
   ];
   const IN_INTERACT = 1 << 14, IN_LOCK = 1 << 15, SIM_MASK = 0x3fff | IN.STANCE | IN.CHECK; // interact/lock are app-only bits; mask with SIM_MASK before input reaches the sim
-  const Controls = { binds: {}, moveset: null, keyMap: {} };
+  const Controls = { binds: {}, moveset: null, keyMap: {}, pad: {} };
+  // ---------- gamepad (standard layout: Xbox / PlayStation / Steam Input) ----------
+  // pad codes: 'B<n>' = button n, 'A<axis><+|->' = a stick axis pushed past the deadzone
+  const PAD_DEFAULT = { fwd: 'A1-', back: 'A1+', left: 'A0-', right: 'A0+', lh: 'B2', rh: 'B3', ll: 'B0', rl: 'B1', mod1: 'B4', mod2: 'B5', mod3: 'B6', block: 'B7', grapple: 'B10', dodge: 'B11', stance: 'B14', check: 'B13', interact: 'B12', lock: 'B15' };
+  const PAD_NAMES = { B0: 'A', B1: 'B', B2: 'X', B3: 'Y', B4: 'LB', B5: 'RB', B6: 'LT', B7: 'RT', B8: 'BACK', B9: 'START', B10: 'LS', B11: 'RS', B12: 'D-UP', B13: 'D-DOWN', B14: 'D-LEFT', B15: 'D-RIGHT', B16: 'GUIDE', 'A0-': 'LS\u2190', 'A0+': 'LS\u2192', 'A1-': 'LS\u2191', 'A1+': 'LS\u2193', 'A2-': 'RS\u2190', 'A2+': 'RS\u2192', 'A3-': 'RS\u2191', 'A3+': 'RS\u2193' };
+  const PAD_DEAD = 0.35;   // stick deflection that counts as a press
+  const PAD_LOOK = 12;     // gym camera: right-stick deflection (squared) -> mouse pixels per frame
+  const PAD_START = 9, PAD_B = 1, PAD_A = 0;
+  const Pad = { held: 0, prev: null, index: -1, active: false, nav: 0, edit: null }; // active = the pad was used more recently than the keyboard (hints show pad names); nav = frames a menu direction has been held
+  function padName(code) { return code ? (PAD_NAMES[code] || code) : '\u2014'; }
   const KEY_NAMES = { ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Space: 'SPACE', ShiftLeft: 'L-SHIFT', ShiftRight: 'R-SHIFT', ControlLeft: 'L-CTRL', ControlRight: 'R-CTRL', AltLeft: 'L-ALT', AltRight: 'R-ALT', Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/', BracketLeft: '[', BracketRight: ']', Backslash: '\\', Minus: '-', Equal: '=', Enter: 'ENTER', Tab: 'TAB', Backspace: 'BKSP', CapsLock: 'CAPS', Backquote: '`', NumpadEnter: 'NUM ENTER', NumpadAdd: 'NUM +', NumpadSubtract: 'NUM -', NumpadMultiply: 'NUM *', NumpadDivide: 'NUM /', NumpadDecimal: 'NUM .' };
   function keyName(code) {
     if (!code) return '—';
@@ -47,20 +56,24 @@
     return code.toUpperCase();
   }
   function defaultBinds() { const b = {}; for (const a of ACTIONS) b[a.id] = a.def.slice(); return b; }
+  function defaultPad() { const b = {}; for (const a of ACTIONS) b[a.id] = PAD_DEFAULT[a.id] || ''; return b; }
   function loadControls() {
-    Controls.binds = defaultBinds();
+    Controls.binds = defaultBinds(); Controls.pad = defaultPad();
     Controls.moveset = normalizeMoveset(DEFAULT_MOVESET);
     try {
       const b = JSON.parse(localStorage.getItem('cr_binds') || 'null');
       if (b) for (const a of ACTIONS) if (Array.isArray(b[a.id])) Controls.binds[a.id] = [String(b[a.id][0] || ''), String(b[a.id][1] || '')];
+      const g = JSON.parse(localStorage.getItem('cr_pad') || 'null');
+      if (g) for (const a of ACTIONS) if (typeof g[a.id] === 'string') Controls.pad[a.id] = g[a.id];
       const m = JSON.parse(localStorage.getItem('cr_moveset') || 'null');
       if (m) Controls.moveset = normalizeMoveset(m);
     } catch (_) {}
     rebuildKeyMap();
   }
+  function syncGymMoveset() { if (App.gym && App.gym.active) App.gym.setMoveset(Controls.moveset); }
   function saveControls() {
-    try { localStorage.setItem('cr_binds', JSON.stringify(Controls.binds)); localStorage.setItem('cr_moveset', JSON.stringify(Controls.moveset)); } catch (_) {}
-    rebuildKeyMap();
+    try { localStorage.setItem('cr_binds', JSON.stringify(Controls.binds)); localStorage.setItem('cr_pad', JSON.stringify(Controls.pad)); localStorage.setItem('cr_moveset', JSON.stringify(Controls.moveset)); } catch (_) {}
+    rebuildKeyMap(); syncGymMoveset();
   }
   function rebuildKeyMap() {
     Controls.keyMap = {};
@@ -79,6 +92,8 @@
 
   // practice (you vs CPU), watch (CPU vs CPU) and career run the sim locally with no network
   const isLocal = () => App.mode === 'practice' || App.mode === 'watch' || App.mode === 'career';
+  // a roster key that arrived over the network (an own key: '__proto__' or 'toString' must not pass)
+  const isFighter = (k) => typeof k === 'string' && Object.prototype.hasOwnProperty.call(ROSTER, k);
 
   function fighterSelect(id, sel, random) {
     return '<select id="' + id + '">' + (random ? '<option value="random"' + (sel === 'random' ? ' selected' : '') + '>Random</option>' : '') +
@@ -116,7 +131,7 @@
     const el = $('#roster'); el.innerHTML = '';
     for (const key in ROSTER) {
       const r = ROSTER[key];
-      const c = document.createElement('div'); c.className = 'card'; c.dataset.key = key;
+      const c = document.createElement('div'); c.className = 'card'; c.dataset.key = key; c.tabIndex = 0; // focusable so a controller can pick it
       c.innerHTML = '<div class="swatch" style="background:#' + r.color.toString(16).padStart(6, '0') + '"></div>' +
         '<div class="cname">' + r.name + '</div><div class="cstyle">' + r.style + ' · "' + r.nick + '"</div><div class="cdesc">' + r.desc + '</div>' +
         statBar('POW', r.stats.pow) + statBar('SPD', r.stats.spd) + statBar('CHIN', r.stats.chin) + statBar('WRE', r.stats.wre) + statBar('BJJ', r.stats.bjj) + statBar('CAR', r.stats.car);
@@ -188,6 +203,7 @@
   }
 
   function startHost() {
+    if (App.net) App.net.destroy(); // a join still connecting must not keep running behind the new room
     App.net = new Net({
       onReady: (code) => { $('#codeLbl').textContent = code; refreshLobby(); },
       onConnect: () => { toast('Opponent connected!'); App.lobby.names[0] = myName(); sendPick(); refreshLobby(); },
@@ -200,13 +216,15 @@
     $('#codeLbl').textContent = '…';
   }
   function startJoin(code) {
-    App.net = new Net({
-      onConnect: () => { toast('Connected to room ' + App.net.code); enterLobby('guest'); App.lobby.names[1] = myName(); sendPick(); },
+    if (App.net) App.net.destroy();
+    const net = App.net = new Net({
+      onConnect: () => { toast('Connected to room ' + net.code); enterLobby('guest'); App.lobby.names[1] = myName(); sendPick(); },
       onData: onGuestData,
       onClose: () => { onOpponentLeft(); },
-      onError: (m) => { toast(m, 6000); if (!App.net.connected) { App.net.destroy(); App.net = null; } }
+      // a failed join drops its own Net — never a newer one that took App.net since
+      onError: (m) => { toast(m, 6000); if (App.net === net && !net.connected) { net.destroy(); App.net = null; } }
     });
-    App.net.join(code);
+    net.join(code);
     toast('Connecting to ' + code + '…', 8000);
   }
   function onOpponentLeft() {
@@ -215,19 +233,25 @@
     App.mode = null; screen('menu');
   }
 
+  // Everything below arrives from the other player's machine, which may not be running this code: fields are
+  // type-checked and rebuilt before use, and whatever reaches innerHTML later is escaped there.
   function onHostData(d) {
     switch (d.t) {
       case 'pick':
-        App.lobby.picks[1] = ROSTER[d.fighter] ? d.fighter : 'balanced';
-        App.lobby.names[1] = (d.name || '').slice(0, 14);
+        App.lobby.picks[1] = isFighter(d.fighter) ? d.fighter : 'balanced';
+        App.lobby.names[1] = String(d.name || '').slice(0, 14);
         App.lobby.ready[1] = !!d.ready;
         App.lobby.movesets[1] = normalizeMoveset(d.moveset);
         refreshLobby(); sendPick(); maybeStart(); break;
       case 'in':
-        App.remote.h = d.h | 0; App.remote.p |= (d.p | 0); break;
+        App.remote.h = (d.h | 0) & SIM_MASK; App.remote.p |= (d.p | 0) & SIM_MASK; break;
       case 'say': {
-        showLine(1, d.m);
-        if (App.net) App.net.send({ t: 'say', i: 1, m: d.m });
+        // the cleaned line is what gets echoed back; a flood is dropped here, on the machine running the fight
+        const m = cleanLine(d.m), now = performance.now();
+        if (!m || now - guestSayT < SAY_GAP_MS) break;
+        guestSayT = now;
+        showLine(1, m);
+        if (App.net) App.net.send({ t: 'say', i: 1, m });
         break;
       }
       case 'rematch':
@@ -236,21 +260,43 @@
   }
   function onGuestData(d) {
     switch (d.t) {
-      case 'lobby':
-        App.lobby.picks[0] = d.picks[0]; App.lobby.names[0] = d.names[0]; App.lobby.ready[0] = d.ready[0];
-        App.lobby.settings = d.settings;
-        if (d.settings) { $('#selRounds').value = d.settings.rounds; $('#selLen').value = d.settings.len; $('#selGrapple').value = d.settings.grappling === false ? '0' : '1'; }
+      case 'lobby': {
+        const s = d.settings;
+        if (!Array.isArray(d.picks) || !Array.isArray(d.names) || !Array.isArray(d.ready) || !s || typeof s !== 'object') break;
+        App.lobby.picks[0] = isFighter(d.picks[0]) ? d.picks[0] : 'balanced';
+        App.lobby.names[0] = String(d.names[0] || '').slice(0, 14);
+        App.lobby.ready[0] = !!d.ready[0];
+        App.lobby.settings = { rounds: s.rounds | 0, len: s.len | 0, grappling: s.grappling !== false, diff: App.lobby.settings.diff };
+        $('#selRounds').value = App.lobby.settings.rounds; $('#selLen').value = App.lobby.settings.len; $('#selGrapple').value = App.lobby.settings.grappling ? '1' : '0';
         refreshLobby(); break;
-      case 'start':
-        beginFight(d); break;
-      case 's':
-        App.state = d.s; App.lastSnap = performance.now();
-        if (d.ev && d.ev.length) processEvents(d.ev, App.state);
+      }
+      case 'start': {
+        const msg = cleanStart(d);
+        if (msg) beginFight(msg);
         break;
+      }
+      case 's': {
+        const S = d.s;
+        if (!S || !Array.isArray(S.f) || S.f.length !== 2 || !S.f.every(f => f && typeof f === 'object')) break;
+        for (const f of S.f) f.name = String(f.name == null ? '' : f.name).slice(0, 24);
+        App.state = S; App.lastSnap = performance.now();
+        if (Array.isArray(d.ev) && d.ev.length) processEvents(d.ev, App.state);
+        break;
+      }
       case 'say':
-        if (d && d.m) showLine(d.i, d.m);
+        showLine(d.i === 1 ? 1 : 0, d.m);
         break;
     }
+  }
+  // the host's 'start', rebuilt from checked fields: two known fighters, short string names, settings in range
+  function cleanStart(d) {
+    const s = d.settings;
+    if (!Array.isArray(d.players) || d.players.length !== 2 || !s || typeof s !== 'object') return null;
+    const players = d.players.map((p) => {
+      p = p && typeof p === 'object' ? p : {};
+      return { fighter: isFighter(p.fighter) ? p.fighter : 'balanced', name: String(p.name || '').slice(0, 24), color: typeof p.color === 'number' ? p.color : undefined, moveset: p.moveset, look: p.look && typeof p.look === 'object' ? Career.normalizeLook(p.look) : undefined };
+    });
+    return { t: 'start', seed: d.seed | 0, players, settings: { rounds: Math.min(5, Math.max(1, s.rounds | 0)), len: Math.min(300, Math.max(60, s.len | 0)), grappling: s.grappling !== false } };
   }
 
   function maybeStart() {
@@ -273,6 +319,8 @@
     ];
     // same archetype -> alternate shorts colour so they're distinguishable
     if (players[0].fighter === players[1].fighter) players[1].color = 0x8e44ad;
+    // practice: both fighters get a fresh random look (hair / beard / build / colours) and skin tone every fight
+    if (App.mode === 'practice') for (const p of players) { p.look = Career.randomLook(); p.skin = Career.SKINS[(Math.random() * Career.SKINS.length) | 0]; }
     const msg = { t: 'start', seed: (Math.random() * 1e9) | 0, players, settings: { rounds: L.settings.rounds, len: L.settings.len, grappling: L.settings.grappling !== false } };
     if (App.mode === 'host') App.net.send(msg);
     beginFight(msg);
@@ -297,6 +345,7 @@
     }
     if (isHost && App.physFailed) return; // the host needs physics to run a fight; the failure toast was already shown
     if (App.sim) App.sim.destroy();
+    clearTimeout(App.endT); App.endT = 0;
     App.sim = null; App.state = null; App.evQueue = []; App.remote = { h: 0, p: 0 }; App.rematch = [false, false];
     App.lobby.ready = [false, false];
     if (isHost) {
@@ -323,31 +372,31 @@
     $('#controlsHint').style.display = App.mode === 'watch' || App.hintsHidden ? 'none' : '';
     App.playing = true;
     App.audio.setCrowd(0.06);
-    centerMsg('ROUND 1<small>' + App.state.f[0].name + ' vs ' + App.state.f[1].name + (App.state.grappling === false ? ' · striking only' : '') + '</small>', 2600);
+    centerMsg('ROUND 1<small>' + esc(App.state.f[0].name) + ' vs ' + esc(App.state.f[1].name) + (App.state.grappling === false ? ' · striking only' : '') + '</small>', 2600);
   }
 
-  function stopFight() { App.playing = false; App.paused = false; if (App.sim) App.sim.destroy(); App.sim = null; hideCenter(); $('#grapple').classList.remove('show'); }
+  function stopFight() { clearTimeout(App.endT); App.endT = 0; App.playing = false; App.paused = false; if (App.sim) App.sim.destroy(); App.sim = null; App.audio.setCrowd(0); hideCenter(); $('#grapple').classList.remove('show'); }
 
   function showEnd(S) {
     const R = S.result; if (!R) return;
     const w = R.winner == null ? null : S.f[R.winner];
-    $('#endMethod').textContent = R.method.toUpperCase() + (R.method.indexOf('Decision') < 0 && R.method !== 'Majority Draw' ? ' · ROUND ' + R.round + ' · ' + R.time : '');
+    $('#endMethod').textContent = R.method.toUpperCase() + (!/Decision|Draw/.test(R.method) ? ' · ROUND ' + R.round + ' · ' + R.time : '');
     $('#endWinner').textContent = w ? w.name + ' WINS' : 'DRAW';
     $('#endWinner').style.color = w ? (App.mode === 'watch' ? '#fff' : R.winner === App.myIdx ? '#52d273' : '#e23b3b') : '#fff';
     $('#endDetail').textContent = w ? (App.mode === 'watch' ? '' : R.winner === App.myIdx ? 'Victory.' : 'Defeat.') : 'The judges could not separate them.';
-    // scorecards
-    let h = '<tr><th>Judges</th>' + S.cards.map(c => '<th>R' + c.round + '</th>').join('') + '<th>Total</th></tr>';
+    // scorecards (online, S is the host's snapshot: counts are forced to numbers and names escaped for innerHTML)
+    let h = '<tr><th>Judges</th>' + S.cards.map(c => '<th>R' + (c.round | 0) + '</th>').join('') + '<th>Total</th></tr>';
     for (let j = 0; j < 3; j++) {
       let a = 0, b = 0;
-      h += '<tr><td>Judge ' + (j + 1) + '</td>' + S.cards.map(c => { a += c.j[j][0]; b += c.j[j][1]; return '<td>' + c.j[j][0] + '–' + c.j[j][1] + '</td>'; }).join('') + '<td><b>' + a + '–' + b + '</b></td></tr>';
+      h += '<tr><td>Judge ' + (j + 1) + '</td>' + S.cards.map(c => { const x = c.j[j][0] | 0, y = c.j[j][1] | 0; a += x; b += y; return '<td>' + x + '–' + y + '</td>'; }).join('') + '<td><b>' + a + '–' + b + '</b></td></tr>';
     }
     $('#cards').innerHTML = h;
     // totals use ts alone: after a stoppage the last round's rs is already folded into ts, so adding rs double-counts
     const ts = S.f.map(f => f.ts);
     const row = (lbl, fn) => '<tr><td>' + lbl + '</td><td>' + fn(ts[0]) + '</td><td>' + fn(ts[1]) + '</td></tr>';
-    $('#totals').innerHTML = '<tr><th></th><th>' + S.f[0].name + '</th><th>' + S.f[1].name + '</th></tr>' +
-      row('Strikes landed / thrown', s => s.landed + ' / ' + s.thrown) + row('Damage dealt', s => Math.round(s.sig)) +
-      row('Takedowns', s => s.td + ' / ' + s.tdAtt) + row('Control time', s => Math.round(s.ctrl) + 's') + row('Submission attempts', s => s.subs) + row('Knockdowns', s => s.kd);
+    $('#totals').innerHTML = '<tr><th></th><th>' + esc(S.f[0].name) + '</th><th>' + esc(S.f[1].name) + '</th></tr>' +
+      row('Strikes landed / blocked / thrown', s => (s.landed | 0) + ' / ' + (s.blocked | 0) + ' / ' + (s.thrown | 0)) + row('Damage dealt', s => Math.round(s.sig)) +
+      row('Takedowns', s => (s.td | 0) + ' / ' + (s.tdAtt | 0)) + row('Control time', s => Math.round(s.ctrl) + 's') + row('Submission attempts', s => s.subs | 0) + row('Knockdowns', s => s.kd | 0);
     $('#btnRematch').textContent = 'REMATCH'; $('#btnRematch').disabled = false;
     if (App.mode === 'career') {
       settleCareerFight();
@@ -377,6 +426,7 @@
         case 'block': A.block(); if (ev.checked || Math.random() < 0.35) feed(text); break;
         case 'push': if (ev.ok) { A.block(); feed(text); } else A.whiff(); break;
         case 'miss': A.whiff(); if (ev.slipped) feed(text); break;
+        case 'slip': feed(text); break;
         case 'kd': A.slam(); centerMsg('KNOCKDOWN!', 1400); feed(text, true); break;
         case 'follow': A.slam(); feed(text, true); break;
         case 'getup': case 'stance': feed(text); break;
@@ -391,16 +441,17 @@
         case 'tap': A.tap(); feed(text, true); break;
         case 'ko': A.horn(); feed(text, true); break;
         case 'bell':
-          if (ev.end) { A.bell(2); centerMsg('END OF ROUND ' + ev.round, 2500); }
+          if (ev.end) { A.bell(2); centerMsg('END OF ROUND ' + (ev.round | 0), 2500); }
           else { A.bell(1); centerMsg('FIGHT!', 900); }
           feed(text); break;
-        case 'round': centerMsg('ROUND ' + ev.round, 2200); break;
+        case 'round': centerMsg('ROUND ' + (ev.round | 0), 2200); break;
         case 'end': {
           // no centre-screen result here: the ref announces the winner in the hand-raise, and the end screen follows
           const res = ev.res;
           if (res.method.indexOf('Decision') >= 0 || res.method.indexOf('Draw') >= 0) A.bell(3);
           // after the referee has raised the winner's hand
-          setTimeout(() => { if (App.state && App.state.result) showEnd(App.state); }, window.MMARender.ceremonyEnd(res) * 1000);
+          clearTimeout(App.endT);
+          App.endT = setTimeout(() => { App.endT = 0; if (App.state && App.state.result) showEnd(App.state); }, window.MMARender.ceremonyEnd(res) * 1000);
           break;
         }
       }
@@ -411,7 +462,8 @@
   //  HUD
   // ============================================================
   function pct(v) { return Math.max(0, Math.min(100, v)) + '%'; }
-  const kn = id => keyName(Controls.binds[id][0]);
+  const bindName = id => Pad.active && Controls.pad[id] ? padName(Controls.pad[id]) : keyName(Controls.binds[id][0]); // hints name whichever device was used last
+  const kn = bindName;
   function dmgColor(d) { const h = 120 - d * 1.2; return 'hsla(' + h + ',70%,' + (25 + d * 0.3) + '%,' + (0.35 + d / 150) + ')'; }
   function updateHUD(S, inputs) {
     inputs = inputs || [0, 0];
@@ -451,7 +503,7 @@
         } else if (me.act.name === 'rise') kdTxt = '<span class="t">GETTING UP</span>Still rocked — cover up.';
       } else if (op.act.type === 'kd' && op.act.name !== 'rise' && S.grappling) {
         const dist = Math.hypot(op.x - me.x, op.z - me.z);
-        kdTxt = '<span class="t">' + op.name.toUpperCase() + ' IS DOWN</span><b>' + kn('grapple') + '</b> dive on him' + (dist > KD.FOLLOW_DIST ? ' (get closer)' : '') + ' · back off to keep it standing — he comes up rocked';
+        kdTxt = '<span class="t">' + esc(String(op.name).toUpperCase()) + ' IS DOWN</span><b>' + kn('grapple') + '</b> dive on him' + (dist > KD.FOLLOW_DIST ? ' (get closer)' : '') + ' · back off to keep it standing — he comes up rocked';
       }
     }
     if (kdTxt) { kh.innerHTML = kdTxt; kh.classList.add('show'); } else kh.classList.remove('show');
@@ -497,10 +549,11 @@
   let capture = null; // { act, slot, btn } while waiting for a key
   function buildOptions() {
     const kt = $('#keyTable');
-    let h = '<tr><th>Action</th><th>Key</th><th>Alt</th></tr>';
-    for (const a of ACTIONS) h += '<tr><td>' + a.label + '</td>' + [0, 1].map(i => '<td><button class="keybtn" data-act="' + a.id + '" data-slot="' + i + '">' + keyName(Controls.binds[a.id][i]) + '</button></td>').join('') + '</tr>';
+    let h = '<tr><th>Action</th><th>Key</th><th>Alt</th><th>Pad</th></tr>';
+    for (const a of ACTIONS) h += '<tr><td>' + a.label + '</td>' + [0, 1].map(i => '<td><button class="keybtn" data-act="' + a.id + '" data-slot="' + i + '">' + keyName(Controls.binds[a.id][i]) + '</button></td>').join('') + '<td><button class="keybtn pad" data-act="' + a.id + '" data-slot="2">' + padName(Controls.pad[a.id]) + '</button></td></tr>';
     kt.innerHTML = h;
     kt.querySelectorAll('.keybtn').forEach(b => b.onclick = () => startCapture(b.dataset.act, +b.dataset.slot, b));
+    $('#padStatus').textContent = Pad.index >= 0 ? 'Controller connected. Click a Pad cell, then press a button or push a stick to rebind it. START opens this panel, A picks (and opens a dropdown or slider: d-pad changes it, A closes it), B backs out.' : 'No controller detected. Press any button on it to wake it up; Xbox, PlayStation and Steam Input pads all use the same layout.';
     const mt = $('#moveTable');
     h = '<tr><th>Hold</th>' + LIMBS.map(l => '<th>' + LIMB_NAME[l] + '<small>' + keyName(Controls.binds[l][0]) + '</small></th>').join('') + '</tr>';
     for (const m of MODS) {
@@ -515,19 +568,96 @@
     mt.querySelectorAll('select').forEach(sel => sel.onchange = () => { Controls.moveset[sel.dataset.mod][sel.dataset.limb] = sel.value; saveControls(); updateHint(); });
     document.querySelectorAll('#options b[data-mod]').forEach(b => { b.textContent = keyName(Controls.binds[b.dataset.mod][0]); });
     $('#optStatus').textContent = App.playing ? (isLocal() ? 'Fight paused. Changes apply instantly.' : 'Online: the fight keeps running while this is open. Strike changes apply next fight.') : 'Changes are saved automatically.';
+    buildKeyboard();
+  }
+
+  // ---------- keyboard diagram (options panel), drawn from the live binds ----------
+  const KB_CAT = { fwd: 'move', back: 'move', left: 'move', right: 'move', lh: 'strike', rh: 'strike', ll: 'strike', rl: 'strike', mod1: 'mod', mod2: 'mod', mod3: 'mod', block: 'def', dodge: 'def', check: 'def', grapple: 'grap', stance: 'misc', interact: 'misc', lock: 'misc' };
+  const KB_SHORT = { fwd: 'In', back: 'Out', left: 'Left', right: 'Right', lh: 'L hand', rh: 'R hand', ll: 'L leg', rl: 'R leg', mod1: 'Mod 1', mod2: 'Mod 2', mod3: 'Mod 3', block: 'Block', dodge: 'Dash', check: 'Check', grapple: 'Takedown', stance: 'Stance', interact: 'Use', lock: 'Lock' };
+  const KB_KIND = { straight: 'Straight', hook: 'Hook', uppercut: 'Upper', overhand: 'Overhd', teep: 'Teep', knee: 'Knee', bkick: 'Body kk', hkick: 'Head kk', lkick: 'Low kk' }; // fits a 1u cap
+  const KB_LEGEND = [['move', 'Move'], ['strike', 'Strike'], ['mod', 'Modifier'], ['def', 'Defense'], ['grap', 'Grapple'], ['misc', 'Other'], ['sys', 'System']];
+  const KB_CAP = { Escape: 'ESC', MetaLeft: 'WIN', MetaRight: 'WIN', ContextMenu: 'MENU', Backspace: '⌫' };
+  const kbKeys = (pre, s) => s.split('').map(c => [pre + c, 1]);
+  const KB_MAIN = [
+    [['Escape', 1], [null, 14]],
+    [['Backquote', 1], ...kbKeys('Digit', '1234567890'), ['Minus', 1], ['Equal', 1], ['Backspace', 2]],
+    [['Tab', 1.5], ...kbKeys('Key', 'QWERTYUIOP'), ['BracketLeft', 1], ['BracketRight', 1], ['Backslash', 1.5]],
+    [['CapsLock', 1.75], ...kbKeys('Key', 'ASDFGHJKL'), ['Semicolon', 1], ['Quote', 1], ['Enter', 2.25]],
+    [['ShiftLeft', 2.25], ...kbKeys('Key', 'ZXCVBNM'), ['Comma', 1], ['Period', 1], ['Slash', 1], ['ShiftRight', 2.75]],
+    [['ControlLeft', 1.5], ['MetaLeft', 1.25], ['AltLeft', 1.25], ['Space', 7], ['AltRight', 1.25], ['ContextMenu', 1.25], ['ControlRight', 1.5]]
+  ];
+  const KB_ARROWS = [[[null, 3]], [[null, 3]], [[null, 3]], [[null, 3]], [[null, 1], ['ArrowUp', 1], [null, 1]], [['ArrowLeft', 1], ['ArrowDown', 1], ['ArrowRight', 1]]];
+  // keys main.js handles itself; H and M only when nothing is bound to them
+  function kbFixed(code) {
+    if (code === 'Escape') return ['Menu', 'Open / close options (pauses practice)'];
+    if (code === 'Enter') return ['Chat', 'Open chat during a fight'];
+    if (code === 'KeyH' && !Controls.keyMap.KeyH) return ['Hints', 'Show / hide the on-screen control hints'];
+    if (code === 'KeyM' && !Controls.keyMap.KeyM) return ['Mute', 'Mute / unmute sound'];
+    return null;
+  }
+  function buildKeyboard() {
+    const host = $('#kbMap'); if (!host) return;
+    const byCode = {};
+    for (const a of ACTIONS) for (const c of Controls.binds[a.id]) if (c && !byCode[c]) byCode[c] = a;
+    const placed = new Set();
+    const cap = ([code, w]) => {
+      if (!code) return '<div class="kk gap" style="flex:' + w + '"></div>';
+      placed.add(code);
+      const a = byCode[code], fx = kbFixed(code);
+      const cat = a ? KB_CAT[a.id] : fx ? 'sys' : '';
+      const label = a ? KB_SHORT[a.id] : fx ? fx[0] : '';
+      const strike = a && KB_CAT[a.id] === 'strike' ? '<span class="ks" data-limb="' + a.id + '"></span>' : '';
+      return '<div class="kk' + (cat ? ' c-' + cat : ' off') + '" style="flex:' + w + '" data-code="' + code + '"' + (a ? ' data-act="' + a.id + '"' : '') + '>' +
+        '<span class="kc">' + esc(KB_CAP[code] || keyName(code)) + '</span>' + (label ? '<span class="kl">' + label + '</span>' : '') + strike + '</div>';
+    };
+    const block = (rows, cls) => '<div class="kb-block ' + cls + '">' + rows.map(r => '<div class="kb-row">' + r.map(cap).join('') + '</div>').join('') + '</div>';
+    host.innerHTML = block(KB_MAIN, 'main') + block(KB_ARROWS, 'arrows');
+    // binds on keys the diagram has no cap for (numpad, F-keys, ...)
+    const extra = Object.keys(byCode).filter(c => !placed.has(c));
+    const info = $('#kbInfo');
+    const idle = extra.length ? 'Also bound: ' + extra.map(c => '<b>' + esc(keyName(c)) + '</b> ' + KB_SHORT[byCode[c].id]).join(' · ') : '<span class="muted">Hover a key.</span>';
+    info.innerHTML = idle;
+    $('#kbLegend').innerHTML = KB_LEGEND.map(([c, n]) => '<span class="c-' + c + '"><i></i>' + n + '</span>').join('');
+    const ms = Controls.moveset;
+    const showMod = (m) => {
+      host.querySelectorAll('.ks').forEach(s => { s.textContent = KB_KIND[ms[m][s.dataset.limb]] || KIND_LABEL[ms[m][s.dataset.limb]]; });
+      host.querySelectorAll('.kk[data-act^="mod"]').forEach(k => k.classList.toggle('hot', k.dataset.act === m));
+    };
+    showMod('none');
+    const modKey = m => m === 'none' ? 'no modifier' : 'hold <b>' + esc(keyName(Controls.binds[m][0])) + '</b>';
+    host.querySelectorAll('.kk[data-code]').forEach(k => k.onmouseenter = () => {
+      const a = byCode[k.dataset.code], fx = kbFixed(k.dataset.code);
+      if (a && KB_CAT[a.id] === 'mod') showMod(a.id);
+      let h = '<b>' + esc(keyName(k.dataset.code)) + '</b> ';
+      if (a && KB_CAT[a.id] === 'mod') h += a.label + ': ' + LIMBS.map(l => LIMB_NAME[l].toLowerCase() + ' ' + KIND_LABEL[ms[a.id][l]].toLowerCase()).join(' · ');
+      else if (a && KB_CAT[a.id] === 'strike') h += a.label + ': ' + MODS.map(m => modKey(m) + ' ' + KIND_LABEL[ms[m][a.id]].toLowerCase()).join(' · ');
+      else if (a) h += a.label;
+      if (fx) h += (a ? ' · ' : '') + fx[1];
+      if (!a && !fx) h += '<span class="muted">unbound</span>';
+      info.innerHTML = h;
+    });
+    host.onmouseleave = () => { showMod('none'); info.innerHTML = idle; };
   }
   function startCapture(act, slot, btn) {
     cancelCapture();
     capture = { act, slot, btn };
-    btn.textContent = 'PRESS A KEY'; btn.classList.add('cap');
+    btn.textContent = slot === 2 ? 'PRESS A BUTTON' : 'PRESS A KEY'; btn.classList.add('cap');
   }
   function cancelCapture() {
     if (!capture) return;
-    capture.btn.textContent = keyName(Controls.binds[capture.act][capture.slot]); capture.btn.classList.remove('cap');
+    capture.btn.textContent = capture.slot === 2 ? padName(Controls.pad[capture.act]) : keyName(Controls.binds[capture.act][capture.slot]); capture.btn.classList.remove('cap');
     capture = null;
+  }
+  function capturePad(code) {
+    const { act } = capture;
+    for (const a of ACTIONS) if (Controls.pad[a.id] === code) Controls.pad[a.id] = ''; // one action per button
+    Controls.pad[act] = code;
+    capture = null;
+    saveControls(); buildOptions(); updateHint();
   }
   function captureKey(code) {
     const { act, slot } = capture;
+    if (slot === 2) { if (code === 'Backspace' || code === 'Delete') { Controls.pad[act] = ''; capture = null; saveControls(); buildOptions(); updateHint(); } return; } // a pad cell only takes pad input; Backspace clears it
     if (code === 'Backspace' || code === 'Delete') { Controls.binds[act][slot] = ''; }
     else {
       for (const a of ACTIONS) for (let i = 0; i < 2; i++) if (Controls.binds[a.id][i] === code) Controls.binds[a.id][i] = ''; // one action per key: unbind it everywhere else first
@@ -537,7 +667,7 @@
     saveControls(); buildOptions(); updateHint();
   }
   function openOptions() {
-    App.optionsOpen = true; App.held = 0; App.pressed = 0;
+    App.optionsOpen = true; App.held = 0; App.pressed = 0; releasePointer();
     if (App.playing && isLocal()) App.paused = true;
     $('#btnOptQuit').style.display = ($('#menu').classList.contains('hidden') && $('#career').classList.contains('hidden') && $('#careerNew').classList.contains('hidden')) || (App.gym && App.gym.active) ? '' : 'none'; // QUIT shows only in a fight/lobby or the gym, hidden on the menus
     buildOptions(); show($('#options'));
@@ -548,7 +678,7 @@
     hide($('#options')); updateHint();
   }
   function resetControls() {
-    Controls.binds = defaultBinds(); Controls.moveset = normalizeMoveset(DEFAULT_MOVESET);
+    Controls.binds = defaultBinds(); Controls.pad = defaultPad(); Controls.moveset = normalizeMoveset(DEFAULT_MOVESET);
     saveControls();
     if (App.setMusicParticles) App.setMusicParticles(true);
     if (App.setImpactParticles) App.setImpactParticles(true);
@@ -556,14 +686,14 @@
     buildOptions(); updateHint(); toast('Options reset to defaults', 1500);
   }
   function updateHint() {
-    const B = id => '<b>' + keyName(Controls.binds[id][0]) + '</b>';
+    const B = id => '<b>' + bindName(id) + '</b>';
     const ms = Controls.moveset;
     const kind = k => KIND_LABEL[k].toLowerCase();
     const row = m => (m === 'none' ? 'no modifier' : 'hold ' + B(m)) + ': ' + LIMBS.map(l => kind(ms[m][l])).join(' / ');
     $('#controlsHint').innerHTML =
-      '<div class="ctl-row">' + [B('fwd'), B('left'), B('back'), B('right')].join(' ') + ' move / circle (stepping into a shot adds power, backing off takes it away), tap any direction twice to lunge that way · ' + B('lh') + ' left hand · ' + B('rh') + ' right hand · ' + B('ll') + ' left leg · ' + B('rl') + ' right leg</div>' +
+      '<div class="ctl-row">' + [B('fwd'), B('left'), B('back'), B('right')].join(' ') + ' move / circle (stepping into a shot adds power, backing off takes it away) · ' + B('dodge') + ' dash the way you are stepping (straight back if standing still) · ' + B('lh') + ' left hand · ' + B('rh') + ' right hand · ' + B('ll') + ' left leg · ' + B('rl') + ' right leg</div>' +
       '<div class="ctl-row">' + MODS.map(row).join(' · ') + '</div>' +
-      '<div class="ctl-row">' + B('block') + ' hold: block / sprawl (+ ' + B('mod3') + ' drops into a shell that covers the body), tap twice: push them off · ' + B('grapple') + ' takedown / dive on a downed opponent · ' + B('dodge') + ' slip · ' + B('stance') + ' switch stance · knocked down: a direction or ' + B('dodge') + ' gets up, or stay down to recover · ground: hands & legs strike, ' + B('grapple') + ' submission / sweep, ' + B('block') + ' posture / cover, ' + B('dodge') + ' let up · <b>Enter</b> chat · <b>ESC</b> options · <b>H</b> hide this · <b>M</b> mute</div>';
+      '<div class="ctl-row">' + B('block') + ' hold: block / sprawl (+ ' + B('mod3') + ' drops into a shell that covers the body), press as a strike comes in: block and slip it, tap twice: push them off · ' + B('grapple') + ' takedown / dive on a downed opponent · ' + B('stance') + ' switch stance · knocked down: a direction or ' + B('dodge') + ' gets up, or stay down to recover · ground: hands & legs strike, ' + B('grapple') + ' submission / sweep, ' + B('block') + ' posture / cover, ' + B('dodge') + ' let up · <b>Enter</b> chat · <b>ESC</b>' + (Pad.active ? ' / <b>START</b>' : '') + ' options · <b>H</b> hide this · <b>M</b> mute</div>';
   }
 
   // ============================================================
@@ -590,20 +720,125 @@
       return;
     }
     if (!$('#more').classList.contains('hidden')) {
-      if (e.code === 'Escape' && !e.repeat) { e.preventDefault(); screen('menu'); }
+      if (e.code === 'Escape' && !e.repeat) { e.preventDefault(); pressEscape(); }
       return;
     }
-    if (e.code === 'Escape') { e.preventDefault(); if (!e.repeat) { if (App.optionsOpen) closeOptions(); else openOptions(); } return; }
+    if (e.code === 'Escape') { e.preventDefault(); if (!e.repeat) pressEscape(); return; }
     if (App.optionsOpen) return;
     if (e.code === 'KeyH' && !Controls.keyMap.KeyH) { if (!e.repeat) { App.hintsHidden = !App.hintsHidden; $('#controlsHint').style.display = App.hintsHidden ? 'none' : ''; } return; }
     if (e.code === 'KeyM' && !Controls.keyMap.KeyM) { if (!e.repeat) { App.audio.setMuted(!App.audio.muted); toast(App.audio.muted ? 'Muted' : 'Sound on', 1200); } return; }
     const b = Controls.keyMap[e.code]; if (!b) return;
     e.preventDefault();
+    if (Pad.active) { Pad.active = false; updateHint(); }
     if (!e.repeat) { App.pressed |= b; }
     App.held |= b;
   });
   window.addEventListener('keyup', (e) => { const b = Controls.keyMap[e.code]; if (b) { App.held &= ~b; e.preventDefault(); } });
-  window.addEventListener('blur', () => { App.held = 0; });
+  window.addEventListener('blur', () => { App.held = 0; Pad.held = 0; });
+  // what ESC (or the pad's START button) does, from the most specific context outward
+  function pressEscape() {
+    if (capture) { cancelCapture(); return; }
+    if (!$('#more').classList.contains('hidden')) { screen('menu'); return; }
+    // in the gym, ESC backs out of an open station screen before it reaches the options menu
+    if (!App.optionsOpen && App.gym && App.gym.active && CareerUI.station && !$('#career').classList.contains('hidden')) { closeStation(); return; }
+    if (App.optionsOpen) closeOptions(); else openOptions();
+  }
+
+  // ---------- gamepad: polled once per frame and merged into the same held / pressed bits as the keyboard ----------
+  window.addEventListener('gamepadconnected', (e) => { Pad.index = e.gamepad.index; toast('Controller connected: ' + String(e.gamepad.id || '').replace(/\s*\(.*$/, '').slice(0, 40), 2000); if (App.optionsOpen) buildOptions(); });
+  window.addEventListener('gamepaddisconnected', (e) => { if (e.gamepad.index === Pad.index) { Pad.index = -1; Pad.prev = null; App.held &= ~Pad.held; Pad.held = 0; if (App.optionsOpen) buildOptions(); } });
+  function getPad() {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    if (Pad.index >= 0 && pads[Pad.index] && pads[Pad.index].connected) return pads[Pad.index];
+    for (const p of pads) if (p && p.connected) { Pad.index = p.index; return p; }
+    return null;
+  }
+  const padDown = (gp, code) => { // is this pad code pressed right now?
+    if (code[0] === 'B') { const b = gp.buttons[+code.slice(1)]; return !!b && (b.pressed || b.value > 0.5); }
+    const v = gp.axes[+code.slice(1, -1)] || 0; return code.endsWith('+') ? v > PAD_DEAD : v < -PAD_DEAD;
+  };
+  function padCodes(gp) { // every code pressed right now (rebinding and menu navigation)
+    const out = [];
+    for (let i = 0; i < gp.buttons.length; i++) if (gp.buttons[i].pressed || gp.buttons[i].value > 0.5) out.push('B' + i);
+    for (let i = 0; i < Math.min(4, gp.axes.length); i++) { const v = gp.axes[i]; if (v > PAD_DEAD) out.push('A' + i + '+'); else if (v < -PAD_DEAD) out.push('A' + i + '-'); }
+    return out;
+  }
+  function dropPadHeld() { if (Pad.held) { App.held &= ~Pad.held; Pad.held = 0; } }
+  function pollPad() {
+    const gp = getPad();
+    if (!gp) { dropPadHeld(); return; }
+    const now = padCodes(gp), prev = Pad.prev || [];
+    const fresh = now.filter(c => !prev.includes(c)); // rising edges this frame
+    Pad.prev = now;
+    if (fresh.length && !Pad.active) { Pad.active = true; updateHint(); }
+    if (capture && capture.slot === 2) { if (fresh.length) capturePad(fresh[0]); return; } // rebinding a pad cell: the first new press is the bind
+    if (capture) return;
+    if (fresh.includes('B' + PAD_START)) { pressEscape(); return; }
+    const gymLive = App.gym && App.gym.active && !App.gym.paused;
+    const stationUp = App.gym && App.gym.active && CareerUI.station && !$('#career').classList.contains('hidden');
+    const inPlay = gymLive || (App.playing && $('#hud') && !$('#hud').classList.contains('hidden'));
+    if (App.optionsOpen || !inPlay || stationUp) { dropPadHeld(); padMenu(gp, now, fresh); return; }
+    if (gymLive) { const rx = gp.axes[2] || 0; if (Math.abs(rx) > PAD_DEAD) App.gym.look(rx * Math.abs(rx) * PAD_LOOK); } // the gym camera turns with the right stick
+    let held = 0;
+    for (const a of ACTIONS) { const c = Controls.pad[a.id]; if (c && padDown(gp, c)) held |= a.bit; }
+    App.pressed |= held & ~Pad.held;
+    App.held = (App.held & ~Pad.held) | held;
+    Pad.held = held;
+  }
+  // menus: d-pad / left stick moves focus between the visible controls, A activates, B backs out
+  const padDir = (codes) => codes.includes('B12') || codes.includes('A1-') ? 'up' : codes.includes('B13') || codes.includes('A1+') ? 'down' : codes.includes('B14') || codes.includes('A0-') ? 'left' : codes.includes('B15') || codes.includes('A0+') ? 'right' : null;
+  // a dropdown or slider is "opened" with A (like clicking it), then the d-pad changes its value and A or B closes it; otherwise focus passes straight over it
+  function padEditStop() { if (Pad.edit) { Pad.edit.classList.remove('pad-edit'); Pad.edit = null; } }
+  function padMenu(gp, now, fresh) {
+    const dir = padDir(fresh), holdDir = padDir(now);
+    Pad.nav = holdDir ? Pad.nav + 1 : 0;
+    const step = dir || (holdDir && Pad.nav > 24 && Pad.nav % 8 === 0 ? holdDir : null); // a held direction repeats after a short delay
+    const el = document.activeElement;
+    const a = fresh.includes('B' + PAD_A), b = fresh.includes('B' + PAD_B);
+    if (Pad.edit && (Pad.edit !== el || !Pad.edit.closest('body') || Pad.edit.closest('.hidden'))) padEditStop(); // focus moved on or the panel closed
+    if (Pad.edit) {
+      if (a || b) { padEditStop(); return; }
+      if (step && el.tagName === 'INPUT') { el.value = +el.value + ((step === 'right' || step === 'up') ? 1 : -1) * (+el.step || 1); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }
+      else if (step && el.tagName === 'SELECT') { const i = el.selectedIndex + ((step === 'down' || step === 'right') ? 1 : -1); if (i >= 0 && i < el.options.length) { el.selectedIndex = i; el.dispatchEvent(new Event('change', { bubbles: true })); } }
+      return;
+    }
+    if (step) padFocusMove(step);
+    if (a && el && el.getBoundingClientRect().width > 0) {
+      if (el.tagName === 'BUTTON' || el.tagName === 'A' || el.classList.contains('card') || (el.tagName === 'INPUT' && el.type === 'checkbox')) el.click();
+      else if (el.tagName === 'SELECT' || (el.tagName === 'INPUT' && el.type === 'range')) { Pad.edit = el; el.classList.add('pad-edit'); }
+    }
+    if (b) {
+      if (App.optionsOpen) closeOptions();
+      else { const back = ['#btnCareerNewBack', '#btnMoreClose', '#btnBack', '#btnMenu'].map(s => $(s)).find(b => b && !b.closest('.hidden') && b.getBoundingClientRect().width > 0); if (back) back.click(); }
+    }
+  }
+  const PAD_FOCUSABLE = 'button, a[href], input[type=range], input[type=checkbox], select, .card';
+  function padFocusMove(dir) {
+    const els = Array.from(document.querySelectorAll(PAD_FOCUSABLE)).filter(e => { if (e.disabled || e.closest('.hidden')) return false; const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+    if (!els.length) return;
+    const cur = document.activeElement, from = cur && els.includes(cur) ? cur.getBoundingClientRect() : null;
+    if (!from) { els[0].focus(); return; }
+    const vertical = dir === 'up' || dir === 'down';
+    let best = null, bestD = Infinity;
+    for (const e of els) {
+      if (e === cur) continue;
+      const r = e.getBoundingClientRect();
+      // distance from this control's edge to the next one's facing edge, along the direction of travel
+      const along = dir === 'up' ? from.top - r.bottom : dir === 'down' ? r.top - from.bottom : dir === 'left' ? from.left - r.right : r.left - from.right;
+      if (along < -Math.min(vertical ? from.height : from.width, vertical ? r.height : r.width) * 0.5) continue; // behind us or beside us
+      // overlap on the other axis: a control in the same column (or row) wins over one that is off to the side
+      const lap = vertical ? Math.min(from.right, r.right) - Math.max(from.left, r.left) : Math.min(from.bottom, r.bottom) - Math.max(from.top, r.top);
+      const across = lap > 0 ? 0 : -lap;
+      const d = Math.max(0, along) + (lap > 0 ? 0 : 1000 + across * 2);
+      if (d < bestD) { bestD = d; best = e; }
+    }
+    if (best) { best.focus(); if (best.scrollIntoView) best.scrollIntoView({ block: 'nearest' }); }
+  }
+  // the gym's free-walk camera turns with the mouse: click the view to capture the pointer (ESC lets it go)
+  const gymLive = () => App.gym && App.gym.active && !App.gym.paused && !App.optionsOpen;
+  $('#gl').addEventListener('mousedown', () => { if (gymLive() && !document.pointerLockElement) { const p = $('#gl').requestPointerLock(); if (p && p.catch) p.catch(() => {}); } });
+  window.addEventListener('mousemove', (e) => { if (document.pointerLockElement === $('#gl') && gymLive()) App.gym.look(e.movementX || 0); });
+  function releasePointer() { if (document.pointerLockElement) document.exitPointerLock(); }
 
   // ============================================================
   //  Main loop
@@ -613,6 +848,7 @@
     requestAnimationFrame(loop);
     let dt = (now - last) / 1000; last = now;
     if (dt > 0.1) dt = 0.1;
+    pollPad();
     if (App.gym && App.gym.active) {
       // the career gym: walk, hit the bag, use the stations. Input is zeroed while the options panel is open.
       const live = !App.optionsOpen;
@@ -665,23 +901,33 @@
   // ============================================================
   //  Career mode (single player campaign) — model in js/career.js
   // ============================================================
-  const CareerUI = { C: null, tab: 'camp', pick: { base: 'striker', color: null, skin: null }, justFought: false, lastTrain: null, confirmDel: 0 };
+  const CareerUI = { C: null, tab: 'camp', pick: { base: 'striker', color: null, skin: null, look: null }, justFought: false, lastTrain: null, confirmDel: 0 };
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const hex = (c) => '#' + (c >>> 0).toString(16).padStart(6, '0');
   const pct100 = (v) => Math.round(v * 100);
   function careerSave() { if (CareerUI.C) Career.save(CareerUI.C); }
   function careerLoad() { if (!CareerUI.C) CareerUI.C = Career.load(); return CareerUI.C; }
-  function refreshMenuCareer() { const b = $('#btnCareer'); if (b) b.textContent = careerLoad() ? 'CONTINUE CAREER' : 'START A CAREER'; }
+  function refreshMenuCareer() {
+    const has = !!careerLoad();
+    const b = $('#btnCareer'); if (b) b.textContent = has ? 'CONTINUE CAREER' : 'START A CAREER';
+    const n = $('#btnCareerNew'); if (n) { n.classList.toggle('hidden', !has); n.textContent = 'NEW CAREER'; CareerUI.confirmNew = 0; }
+  }
 
   // ---- new fighter ----
   function swatches(el, list, sel, onPick) {
     el.innerHTML = list.map((c, i) => '<i data-i="' + i + '" style="background:' + hex(c) + '" class="' + (c === sel ? 'sel' : '') + '"></i>').join('');
     el.querySelectorAll('i').forEach(i => i.onclick = () => onPick(list[+i.dataset.i]));
   }
+  // a row of named choices (build, hair style, facial hair)
+  function segPicker(el, list, sel, onPick) {
+    el.innerHTML = list.map(o => '<button type="button" data-id="' + o.id + '" class="' + (o.id === sel ? 'on' : '') + '">' + esc(o.name) + '</button>').join('');
+    el.querySelectorAll('button').forEach(b => b.onclick = () => onPick(b.dataset.id));
+  }
   function openCareerNew() {
     const P = CareerUI.pick;
     if (P.color == null) P.color = Career.COLORS[0];
     if (P.skin == null) P.skin = Career.SKINS[0];
+    if (!P.look) P.look = Career.normalizeLook(null);
     const el = $('#careerBases'); el.innerHTML = '';
     for (const key in ROSTER) {
       const r = ROSTER[key], st = Career.startingStats(key);
@@ -691,17 +937,74 @@
       c.onclick = () => { P.base = key; el.querySelectorAll('.card').forEach(x => x.classList.toggle('sel', x.dataset.key === key)); };
       el.appendChild(c);
     }
-    swatches($('#careerColors'), Career.COLORS, P.color, (c) => { P.color = c; openCareerNew(); });
-    swatches($('#careerSkins'), Career.SKINS, P.skin, (c) => { P.skin = c; openCareerNew(); });
+    renderLookPicks();
     try { if (!$('#careerName').value) $('#careerName').value = localStorage.getItem('cr_name') || ''; } catch (_) {}
     screen('careerNew');
+    LookPreview.start();
   }
+  // the pickers for everything the renderer can vary; every change rebuilds the preview model
+  function renderLookPicks() {
+    const P = CareerUI.pick, L = P.look, LK = Career.LOOK;
+    const set = (fn) => { fn(); renderLookPicks(); LookPreview.rebuild(); };
+    swatches($('#careerColors'), Career.COLORS, P.color, (c) => set(() => { P.color = c; }));
+    swatches($('#careerSkins'), Career.SKINS, P.skin, (c) => set(() => { P.skin = c; }));
+    swatches($('#lkHairColor'), LK.hairColors, L.hairColor, (c) => set(() => { L.hairColor = c; }));
+    swatches($('#lkTrim'), LK.trims, L.trim, (c) => set(() => { L.trim = c; }));
+    swatches($('#lkGloves'), LK.gloves, L.gloves, (c) => set(() => { L.gloves = c; }));
+    segPicker($('#lkBuild'), LK.build, L.build, (id) => set(() => { L.build = id; }));
+    segPicker($('#lkHair'), LK.hair, L.hair, (id) => set(() => { L.hair = id; }));
+    segPicker($('#lkBeard'), LK.beard, L.beard, (id) => set(() => { L.beard = id; }));
+    $('#btnLookRandom').onclick = () => set(() => { P.look = Career.randomLook(); P.color = Career.COLORS[(Math.random() * Career.COLORS.length) | 0]; P.skin = Career.SKINS[(Math.random() * Career.SKINS.length) | 0]; });
+  }
+  // the fighter in the new-career panel: its own small scene, the model standing in its bind pose, turned by dragging
+  const LookPreview = {
+    on: false, yaw: 0.35, drag: null, spin: true,
+    init() {
+      if (this.R) return true;
+      const canvas = $('#careerPreview'); if (!canvas || !window.THREE) return false;
+      try { this.R = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true }); } catch (_) { return false; }
+      this.R.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2)); this.R.setClearColor(0x000000, 0);
+      this.R.outputEncoding = THREE.sRGBEncoding; this.R.toneMapping = THREE.ACESFilmicToneMapping; this.R.toneMappingExposure = 0.85;
+      this.scene = new THREE.Scene();
+      this.scene.add(new THREE.HemisphereLight(0x8899bb, 0x201a14, 0.35));
+      const key = new THREE.DirectionalLight(0xfff2dd, 0.6); key.position.set(2.5, 4, 3); this.scene.add(key);
+      const fill = new THREE.DirectionalLight(0xa9c4ff, 0.25); fill.position.set(-3, 2, -2); this.scene.add(fill);
+      this.cam = new THREE.PerspectiveCamera(30, 3 / 4, 0.1, 20);
+      this.pivot = new THREE.Vector3(0, 0.98, 0);
+      canvas.addEventListener('pointerdown', (e) => { this.drag = { x: e.clientX, yaw: this.yaw }; this.spin = false; canvas.setPointerCapture(e.pointerId); });
+      canvas.addEventListener('pointermove', (e) => { if (this.drag) this.yaw = this.drag.yaw + (e.clientX - this.drag.x) * 0.012; });
+      canvas.addEventListener('pointerup', () => { this.drag = null; }); canvas.addEventListener('pointercancel', () => { this.drag = null; });
+      return true;
+    },
+    start() { if (!this.init()) return; this.on = true; this.rebuild(); if (!this._raf) this._raf = requestAnimationFrame((t) => this.frame(t)); },
+    stop() { this.on = false; if (this.model) { this.model.dispose(); this.model = null; } },
+    rebuild() {
+      if (!this.R || !this.on) return;
+      const P = CareerUI.pick;
+      if (this.model) this.model.dispose();
+      this.model = new window.MMARender.FighterModel(this.scene, P.color, P.skin, 0, { look: P.look });
+    },
+    frame(t) {
+      this._raf = 0;
+      if (!this.on) return;
+      this._raf = requestAnimationFrame((t2) => this.frame(t2));
+      const canvas = $('#careerPreview'), w = canvas.clientWidth | 0, h = canvas.clientHeight | 0;
+      if (!w || !h || !this.model) return;
+      if (canvas.width !== Math.round(w * this.R.getPixelRatio()) || canvas.height !== Math.round(h * this.R.getPixelRatio())) { this.R.setSize(w, h, false); this.cam.aspect = w / h; this.cam.updateProjectionMatrix(); }
+      const dt = this._t ? Math.min(0.1, (t - this._t) / 1000) : 0; this._t = t;
+      if (this.spin && !this.drag) this.yaw += dt * 0.35;
+      const d = 3.4;
+      this.cam.position.set(Math.sin(this.yaw) * d, 1.35, Math.cos(this.yaw) * d); this.cam.lookAt(this.pivot);
+      this.R.render(this.scene, this.cam);
+    }
+  };
   function startCareer() {
     const name = ($('#careerName').value || '').trim();
     if (!name) { toast('Give your fighter a name.'); $('#careerName').focus(); return; }
     const P = CareerUI.pick;
-    CareerUI.C = Career.newCareer({ name, nick: $('#careerNick').value, base: P.base, color: P.color, skin: P.skin });
+    CareerUI.C = Career.newCareer({ name, nick: $('#careerNick').value, base: P.base, color: P.color, skin: P.skin, look: P.look });
     careerSave(); CareerUI.justFought = false; CareerUI.lastTrain = null;
+    LookPreview.stop();
     openCareer();
   }
 
@@ -731,7 +1034,7 @@
   // keepScene: a fight is about to take the scene over; otherwise put the menu's demo arena back
   function exitGym(keepScene) {
     if (!App.gym || !App.gym.active) return;
-    App.gym.leave(); hide($('#gymHud'));
+    App.gym.leave(); hide($('#gymHud')); releasePointer();
     if (App.mode === 'gym') App.mode = null;
     if (!keepScene) menuScene();
   }
@@ -740,7 +1043,7 @@
     // once a fight is booked the computer shows the fight card (and the FIGHT button on fight week)
     if (id === 'computer' && C.booked) { tab = 'camp'; id = 'computerBooked'; }
     CareerUI.tab = tab; CareerUI.station = id || tab;
-    App.gym.paused = true; App.held = 0; App.pressed = 0;
+    App.gym.paused = true; App.held = 0; App.pressed = 0; releasePointer();
     hide($('#gymHud'));
     renderCareer(); show($('#career'));
     $('#career .panel').scrollTop = 0;
@@ -891,7 +1194,7 @@
       h += '<h3>WEEK ' + (o.weeks - B.weeksLeft + 1) + ' OF ' + o.weeks + ' — WHAT ARE YOU TRAINING?</h3>' + trainGrid(C);
     } else {
       const inj = Career.injuryTotal(C);
-      h += '<div class="fight-now"><div><div class="t">IT\'S FIGHT NIGHT</div><small>' + (inj > 30 ? 'You are going in hurt (' + Math.round(inj) + ' damage carried) — it shows up on your damage meters from the first bell.' : inj > 0 ? 'A little banged up (' + Math.round(inj) + '), nothing serious.' : 'Healthy and ready.') + ' Quitting mid-fight counts as pulling out: no purse, and the promoter remembers.</small></div><button class="big" id="btnCareerFight">FIGHT</button></div>';
+      h += '<div class="fight-now"><div><div class="t">IT\'S FIGHT NIGHT</div><small>' + (inj > 30 ? 'You are going in hurt (' + Math.round(inj) + ' damage carried).' : inj > 0 ? 'A little banged up (' + Math.round(inj) + '), nothing serious.' : 'Healthy and ready.') + '</small></div><button class="big" id="btnCareerFight">FIGHT</button></div>';
     }
     if (B.plan.length) h += '<div class="camp-plan">Camp so far: ' + B.plan.map(p => '<b>' + (p === 'rest' ? 'Rest' : Career.STAT_BY_KEY[p].label) + '</b>').join(' → ') + '</div>';
     el.innerHTML = h; bindTrain(el);
@@ -965,7 +1268,15 @@
   }
   function leaveCareerFight() { settleCareerFight(); stopFight(); openCareer(); }
   $('#btnCareer').onclick = () => { App.audio.init(); if (careerLoad()) openCareer(); else openCareerNew(); };
-  $('#btnCareerNewBack').onclick = () => screen('menu');
+  $('#btnCareerNewBack').onclick = () => { LookPreview.stop(); screen('menu'); };
+  // NEW CAREER on the main menu: shown only when a save exists. Click twice to confirm; the old save is
+  // kept until the new fighter is actually started, so backing out of the creation screen loses nothing.
+  $('#btnCareerNew').onclick = () => {
+    const b = $('#btnCareerNew');
+    if ((CareerUI.confirmNew = (CareerUI.confirmNew || 0) + 1) < 2) { b.textContent = 'CLICK AGAIN · REPLACES CURRENT SAVE'; setTimeout(() => { CareerUI.confirmNew = 0; b.textContent = 'NEW CAREER'; }, 4000); return; }
+    CareerUI.confirmNew = 0; b.textContent = 'NEW CAREER';
+    App.audio.init(); CareerUI.pick = { base: 'striker', color: null, skin: null, look: null }; openCareerNew();
+  };
   $('#btnCareerStart').onclick = () => startCareer();
   $('#careerName').addEventListener('keydown', (e) => { if (e.key === 'Enter') startCareer(); });
   $('#btnCareerMenu').onclick = () => { careerSave(); screen('menu'); };
@@ -991,6 +1302,10 @@
   $('#btnPractice').onclick = () => { App.audio.init(); enterLobby('practice'); };
   $('#btnWatch').onclick = () => { App.audio.init(); enterLobby('watch'); };
   $('#btnOptions').onclick = () => openOptions();
+  if (window.desktop) { // Electron build (desktop/preload.js)
+    $('#btnQuit').classList.remove('hidden');
+    $('#btnQuit').onclick = () => window.desktop.quit();
+  }
   $('#btnLobbyOptions').onclick = () => openOptions();
   $('#btnOptClose').onclick = () => closeOptions();
   $('#btnOptReset').onclick = () => resetControls();
@@ -1106,21 +1421,29 @@
   window.addEventListener('mmaphys', (e) => { if (!e.detail.ok) { App.physFailed = true; toast('Physics engine failed to load: ' + (e.detail.error && e.detail.error.message), 8000); } });
 
   // Hidden extras: clicking the title's G (#titleG) opens the 'more' screen.
-  const Extras = { mark: false };
+  const Extras = { mark: false, ref: true, sphere: true };
   function loadExtras() {
     try {
       Extras.mark = localStorage.getItem('cr_fx_1') === '1';
+      Extras.ref = localStorage.getItem('cr_ref') !== '0';
+      Extras.sphere = localStorage.getItem('cr_sphere') !== '0';
     } catch (_) {}
   }
   function saveExtras() {
     try {
       localStorage.setItem('cr_fx_1', Extras.mark ? '1' : '0');
+      localStorage.setItem('cr_ref', Extras.ref ? '1' : '0');
+      localStorage.setItem('cr_sphere', Extras.sphere ? '1' : '0');
     } catch (_) {}
   }
   function syncExtras() {
     const mark = $('#optMark');
     if (mark) mark.checked = Extras.mark;
-    if (App.renderer) App.renderer.setMarks(Extras.mark);
+    const ref = $('#optRef');
+    if (ref) ref.checked = Extras.ref;
+    const sphere = $('#optSphere');
+    if (sphere) sphere.checked = Extras.sphere;
+    if (App.renderer) { App.renderer.setMarks(Extras.mark); App.renderer.setRefVisible(Extras.ref); App.renderer.setImpactSphere(Extras.sphere); }
     updateHint();
   }
   function lineName(i) {
@@ -1129,14 +1452,17 @@
     if (i === App.myIdx) return myName() || 'You';
     return 'Opponent';
   }
+  const cleanLine = (text) => String(text || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+  const SAY_GAP_MS = 300; // the host takes at most one chat line per this from the guest (see onHostData)
+  let guestSayT = -1e9;
   function showLine(i, text) {
-    text = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    text = cleanLine(text);
     if (!text || !App.talk) return;
     const slot = App.state && App.state.f && App.state.f[i] ? i : null;
     App.talk.add(lineName(i), text, slot);
   }
   function postLine(text) {
-    text = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    text = cleanLine(text);
     if (!text) return;
     if (App.mode === 'guest') { if (App.net) App.net.send({ t: 'say', m: text }); return; }
     showLine(App.myIdx, text);
@@ -1162,6 +1488,8 @@
   $('#titleG').onclick = () => { if ($('#menu').classList.contains('hidden')) return; screen('more'); syncExtras(); };
   $('#btnMoreClose').onclick = () => screen('menu');
   $('#optMark').addEventListener('change', () => { Extras.mark = $('#optMark').checked; saveExtras(); syncExtras(); });
+  $('#optRef').addEventListener('change', () => { Extras.ref = $('#optRef').checked; saveExtras(); syncExtras(); });
+  $('#optSphere').addEventListener('change', () => { Extras.sphere = $('#optSphere').checked; saveExtras(); syncExtras(); });
   syncExtras();
   App.talk = new CageTalk.Talk();
   App.talk.mount();

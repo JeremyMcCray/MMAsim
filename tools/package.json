@@ -1,0 +1,14 @@
+{
+  "name": "cage-rules-tools",
+  "private": true,
+  "description": "Dev tooling for the tools/ scripts (render checks, gym tests). The game itself has no dependencies.",
+  "scripts": {
+    "test:headless": "node headless.js 4",
+    "test:check": "node check-test.js",
+    "test:gym": "node gym-test.js",
+    "test:gym-fight": "node gym-fight-test.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.64.0"
+  }
+}

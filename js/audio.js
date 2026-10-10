@@ -4,7 +4,7 @@
   const MUSIC_DEFAULT = 0.2; // modest bed so the tracks sit under hits
   class Audio {
     constructor() {
-      this.ctx = null; this.master = null; this.muted = false; this.crowdGain = null;
+      this.ctx = null; this.master = null; this.muted = false; this.crowdGain = null; this.crowdBase = 0;
       this.musicVol = MUSIC_DEFAULT; this.musicMuted = false; this.tracks = null; this.current = null; this.wanted = null; this._musicWarned = false;
       this.analyser = null; this._specSrc = null; this._specEl = null; this._freq = null; this._specListen = null;
       try {
@@ -28,7 +28,6 @@
       const bp = this.ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 350; bp.Q.value = 0.6;
       this.crowdGain = this.ctx.createGain(); this.crowdGain.gain.value = 0.0;
       src.connect(lp); lp.connect(bp); bp.connect(this.crowdGain); this.crowdGain.connect(this.master); src.start();
-      this.crowdLevel = 0.05;
       if (this.ctx.state === 'suspended') this.ctx.resume();
     }
     // Plain <audio> elements, not MediaElementSource. Routing file:// media
@@ -229,8 +228,9 @@
         });
       }
     }
-    setCrowd(level) { if (!this.crowdGain) return; const t = this.ctx.currentTime; this.crowdGain.gain.cancelScheduledValues(t); this.crowdGain.gain.setTargetAtTime(level, t, 0.4); }
-    roar(amount) { if (!this.crowdGain) return; const t = this.ctx.currentTime; this.crowdGain.gain.cancelScheduledValues(t); this.crowdGain.gain.setTargetAtTime(Math.min(0.5, 0.08 + amount), t, 0.08); this.crowdGain.gain.setTargetAtTime(0.06, t + 1.2, 1.2); }
+    // crowdBase: the bed level a roar settles back to; 0 means no crowd (menu, gym), so roars are skipped
+    setCrowd(level) { this.crowdBase = level; if (!this.crowdGain) return; const t = this.ctx.currentTime; this.crowdGain.gain.cancelScheduledValues(t); this.crowdGain.gain.setTargetAtTime(level, t, 0.4); }
+    roar(amount) { if (!this.crowdGain || !this.crowdBase) return; const t = this.ctx.currentTime; this.crowdGain.gain.cancelScheduledValues(t); this.crowdGain.gain.setTargetAtTime(Math.min(0.5, 0.08 + amount), t, 0.08); this.crowdGain.gain.setTargetAtTime(this.crowdBase, t + 1.2, 1.2); }
 
     _noise(dur, freq, q, gain, type) {
       const c = this.ctx, t = c.currentTime;

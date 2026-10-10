@@ -3,6 +3,9 @@
 // per strike so the whole motion can be read at a glance.
 //   node tools/strike-shots.js [outdir=/tmp/strikes] [strike,strike,...]
 // Strike names: overhand, hook, straight, uppercut, hkick, bkick, lkick, knee, teep (rear side), prefix 'l' for lead.
+// NOTE: turn the referee off before taking reference pictures, so he isn't in the frame or blocking the fighters:
+//   await page.evaluate(() => window.CageRules.renderer.setRefVisible(false));  (any time after page load; it sticks across fights)
+// or untick Options > Show referee (saved as localStorage cr_ref = '0').
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const ROOT = path.resolve(__dirname, '..'); const outdir = process.argv[2] || '/tmp/strikes'; fs.mkdirSync(outdir, { recursive: true });
@@ -42,7 +45,7 @@ const server = http.createServer((req, res) => {
     await page.evaluate(([dx, dy, dz, ly, W, H]) => {
       const A = window.CageRules, R = A.renderer, m = R.models[0];
       const o = R.models[1]; const fx = o.px - m.px, fz = o.pz - m.pz, L = Math.hypot(fx, fz) || 1, ux = fx / L, uz = fz / L;
-      const cx = m.px + ux * dz + uz * dx, cz = m.pz + uz * dz - ux * dx;
+      const cx = m.px + ux * dz - uz * dx, cz = m.pz + uz * dz + ux * dx; // dx = his right: (-uz, ux)
       R.camera.aspect = W / H; R.camera.updateProjectionMatrix();
       R.camera.position.set(cx, dy, cz); R.camera.lookAt(m.px + ux * 0.25, ly, m.pz + uz * 0.25);
       R.renderer.render(R.scene, R.camera);

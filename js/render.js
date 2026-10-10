@@ -20,93 +20,93 @@
   // hp: head pitch, hy: head yaw, lie: body pitch (0 standing, -PI/2 on back)
   function P(o) {
     return Object.assign({
-      h: HIP_H, lean: 0.08, yaw: 0.25, roll: 0,
-      lh: [-0.14, 0.42, 0.34], rh: [0.16, 0.38, 0.22],
-      lf: [-0.16, 0.2], rf: [0.2, -0.24], lfy: 0, rfy: 0, lfz: null, rfz: null,
-      hp: 0.05, hy: -0.15, lie: 0, ox: 0, oz: 0, elbowOut: 0.5, elbowUp: 0, hipYaw: 0, lPole: [0, 0, 1], rPole: [0, 0, 1]
+      h: HIP_H, lean: 0.08, yaw: -0.25, roll: 0,
+      lh: [0.14, 0.42, 0.34], rh: [-0.16, 0.38, 0.22],
+      lf: [0.16, 0.2], rf: [-0.2, -0.24], lfy: 0, rfy: 0, lfz: null, rfz: null,
+      hp: 0.05, hy: 0.15, lie: 0, ox: 0, oz: 0, elbowOut: 0.5, elbowUp: 0, hipYaw: 0, lPole: [0, 0, 1], rPole: [0, 0, 1]
     }, o);
   }
   const POSES = {
     idle: P({}),
-    block: P({ lh: [-0.09, 0.68, 0.22], rh: [0.09, 0.66, 0.2], h: HIP_H - 0.05, lean: 0.18, hp: 0.25, elbowOut: 0.25 }),
-    blockLow: P({ yaw: 0.6, lean: 0.12, h: HIP_H - 0.04, lh: [0.08, 0.1, 0.3], rh: [0.14, 0.5, 0.2], hp: 0.2, hy: -0.35, elbowOut: 0.2 }),
-    dodge: P({ lean: -0.42, h: HIP_H - 0.08, oz: -0.18, lh: [-0.14, 0.5, 0.3], rh: [0.16, 0.48, 0.22], hp: -0.2 }),
-    hitHead: P({ lean: -0.3, hp: -0.55, hy: 0.4, lh: [-0.2, 0.3, 0.25], rh: [0.22, 0.25, 0.1], h: HIP_H - 0.03 }),
-    hitBody: P({ lean: 0.5, h: HIP_H - 0.14, hp: 0.4, lh: [-0.1, 0.1, 0.3], rh: [0.15, 0.05, 0.25] }),
-    hitLegs: P({ lean: 0.25, h: HIP_H - 0.2, roll: 0.25, lh: [-0.14, 0.3, 0.3], rh: [0.3, 0.2, 0.1] }),
-    push: P({ lean: 0.3, h: HIP_H - 0.06, oz: 0.08, lh: [-0.17, 0.46, 0.66], rh: [0.17, 0.46, 0.66], hp: 0.05, elbowOut: 0.2 }),
-    stumble: P({ lean: 0.55, h: HIP_H - 0.25, lh: [-0.3, -0.1, 0.4], rh: [0.3, -0.05, 0.35], hp: 0.3 }),
-    sprawl: P({ lean: 1.05, h: HIP_H - 0.32, lh: [-0.26, -0.3, 0.5], rh: [0.26, -0.3, 0.5], lf: [-0.2, -0.25], rf: [0.22, -0.3], hp: -0.3 }),
-    tdWind: P({ lean: 0.75, h: HIP_H - 0.3, lh: [-0.2, 0.0, 0.5], rh: [0.2, 0.0, 0.45], lf: [-0.16, 0.3], rf: [0.2, -0.3], hp: -0.3 }),
-    tdShoot: P({ lean: 1.0, h: HIP_H - 0.36, lh: [-0.22, -0.15, 0.75], rh: [0.22, -0.15, 0.7], lf: [-0.16, 0.55], rf: [0.2, -0.1], oz: 0.25, hp: -0.5 }),
-    celebrate: P({ lean: -0.15, lh: [-0.3, 1.0, 0.1], rh: [0.3, 1.0, 0.1], hp: -0.3, hy: 0, yaw: 0 }),
+    block: P({ lh: [0.09, 0.68, 0.22], rh: [-0.09, 0.66, 0.2], h: HIP_H - 0.05, lean: 0.18, hp: 0.25, elbowOut: 0.25 }),
+    blockLow: P({ yaw: -0.6, lean: 0.12, h: HIP_H - 0.04, lh: [-0.08, 0.1, 0.3], rh: [-0.14, 0.5, 0.2], hp: 0.2, hy: 0.35, elbowOut: 0.2 }),
+    dodge: P({ lean: -0.42, h: HIP_H - 0.08, oz: -0.18, lh: [0.14, 0.5, 0.3], rh: [-0.16, 0.48, 0.22], hp: -0.2 }),
+    hitHead: P({ lean: -0.3, hp: -0.55, hy: -0.4, lh: [0.2, 0.3, 0.25], rh: [-0.22, 0.25, 0.1], h: HIP_H - 0.03 }),
+    hitBody: P({ lean: 0.5, h: HIP_H - 0.14, hp: 0.4, lh: [0.1, 0.1, 0.3], rh: [-0.15, 0.05, 0.25] }),
+    hitLegs: P({ lean: 0.25, h: HIP_H - 0.2, roll: -0.25, lh: [0.14, 0.3, 0.3], rh: [-0.3, 0.2, 0.1] }),
+    push: P({ lean: 0.3, h: HIP_H - 0.06, oz: 0.08, lh: [0.17, 0.46, 0.66], rh: [-0.17, 0.46, 0.66], hp: 0.05, elbowOut: 0.2 }),
+    stumble: P({ lean: 0.55, h: HIP_H - 0.25, lh: [0.3, -0.1, 0.4], rh: [-0.3, -0.05, 0.35], hp: 0.3 }),
+    sprawl: P({ lean: 1.05, h: HIP_H - 0.32, lh: [0.26, -0.3, 0.5], rh: [-0.26, -0.3, 0.5], lf: [0.2, -0.25], rf: [-0.22, -0.3], hp: -0.3 }),
+    tdWind: P({ lean: 0.75, h: HIP_H - 0.3, lh: [0.2, 0.0, 0.5], rh: [-0.2, 0.0, 0.45], lf: [0.16, 0.3], rf: [-0.2, -0.3], hp: -0.3 }),
+    tdShoot: P({ lean: 1.0, h: HIP_H - 0.36, lh: [0.22, -0.15, 0.75], rh: [-0.22, -0.15, 0.7], lf: [0.16, 0.55], rf: [-0.2, -0.1], oz: 0.25, hp: -0.5 }),
+    celebrate: P({ lean: -0.15, lh: [0.3, 1.0, 0.1], rh: [-0.3, 1.0, 0.1], hp: -0.3, hy: 0, yaw: 0 }),
     // ground
-    bottom: P({ lie: -Math.PI / 2, h: 0.2, lean: 0.25, yaw: 0, lh: [-0.16, 0.5, 0.32], rh: [0.16, 0.48, 0.3], lf: [-0.2, -0.14], rf: [0.2, -0.14], lfy: -0.48, rfy: -0.5, hp: 0.35, hy: 0 }),
-    bottomBlock: P({ lie: -Math.PI / 2, h: 0.2, lean: 0.25, yaw: 0, lh: [-0.1, 0.62, 0.42], rh: [0.1, 0.6, 0.42], lf: [-0.2, -0.14], rf: [0.2, -0.14], lfy: -0.48, rfy: -0.5, hp: 0.5, hy: 0 }),
-    bottomHit: P({ lie: -Math.PI / 2, h: 0.2, lean: 0.05, yaw: 0.2, lh: [-0.3, 0.3, 0.2], rh: [0.3, 0.3, 0.15], lf: [-0.24, -0.14], rf: [0.16, -0.14], lfy: -0.52, rfy: -0.46, hp: -0.2, hy: 0.5 }),
-    down: P({ lie: -Math.PI / 2, h: 0.17, lean: 0, yaw: 0, lh: [-0.5, 0.75, 0.05], rh: [0.5, 0.7, 0.05], lf: [-0.24, -0.1], rf: [0.2, -0.1], lfy: -0.9, rfy: -0.88, hp: 0.2, hy: 0.4 }),
-    top: P({ h: 0.5, lean: 0.55, yaw: 0, lh: [-0.2, -0.05, 0.4], rh: [0.2, -0.05, 0.4], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3, hy: 0 }),
-    topPosture: P({ h: 0.55, lean: 0.25, yaw: 0, lh: [-0.2, 0.1, 0.45], rh: [0.2, 0.1, 0.45], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.35, hy: 0 }),
-    topSub: P({ h: 0.38, lean: 1.15, yaw: 0.3, lh: [-0.1, -0.2, 0.55], rh: [0.2, -0.15, 0.5], lf: [-0.3, -0.5], rf: [0.3, -0.45], hp: 0.1, hy: 0.3 }),
-    topHit: P({ h: 0.5, lean: -0.1, yaw: 0.2, lh: [-0.3, 0.3, 0.3], rh: [0.3, 0.3, 0.3], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: -0.3 }),
+    bottom: P({ lie: -Math.PI / 2, h: 0.2, lean: 0.25, yaw: 0, lh: [0.16, 0.5, 0.32], rh: [-0.16, 0.48, 0.3], lf: [0.2, -0.14], rf: [-0.2, -0.14], lfy: -0.48, rfy: -0.5, hp: 0.35, hy: 0 }),
+    bottomBlock: P({ lie: -Math.PI / 2, h: 0.2, lean: 0.25, yaw: 0, lh: [0.1, 0.62, 0.42], rh: [-0.1, 0.6, 0.42], lf: [0.2, -0.14], rf: [-0.2, -0.14], lfy: -0.48, rfy: -0.5, hp: 0.5, hy: 0 }),
+    bottomHit: P({ lie: -Math.PI / 2, h: 0.2, lean: 0.05, yaw: -0.2, lh: [0.3, 0.3, 0.2], rh: [-0.3, 0.3, 0.15], lf: [0.24, -0.14], rf: [-0.16, -0.14], lfy: -0.52, rfy: -0.46, hp: -0.2, hy: -0.5 }),
+    down: P({ lie: -Math.PI / 2, h: 0.17, lean: 0, yaw: 0, lh: [0.5, 0.75, 0.05], rh: [-0.5, 0.7, 0.05], lf: [0.24, -0.1], rf: [-0.2, -0.1], lfy: -0.9, rfy: -0.88, hp: 0.2, hy: -0.4 }),
+    top: P({ h: 0.5, lean: 0.55, yaw: 0, lh: [0.2, -0.05, 0.4], rh: [-0.2, -0.05, 0.4], lf: [0.26, -0.55], rf: [-0.26, -0.55], hp: 0.3, hy: 0 }),
+    topPosture: P({ h: 0.55, lean: 0.25, yaw: 0, lh: [0.2, 0.1, 0.45], rh: [-0.2, 0.1, 0.45], lf: [0.26, -0.55], rf: [-0.26, -0.55], hp: 0.35, hy: 0 }),
+    topSub: P({ h: 0.38, lean: 1.15, yaw: -0.3, lh: [0.1, -0.2, 0.55], rh: [-0.2, -0.15, 0.5], lf: [0.3, -0.5], rf: [-0.3, -0.45], hp: 0.1, hy: -0.3 }),
+    topHit: P({ h: 0.5, lean: -0.1, yaw: -0.2, lh: [0.3, 0.3, 0.3], rh: [-0.3, 0.3, 0.3], lf: [0.26, -0.55], rf: [-0.26, -0.55], hp: -0.3 }),
     // --- positional ground poses ---
     // Lying poses: lf/rf = [across, height above the hips], lfy/rfy = -(distance towards the feet end); the knee
     // poles are [across, towards the head, up]. The top fighter kneels GROUND_OFF.guard (0.32 m) towards the feet end
     // with his hips 0.5 m up, so the guard's ankles cross behind his back: 0.55 m down the axis, 0.62 m off the mat.
     // bottom in closed guard: hips lifted onto the top's thighs, knees out wide around his waist, ankles crossed behind him
-    bottomGuard: P({ lie: -Math.PI / 2, h: 0.3, lean: 0.3, yaw: 0, lh: [-0.18, 0.45, 0.35], rh: [0.18, 0.42, 0.33], lf: [0.1, 0.32], rf: [-0.1, 0.3], lfy: -0.55, rfy: -0.55, lPole: [-1, 0, 0.5], rPole: [1, 0, 0.5], hp: 0.4, hy: 0 }),
+    bottomGuard: P({ lie: -Math.PI / 2, h: 0.3, lean: 0.3, yaw: 0, lh: [0.18, 0.45, 0.35], rh: [-0.18, 0.42, 0.33], lf: [-0.1, 0.32], rf: [0.1, 0.3], lfy: -0.55, rfy: -0.55, lPole: [1, 0, 0.5], rPole: [-1, 0, 0.5], hp: 0.4, hy: 0 }),
     // half guard: one leg hooked around the top's thigh (knee out, foot behind his knee), the other flat
-    bottomHalf: P({ lie: -Math.PI / 2, h: 0.2, lean: 0.25, yaw: 0.15, lh: [-0.18, 0.45, 0.35], rh: [0.18, 0.42, 0.33], lf: [0.0, 0.2], rf: [0.22, -0.2], lfy: -0.55, rfy: -0.5, lPole: [-1, 0, 0.6], hp: 0.4, hy: 0 }),
+    bottomHalf: P({ lie: -Math.PI / 2, h: 0.2, lean: 0.25, yaw: -0.15, lh: [0.18, 0.45, 0.35], rh: [-0.18, 0.42, 0.33], lf: [0.0, 0.2], rf: [-0.22, -0.2], lfy: -0.55, rfy: -0.5, lPole: [1, 0, 0.6], hp: 0.4, hy: 0 }),
     // flat on the back (side control / mount): framing with the arms, legs flat
-    bottomFlat: P({ lie: -Math.PI / 2, h: 0.18, lean: 0.1, yaw: 0, lh: [-0.2, 0.55, 0.3], rh: [0.2, 0.52, 0.3], lf: [-0.22, -0.2], rf: [0.22, -0.2], lfy: -0.5, rfy: -0.5, hp: 0.3, hy: 0 }),
+    bottomFlat: P({ lie: -Math.PI / 2, h: 0.18, lean: 0.1, yaw: 0, lh: [0.2, 0.55, 0.3], rh: [-0.2, 0.52, 0.3], lf: [0.22, -0.2], rf: [-0.22, -0.2], lfy: -0.5, rfy: -0.5, hp: 0.3, hy: 0 }),
     // turtled (back control): on hands and knees
-    turtle: P({ lie: 0, h: 0.48, lean: 1.35, yaw: 0, lh: [-0.22, -0.25, 0.42], rh: [0.22, -0.25, 0.42], lf: [-0.22, -0.4], rf: [0.22, -0.4], lfy: 0, rfy: 0, hp: 0.2, hy: 0 }),
+    turtle: P({ lie: 0, h: 0.48, lean: 1.35, yaw: 0, lh: [0.22, -0.25, 0.42], rh: [-0.22, -0.25, 0.42], lf: [0.22, -0.4], rf: [-0.22, -0.4], lfy: 0, rfy: 0, hp: 0.2, hy: 0 }),
     // bottom attacking a submission from the guard: legs high, pulling the top down
-    bottomSub: P({ lie: -Math.PI / 2, h: 0.24, lean: 0.5, yaw: 0, lh: [-0.14, 0.15, 0.6], rh: [0.14, 0.15, 0.6], lf: [-0.2, 0.55], rf: [0.2, 0.55], lfy: 0.2, rfy: 0.25, hp: 0.5, hy: 0 }),
+    bottomSub: P({ lie: -Math.PI / 2, h: 0.24, lean: 0.5, yaw: 0, lh: [0.14, 0.15, 0.6], rh: [-0.14, 0.15, 0.6], lf: [0.2, 0.55], rf: [-0.2, 0.55], lfy: 0.2, rfy: 0.25, hp: 0.5, hy: 0 }),
     // top inside the guard: kneeling, posture mid
-    topGuard: P({ h: 0.5, lean: 0.5, yaw: 0, lh: [-0.2, -0.1, 0.42], rh: [0.2, -0.1, 0.42], lf: [-0.28, -0.5], rf: [0.28, -0.5], hp: 0.3, hy: 0 }),
+    topGuard: P({ h: 0.5, lean: 0.5, yaw: 0, lh: [0.2, -0.1, 0.42], rh: [-0.2, -0.1, 0.42], lf: [0.28, -0.5], rf: [-0.28, -0.5], hp: 0.3, hy: 0 }),
     // side control: chest down across them, hips low
-    topSide: P({ h: 0.42, lean: 1.0, yaw: 0.2, lh: [-0.25, -0.2, 0.5], rh: [0.25, -0.25, 0.45], lf: [-0.3, -0.5], rf: [0.3, -0.35], hp: 0.2, hy: 0.2 }),
+    topSide: P({ h: 0.42, lean: 1.0, yaw: -0.2, lh: [0.25, -0.2, 0.5], rh: [-0.25, -0.25, 0.45], lf: [0.3, -0.5], rf: [-0.3, -0.35], hp: 0.2, hy: -0.2 }),
     // mount: sat upright on the hips, knees wide
-    topMount: P({ h: 0.56, lean: 0.25, yaw: 0, lh: [-0.2, 0.25, 0.4], rh: [0.2, 0.25, 0.4], lf: [-0.4, -0.2], rf: [0.4, -0.2], hp: 0.35, hy: 0 }),
+    topMount: P({ h: 0.56, lean: 0.25, yaw: 0, lh: [0.2, 0.25, 0.4], rh: [-0.2, 0.25, 0.4], lf: [0.4, -0.2], rf: [-0.4, -0.2], hp: 0.35, hy: 0 }),
     // back control: chest on their back, hooks in, arms around the neck
-    topBack: P({ h: 0.62, lean: 1.1, yaw: 0, lh: [-0.15, -0.3, 0.5], rh: [0.15, -0.25, 0.55], lf: [-0.3, -0.4], rf: [0.3, -0.4], hp: 0.2, hy: 0 }),
+    topBack: P({ h: 0.62, lean: 1.1, yaw: 0, lh: [0.15, -0.3, 0.5], rh: [-0.15, -0.25, 0.55], lf: [0.3, -0.4], rf: [-0.3, -0.4], hp: 0.2, hy: 0 }),
     // caught in a submission from the bottom: bent down, head pulled in
-    topCaught: P({ h: 0.4, lean: 1.25, yaw: 0.2, lh: [-0.2, -0.3, 0.55], rh: [0.3, -0.1, 0.4], lf: [-0.3, -0.5], rf: [0.3, -0.45], hp: 0.3, hy: 0.3 })
+    topCaught: P({ h: 0.4, lean: 1.25, yaw: -0.2, lh: [0.2, -0.3, 0.55], rh: [-0.3, -0.1, 0.4], lf: [0.3, -0.5], rf: [-0.3, -0.45], hp: 0.3, hy: -0.3 })
   };
   // strike keyframes per strike kind: [windup, hit], authored for the RIGHT limb (rear side, orthodox).
   // Left-limb strikes use mirrored copies (upper body only for punches, so the stance stays orthodox).
   // The striking limb's own target is overridden every frame by the simulation's tip path (see update()).
   const STRIKE_POSES = {
-    straight: [P({ yaw: 0.5, lean: 0.05, lh: [-0.14, 0.44, 0.3], rh: [0.26, 0.36, 0.0] }),
-               P({ yaw: -0.55, lean: 0.25, lh: [-0.22, 0.45, 0.25], rh: [-0.05, 0.48, 0.92], oz: 0.12, hp: 0.1 })],
-    hook: [P({ yaw: 0.55, lean: 0.1, lh: [-0.14, 0.44, 0.3], rh: [0.36, 0.42, 0.15], elbowOut: 1.0, elbowUp: 0.9 }),
-           P({ yaw: -0.8, lean: 0.12, roll: -0.12, lh: [-0.22, 0.45, 0.25], rh: [-0.25, 0.5, 0.55], elbowOut: 1.2, elbowUp: 1.3, oz: 0.08 })],
-    uppercut: [P({ yaw: 0.45, lean: 0.22, h: HIP_H - 0.06, lh: [-0.14, 0.44, 0.3], rh: [0.3, 0.12, 0.12], hp: 0.15 }),
-               P({ yaw: -0.4, lean: -0.1, h: HIP_H + 0.01, lh: [-0.2, 0.45, 0.28], rh: [0.0, 0.62, 0.5], oz: 0.08, hp: -0.1 })],
-    overhand: [P({ yaw: 0.4, lean: 0.05, lh: [-0.14, 0.44, 0.3], rh: [0.46, 0.6, 0.15], elbowOut: 1.3, elbowUp: 1.1 }),
-               P({ yaw: -0.6, lean: 0.3, roll: -0.15, lh: [-0.24, 0.4, 0.25], rh: [-0.1, 0.45, 0.8], oz: 0.14, hp: 0.25, elbowOut: 1.1, elbowUp: 1.1 })],
-    hkick: [P({ yaw: -0.1, lean: 0.0, roll: 0.15, h: HIP_H - 0.05, hipYaw: -0.5, lh: [-0.18, 0.5, 0.3], rh: [0.34, 0.3, -0.05], rf: [0.42, 0.25], rfy: 0.72, rPole: [1, 0.3, 0.1], lf: [-0.1, 0.02], lPole: [0.4, 0, 1] }),
-            P({ yaw: -0.9, lean: -0.5, roll: 0.5, h: HIP_H + 0.02, hipYaw: -1.4, lh: [0.05, 0.42, 0.28], rh: [0.3, -0.15, -0.3], rf: [-0.5, 0.55], rfy: 1.4, rPole: [0.9, 0.6, 0.0], lf: [-0.1, 0.02], lPole: [0.9, 0, 0.4], oz: 0.1, hp: 0.1, hy: 0.7 })],
-    bkick: [P({ yaw: -0.1, lean: 0.0, roll: 0.12, h: HIP_H - 0.05, hipYaw: -0.45, lh: [-0.18, 0.5, 0.3], rh: [0.34, 0.3, -0.05], rf: [0.4, 0.25], rfy: 0.6, rPole: [1, 0.2, 0.1], lf: [-0.1, 0.02], lPole: [0.4, 0, 1] }),
-            P({ yaw: -0.8, lean: -0.35, roll: 0.4, h: HIP_H - 0.02, hipYaw: -1.25, lh: [0.05, 0.42, 0.28], rh: [0.3, -0.12, -0.3], rf: [-0.45, 0.65], rfy: 1.0, rPole: [0.9, 0.4, 0.1], lf: [-0.1, 0.02], lPole: [0.9, 0, 0.4], oz: 0.1, hp: 0.1, hy: 0.6 })],
-    lkick: [P({ yaw: -0.1, lean: 0.08, roll: 0.1, h: HIP_H - 0.07, hipYaw: -0.4, lh: [-0.18, 0.5, 0.3], rh: [0.34, 0.3, -0.05], rf: [0.38, 0.2], rfy: 0.45, rPole: [1, 0.1, 0.2], lf: [-0.1, 0.02], lPole: [0.4, 0, 1] }),
-            P({ yaw: -0.75, lean: -0.1, roll: 0.3, h: HIP_H - 0.1, hipYaw: -1.2, lh: [0.05, 0.42, 0.28], rh: [0.3, -0.1, -0.3], rf: [-0.4, 0.75], rfy: 0.4, rPole: [0.9, 0.2, 0.2], lf: [-0.1, 0.02], lPole: [0.9, 0, 0.4], oz: 0.12, hp: 0.15, hy: 0.55 })],
-    knee: [P({ yaw: 0.25, lean: 0.15, h: HIP_H - 0.04, lh: [-0.14, 0.5, 0.3], rh: [0.2, 0.5, 0.25], rf: [0.2, -0.3], rfy: 0.1, lf: [-0.14, 0.1] }),
-           P({ yaw: -0.15, lean: -0.35, h: HIP_H - 0.02, lh: [-0.12, 0.35, 0.45], rh: [0.14, 0.35, 0.45], rf: [0.1, 0.4], rfy: 0.8, rPole: [0.2, 0.3, 1], lf: [-0.14, 0.1], oz: 0.16, hp: 0.1 })],
-    teep: [P({ yaw: 0.2, lean: 0.12, h: HIP_H - 0.04, lh: [-0.14, 0.48, 0.3], rh: [0.18, 0.46, 0.22], rf: [0.2, 0.0], rfy: 0.5, rPole: [0.2, 0.2, 1], lf: [-0.12, 0.02] }),
-           P({ yaw: 0.1, lean: -0.3, h: HIP_H - 0.03, lh: [-0.16, 0.5, 0.26], rh: [0.2, 0.46, 0.18], rf: [0.1, 0.95], rfy: 1.0, rPole: [0.2, 0.4, 1], lf: [-0.12, 0.02], oz: 0.1, hp: -0.1 })],
+    straight: [P({ yaw: -0.5, lean: 0.05, lh: [0.14, 0.44, 0.3], rh: [-0.26, 0.36, 0.0] }),
+               P({ yaw: 0.55, lean: 0.25, lh: [0.22, 0.45, 0.25], rh: [0.05, 0.48, 0.92], oz: 0.12, hp: 0.1 })],
+    hook: [P({ yaw: -0.55, lean: 0.1, lh: [0.14, 0.44, 0.3], rh: [-0.36, 0.42, 0.15], elbowOut: 1.0, elbowUp: 0.9 }),
+           P({ yaw: 0.8, lean: 0.12, roll: 0.12, lh: [0.22, 0.45, 0.25], rh: [0.25, 0.5, 0.55], elbowOut: 1.2, elbowUp: 1.3, oz: 0.08 })],
+    uppercut: [P({ yaw: -0.45, lean: 0.22, h: HIP_H - 0.06, lh: [0.14, 0.44, 0.3], rh: [-0.3, 0.12, 0.12], hp: 0.15 }),
+               P({ yaw: 0.4, lean: -0.1, h: HIP_H + 0.01, lh: [0.2, 0.45, 0.28], rh: [0.0, 0.62, 0.5], oz: 0.08, hp: -0.1 })],
+    overhand: [P({ yaw: -0.4, lean: 0.05, lh: [0.14, 0.44, 0.3], rh: [-0.46, 0.6, 0.15], elbowOut: 1.3, elbowUp: 1.1 }),
+               P({ yaw: 0.6, lean: 0.3, roll: 0.15, lh: [0.24, 0.4, 0.25], rh: [0.1, 0.45, 0.8], oz: 0.14, hp: 0.25, elbowOut: 1.1, elbowUp: 1.1 })],
+    hkick: [P({ yaw: 0.1, lean: 0.0, roll: -0.15, h: HIP_H - 0.05, hipYaw: 0.5, lh: [0.18, 0.5, 0.3], rh: [-0.34, 0.3, -0.05], rf: [-0.42, 0.25], rfy: 0.72, rPole: [-1, 0.3, 0.1], lf: [0.1, 0.02], lPole: [-0.4, 0, 1] }),
+            P({ yaw: 0.9, lean: -0.5, roll: -0.5, h: HIP_H + 0.02, hipYaw: 1.4, lh: [-0.05, 0.42, 0.28], rh: [-0.3, -0.15, -0.3], rf: [0.5, 0.55], rfy: 1.4, rPole: [-0.9, 0.6, 0.0], lf: [0.1, 0.02], lPole: [-0.9, 0, 0.4], oz: 0.1, hp: 0.1, hy: -0.7 })],
+    bkick: [P({ yaw: 0.1, lean: 0.0, roll: -0.12, h: HIP_H - 0.05, hipYaw: 0.45, lh: [0.18, 0.5, 0.3], rh: [-0.34, 0.3, -0.05], rf: [-0.4, 0.25], rfy: 0.6, rPole: [-1, 0.2, 0.1], lf: [0.1, 0.02], lPole: [-0.4, 0, 1] }),
+            P({ yaw: 0.8, lean: -0.35, roll: -0.4, h: HIP_H - 0.02, hipYaw: 1.25, lh: [-0.05, 0.42, 0.28], rh: [-0.3, -0.12, -0.3], rf: [0.45, 0.65], rfy: 1.0, rPole: [-0.9, 0.4, 0.1], lf: [0.1, 0.02], lPole: [-0.9, 0, 0.4], oz: 0.1, hp: 0.1, hy: -0.6 })],
+    lkick: [P({ yaw: 0.1, lean: 0.08, roll: -0.1, h: HIP_H - 0.07, hipYaw: 0.4, lh: [0.18, 0.5, 0.3], rh: [-0.34, 0.3, -0.05], rf: [-0.38, 0.2], rfy: 0.45, rPole: [-1, 0.1, 0.2], lf: [0.1, 0.02], lPole: [-0.4, 0, 1] }),
+            P({ yaw: 0.75, lean: -0.1, roll: -0.3, h: HIP_H - 0.1, hipYaw: 1.2, lh: [-0.05, 0.42, 0.28], rh: [-0.3, -0.1, -0.3], rf: [0.4, 0.75], rfy: 0.4, rPole: [-0.9, 0.2, 0.2], lf: [0.1, 0.02], lPole: [-0.9, 0, 0.4], oz: 0.12, hp: 0.15, hy: -0.55 })],
+    knee: [P({ yaw: -0.25, lean: 0.15, h: HIP_H - 0.04, lh: [0.14, 0.5, 0.3], rh: [-0.2, 0.5, 0.25], rf: [-0.2, -0.3], rfy: 0.1, lf: [0.14, 0.1] }),
+           P({ yaw: 0.15, lean: -0.35, h: HIP_H - 0.02, lh: [0.12, 0.35, 0.45], rh: [-0.14, 0.35, 0.45], rf: [-0.1, 0.4], rfy: 0.8, rPole: [-0.2, 0.3, 1], lf: [0.14, 0.1], oz: 0.16, hp: 0.1 })],
+    teep: [P({ yaw: -0.2, lean: 0.12, h: HIP_H - 0.04, lh: [0.14, 0.48, 0.3], rh: [-0.18, 0.46, 0.22], rf: [-0.2, 0.0], rfy: 0.5, rPole: [-0.2, 0.2, 1], lf: [0.12, 0.02] }),
+           P({ yaw: -0.1, lean: -0.3, h: HIP_H - 0.03, lh: [0.16, 0.5, 0.26], rh: [-0.2, 0.46, 0.18], rf: [-0.1, 0.95], rfy: 1.0, rPole: [-0.2, 0.4, 1], lf: [0.12, 0.02], oz: 0.1, hp: -0.1 })],
     // ground strikes (top position)
-    gpunch: [P({ h: 0.52, lean: 0.35, yaw: -0.3, lh: [-0.2, -0.05, 0.4], rh: [0.25, 0.2, 0.25], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 }),
-             P({ h: 0.48, lean: 0.75, yaw: 0.0, lh: [-0.2, -0.05, 0.4], rh: [0.05, -0.3, 0.55], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 })],
-    ghammer: [P({ h: 0.55, lean: 0.1, yaw: -0.3, lh: [-0.2, -0.05, 0.4], rh: [0.35, 0.55, 0.1], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 }),
-              P({ h: 0.46, lean: 0.85, yaw: 0.0, lh: [-0.2, -0.05, 0.4], rh: [0.05, -0.35, 0.55], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 })],
-    gelbow: [P({ h: 0.55, lean: 0.2, yaw: -0.5, lh: [-0.2, -0.05, 0.4], rh: [0.45, 0.4, 0.2], elbowOut: 1.3, lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 }),
-             P({ h: 0.46, lean: 0.8, yaw: 0.3, lh: [-0.2, -0.05, 0.4], rh: [-0.15, -0.3, 0.5], elbowOut: 1.3, lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 })],
-    gbody: [P({ h: 0.52, lean: 0.3, yaw: -0.3, lh: [-0.2, -0.05, 0.4], rh: [0.3, 0.1, 0.3], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 }),
-            P({ h: 0.5, lean: 0.6, yaw: 0.1, lh: [-0.2, -0.05, 0.4], rh: [0.05, -0.3, 0.3], lf: [-0.26, -0.55], rf: [0.26, -0.55], hp: 0.3 })],
-    gknee: [P({ h: 0.55, lean: 0.4, yaw: 0, lh: [-0.2, -0.05, 0.4], rh: [0.2, -0.05, 0.4], lf: [-0.26, -0.55], rf: [0.3, -0.45], rfy: 0.25, hp: 0.3 }),
-            P({ h: 0.5, lean: 0.7, yaw: 0, lh: [-0.2, -0.05, 0.4], rh: [0.2, -0.05, 0.4], lf: [-0.26, -0.55], rf: [0.15, 0.15], rfy: 0.3, hp: 0.3 })]
+    gpunch: [P({ h: 0.52, lean: 0.35, yaw: 0.3, lh: [0.2, -0.05, 0.4], rh: [-0.25, 0.2, 0.25], lf: [0.26, -0.55], rf: [-0.26, -0.55], hp: 0.3 }),
+             P({ h: 0.48, lean: 0.75, yaw: 0.0, lh: [0.2, -0.05, 0.4], rh: [-0.05, -0.3, 0.55], lf: [0.26, -0.55], rf: [-0.26, -0.55], hp: 0.3 })],
+    ghammer: [P({ h: 0.55, lean: 0.1, yaw: 0.3, lh: [0.2, -0.05, 0.4], rh: [-0.35, 0.55, 0.1], lf: [0.26, -0.55], rf: [-0.26, -0.55], hp: 0.3 }),
+              P({ h: 0.46, lean: 0.85, yaw: 0.0, lh: [0.2, -0.05, 0.4], rh: [-0.05, -0.35, 0.55], lf: [0.26, -0.55], rf: [-0.26, -0.55], hp: 0.3 })],
+    gelbow: [P({ h: 0.55, lean: 0.2, yaw: 0.5, lh: [0.2, -0.05, 0.4], rh: [-0.45, 0.4, 0.2], elbowOut: 1.3, lf: [0.26, -0.55], rf: [-0.26, -0.55], hp: 0.3 }),
+             P({ h: 0.46, lean: 0.8, yaw: -0.3, lh: [0.2, -0.05, 0.4], rh: [0.15, -0.3, 0.5], elbowOut: 1.3, lf: [0.26, -0.55], rf: [-0.26, -0.55], hp: 0.3 })],
+    gbody: [P({ h: 0.52, lean: 0.3, yaw: 0.3, lh: [0.2, -0.05, 0.4], rh: [-0.3, 0.1, 0.3], lf: [0.26, -0.55], rf: [-0.26, -0.55], hp: 0.3 }),
+            P({ h: 0.5, lean: 0.6, yaw: -0.1, lh: [0.2, -0.05, 0.4], rh: [-0.05, -0.3, 0.3], lf: [0.26, -0.55], rf: [-0.26, -0.55], hp: 0.3 })],
+    gknee: [P({ h: 0.55, lean: 0.4, yaw: 0, lh: [0.2, -0.05, 0.4], rh: [-0.2, -0.05, 0.4], lf: [0.26, -0.55], rf: [-0.3, -0.45], rfy: 0.25, hp: 0.3 }),
+            P({ h: 0.5, lean: 0.7, yaw: 0, lh: [0.2, -0.05, 0.4], rh: [-0.2, -0.05, 0.4], lf: [0.26, -0.55], rf: [-0.15, 0.15], rfy: 0.3, hp: 0.3 })]
   };
   const HAND_KINDS = { straight: 1, hook: 1, uppercut: 1, overhand: 1, gpunch: 1, ghammer: 1, gelbow: 1, gbody: 1 };
   function mirrorPose(p, upperOnly) {
@@ -126,7 +126,7 @@
   for (const k in STRIKE_POSES) STRIKE_POSES_L[k] = STRIKE_POSES[k].map(p => mirrorPose(p, !!HAND_KINDS[k]));
 
   // top fighter placement relative to the bottom fighter's hips: [along the ground axis (+ = towards their head), across]
-  const GROUND_OFF = { guard: [-0.32, 0], half: [-0.26, 0.08], side: [0.12, 0.42], mount: [-0.02, 0], back: [-0.48, 0] };
+  const GROUND_OFF = { guard: [-0.32, 0], half: [-0.26, -0.08], side: [0.12, -0.42], mount: [-0.02, 0], back: [-0.48, 0] };
 
   function lerpPose(a, b, t, out) {
     out = out || {};
@@ -194,14 +194,15 @@
     RIG.thigh = s.lThigh.shape.slice(1); RIG.shin = s.lShin.shape.slice(1); RIG.foot = s.lShin.extra.shape.slice(1); RIG.footPos = s.lShin.extra.pos.slice();
     RIG.chestUp = s.chest.anchorParent[1] - s.chest.anchorSelf[1];
     RIG.headUp = s.head.anchorParent[1] - s.head.anchorSelf[1];
-    RIG.shoulder = [-s.lUpperArm.anchorParent[0], s.lUpperArm.anchorParent[1]];
-    RIG.hip = [-s.lThigh.anchorParent[0], s.lThigh.anchorParent[1]];
+    RIG.shoulder = [s.lUpperArm.anchorParent[0], s.lUpperArm.anchorParent[1]];
+    RIG.hip = [s.lThigh.anchorParent[0], s.lThigh.anchorParent[1]];
   }
   // IK bone lengths derived from the rig: joint-to-joint for the upper bones, joint-to-weapon for the lower
   const UPPER_L = RIG.upperArm[0] * 2 + 0.04, FORE_L = RIG.forearm[0] + 0.02 - RIG.fistY;   // elbow -> glove centre
   const THIGH_L = RIG.thigh[0] * 2 + 0.06, SHIN_L = RIG.shin[0] + 0.03 - RIG.footPos[1];     // knee -> foot centre
   const SH_X = RIG.shoulder[0], SH_Y = RIG.chestUp + RIG.shoulder[1], HIP_XX = RIG.hip[0], HIP_Y = RIG.hip[1];
   const _q = new THREE.Quaternion(), _pw = new THREE.Vector3(), _off = new THREE.Vector3();
+  const BUILD_SCALE = { lean: 0.93, athletic: 1, heavy: 1.1 }; // body width per look.build (mirrors LOOK.build in js/career.js)
 
   // ---------- procedural skinned body ----------
   // Tubes lofted through cross-section rings (ellipses with separate front / back fullness, optional
@@ -212,7 +213,7 @@
   const TAU = Math.PI * 2;
   const W1 = (b) => [[BI[b], 1]];
   const W2 = (a, b, t) => [[BI[a], 1 - t], [BI[b], t]];
-  // radial modifier: a groove `depth` deep centred at `deg` (0 = fighter's right, 90 = front, 270 = back)
+  // radial modifier: a groove `depth` deep centred at `deg` (0 = +X, the fighter's left, 90 = front, 270 = back)
   const groove = (deg, depth, width) => { const a = deg * Math.PI / 180; return (th) => { let d = ((th - a) % TAU + TAU) % TAU; if (d > Math.PI) d = TAU - d; return 1 - depth * Math.exp(-(d / width) * (d / width)); }; };
   const mods = (...f) => (th) => f.reduce((s, g) => s * g(th), 1);
 
@@ -268,6 +269,7 @@
       g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
       g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(this.si, 4));
       g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(this.sw, 4));
+      g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(this.n * 3).fill(1), 3)); // tinted per vertex by the bruise map
       const index = []; let start = 0;
       matOrder.forEach((m, i) => { const a = this.idx[m] || []; if (a.length) g.addGroup(start, a.length, i); for (const v of a) index.push(v); start += a.length; });
       g.setIndex(index);
@@ -374,11 +376,182 @@
     for (let i = 0; i < this.drops.length; i++) { this.drops[i].life = 0; this.drops[i].m.visible = false; }
   };
 
+  // ---------- skin marks ----------
+  // Bruises and welts, painted into the skinned body's vertex colours. A mark is a soft ellipse on one bone (in
+  // that bone's bind frame, so it rides the limb): a fresh red flush that fades over a couple of minutes, and the
+  // purple bruise that comes up behind it. A shot landing on an existing mark deepens and widens it instead of
+  // stacking a new one, so the thigh that keeps eating low kicks grows one big welt.
+  class SkinMarks {
+    constructor(mesh, boneNames) {
+      const g = mesh.geometry, pos = g.attributes.position, nor = g.attributes.normal, si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
+      this.color = g.attributes.color; this.n = pos.count;
+      this.red = new Float32Array(this.n); this.br = new Float32Array(this.n);
+      // per bone: the vertices it moves (weight >= 0.25), with their positions and normals in the bone's bind frame
+      this.bones = {};
+      const inv = mesh.skeleton.boneInverses, v = new THREE.Vector3(), nv = new THREE.Vector3();
+      for (const name of boneNames) this.bones[name] = { idx: [], loc: [], nrm: [] };
+      for (let i = 0; i < this.n; i++) {
+        for (let k = 0; k < 4; k++) {
+          const w = sw.array[i * 4 + k]; if (w < 0.25) continue;
+          const bi = si.array[i * 4 + k], b = this.bones[boneNames[bi]];
+          v.fromBufferAttribute(pos, i).applyMatrix4(inv[bi]);
+          nv.fromBufferAttribute(nor, i).transformDirection(inv[bi]);
+          b.idx.push(i); b.loc.push(v.x, v.y, v.z); b.nrm.push(nv.x, nv.y, nv.z);
+        }
+      }
+      for (const n in this.bones) { const b = this.bones[n]; b.idx = Int32Array.from(b.idx); b.loc = Float32Array.from(b.loc); b.nrm = Float32Array.from(b.nrm); }
+      this.marks = []; this.age = 0; this.dirty = false; this.nextPaint = 0; this.seeded = false;
+    }
+    // the vertex of `bone` nearest a bone-local point (an index into the bone's lists), or -1
+    _nearest(bone, x, y, z) {
+      const b = this.bones[bone]; if (!b || !b.idx.length) return -1;
+      const L = b.loc; let best = -1, bd = Infinity;
+      for (let k = 0; k < b.idx.length; k++) { const dx = L[k * 3] - x, dy = L[k * 3 + 1] - y, dz = L[k * 3 + 2] - z, d = dx * dx + dy * dy + dz * dz; if (d < bd) { bd = d; best = k; } }
+      return best;
+    }
+    // project a bone-local point onto the skin: out.p on the surface (lifted `lift` along the normal), out.n the normal
+    surface(bone, x, y, z, lift, out) {
+      const k = this._nearest(bone, x, y, z), b = this.bones[bone];
+      out = out || { p: new THREE.Vector3(), n: new THREE.Vector3() };
+      if (k < 0) { out.p.set(x, y, z); out.n.set(0, 0, 1); return out; }
+      const L = b.loc, N = b.nrm; out.n.set(N[k * 3], N[k * 3 + 1], N[k * 3 + 2]).normalize();
+      // slide along the tangent plane at that vertex, so a point between vertices still sits on the skin
+      const dx = x - L[k * 3], dy = y - L[k * 3 + 1], dz = z - L[k * 3 + 2], h = dx * out.n.x + dy * out.n.y + dz * out.n.z;
+      out.p.set(x - out.n.x * h, y - out.n.y * h, z - out.n.z * h).addScaledVector(out.n, lift || 0);
+      return out;
+    }
+    // r: radius around the limb, ry: along it; red / br: strength of the flush and of the bruise; age: seconds old
+    add(bone, x, y, z, r, ry, red, br, age) {
+      const k = this._nearest(bone, x, y, z); if (k < 0) return null;
+      const L = this.bones[bone].loc, sx = L[k * 3], sy = L[k * 3 + 1], sz = L[k * 3 + 2];
+      for (const m of this.marks) {
+        if (m.bone !== bone || Math.hypot(m.x - sx, m.y - sy, m.z - sz) > Math.min(m.r, r) * 0.7) continue;
+        m.red = Math.min(2.4, m.red + red); m.br = Math.min(3, m.br + br);
+        m.r = Math.min(m.r * 1.1, r * 1.7); m.ry = Math.min(m.ry * 1.1, ry * 1.7);
+        m.t0 += (this.age - m.t0) * 0.6; // freshens the flush without resetting the bruise under it
+        this.dirty = true; return m;
+      }
+      const m = { bone, x: sx, y: sy, z: sz, r, ry, red, br, t0: this.age - (age || 0) };
+      this.marks.push(m); this.dirty = true; return m;
+    }
+    tick(dt) {
+      this.age += dt;
+      if (this.marks.length && (this.dirty || this.age >= this.nextPaint)) this.paint();
+    }
+    paint() {
+      this.dirty = false; this.nextPaint = this.age + 0.5;
+      const R = this.red, B = this.br; R.fill(0); B.fill(0);
+      for (const m of this.marks) {
+        const age = Math.max(0, this.age - m.t0);
+        const red = m.red * (0.3 + 0.7 * Math.exp(-age / 75)), br = m.br * Math.min(1, 0.25 + age / 50);
+        const b = this.bones[m.bone], L = b.loc, I = b.idx;
+        for (let k = 0; k < I.length; k++) {
+          const dx = L[k * 3] - m.x, dy = (L[k * 3 + 1] - m.y) / m.ry, dz = L[k * 3 + 2] - m.z;
+          const d2 = (dx * dx + dz * dz) / (m.r * m.r) + dy * dy;
+          if (d2 >= 1) continue;
+          const w = 1 - d2 * d2;
+          R[I[k]] += red * w; B[I[k]] += br * w;
+        }
+      }
+      // the flush pulls the skin towards a dusky red, the bruise on top of it towards purple-grey
+      const C = this.color;
+      for (let i = 0; i < this.n; i++) {
+        const r = Math.min(1, R[i]), b = Math.min(1, B[i]) * 0.85;
+        let cr = 1 - 0.1 * r, cg = 1 - 0.42 * r, cb = 1 - 0.42 * r;
+        cr += (0.52 - cr) * b; cg += (0.4 - cg) * b; cb += (0.56 - cb) * b;
+        C.setXYZ(i, cr, cg, cb);
+      }
+      C.needsUpdate = true;
+    }
+  }
+
+  // ---------- face wounds ----------
+  // Cuts, bleeding and swelling: small decals riding the head frame at the landmark nearest each shot. A cut over
+  // either eyebrow with blood running past the eye, a mouse on either cheek or brow, a nose that bleeds over the
+  // lip, a split lip that runs down the chin. Each landmark keeps its own hurt total, so the eye that keeps
+  // catching the hook is the one that closes. Head-local frame: centre = origin, face at +Z, +X = the fighter's left.
+  const FACE_LM = [
+    { id: 'browL', p: [0.052, 0.058, 0.1], sx: 1 }, { id: 'browR', p: [-0.052, 0.058, 0.1], sx: -1 },
+    { id: 'cheekL', p: [0.074, -0.012, 0.08], sx: 1 }, { id: 'cheekR', p: [-0.074, -0.012, 0.08], sx: -1 },
+    { id: 'nose', p: [0, -0.02, 0.115] }, { id: 'mouth', p: [0, -0.065, 0.105] },
+    { id: 'templeL', p: [0.1, 0.035, 0.04] }, { id: 'templeR', p: [-0.1, 0.035, 0.04] }, { id: 'chin', p: [0, -0.1, 0.08] },
+    { id: 'earL', p: [0.112, -0.005, -0.012] }, { id: 'earR', p: [-0.112, -0.005, -0.012] }, { id: 'back', p: [0, 0.02, -0.11] }
+  ];
+  const _m4 = new THREE.Matrix4(), _zero = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0);
+  class FaceWounds {
+    constructor(head, marks) {
+      this.hurt = {}; for (const lm of FACE_LM) this.hurt[lm.id] = 0;
+      this.bloodMat = new THREE.MeshStandardMaterial({ color: 0x5a070a, roughness: 0.32, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+      this.cutMat = new THREE.MeshStandardMaterial({ color: 0x2a0405, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+      this.swellMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.62 });
+      this._c = new THREE.Color(); this._swellTint = new THREE.Color(0.74, 0.5, 0.56);
+      const S = { p: new THREE.Vector3(), n: new THREE.Vector3() };
+      // a decal sitting on the skin at a head-local point, its +Z along the skin normal, its +Y up the face
+      const place = (mesh, x, y, z, lift) => {
+        marks.surface('head', x, y, z, lift, S); mesh.position.copy(S.p);
+        _m4.lookAt(S.n, _zero, _up); mesh.quaternion.setFromRotationMatrix(_m4);
+        mesh.castShadow = false; mesh.receiveShadow = false; head.add(mesh); return mesh;
+      };
+      const hanging = (w, h, mat) => new THREE.Mesh(new THREE.PlaneGeometry(w, h).translate(0, -h / 2, 0), mat); // top edge at the origin
+      // a run of blood: a chain of quads down the face from (x, y), drifting sideways by `drift` a step; set(len) reveals it
+      const trickle = (x, y, z, drift, w0, steps) => {
+        const q = [], step = 0.016; let cx = x, cy = y;
+        for (let i = 0; i < steps; i++) { const t = i / Math.max(1, steps - 1); const m = place(hanging(w0 * (1 - 0.55 * t), step, this.bloodMat), cx, cy, z, 0.0025); m.visible = false; q.push(m); cx += drift; cy -= step * 0.97; }
+        return { set(len) { for (let i = 0; i < q.length; i++) { const l = (len - i * step) / step; q[i].visible = l > 0.05; q[i].scale.y = Math.max(0.05, Math.min(1, l)); } } };
+      };
+      const swelling = (x, y, z, sx, sy, sz) => { const m = place(new THREE.Mesh(new THREE.SphereGeometry(0.03, 14, 12), this.swellMat), x, y, z, -0.007); m.visible = false; m.castShadow = true; return { set(s) { m.visible = s > 0.08; m.scale.set(sx * s, sy * s, sz * s); } }; };
+      const q = new THREE.Quaternion(), zAxis = new THREE.Vector3(0, 0, 1);
+      this.side = {};
+      for (const sx of [1, -1]) {
+        const cut = place(new THREE.Mesh(new THREE.PlaneGeometry(0.03, 0.006), this.cutMat), sx * 0.052, 0.062, 0.1, 0.003);
+        cut.quaternion.multiply(q.setFromAxisAngle(zAxis, sx * 0.35)); cut.visible = false;
+        this.side[sx] = {
+          cut, run: trickle(sx * 0.062, 0.05, 0.1, sx * 0.004, 0.009, 5),           // down the outside of the eye onto the cheek
+          brow: swelling(sx * 0.056, 0.042, 0.095, 1.9, 1.1, 0.85),
+          cheek: swelling(sx * 0.074, -0.012, 0.08, 1.35, 1.2, 0.7)
+        };
+      }
+      this.nose = [trickle(0.012, -0.044, 0.108, 0, 0.006, 2), trickle(-0.012, -0.044, 0.108, 0, 0.006, 2)];
+      this.lip = place(new THREE.Mesh(new THREE.PlaneGeometry(0.046, 0.007), this.bloodMat), 0, -0.069, 0.1, 0.012); this.lip.visible = false;
+      this.lipSide = Math.random() < 0.5 ? 1 : -1;
+      this.lipRun = trickle(this.lipSide * 0.024, -0.069, 0.1, this.lipSide * 0.002, 0.007, 3);  // from one corner of the mouth down the chin
+    }
+    // a shot at head-local point q: `hurt` goes to the nearest landmark
+    hit(q, hurt) {
+      let best = null, bd = Infinity;
+      for (const lm of FACE_LM) { const d = (lm.p[0] - q.x) ** 2 + (lm.p[1] - q.y) ** 2 + (lm.p[2] - q.z) ** 2; if (d < bd) { bd = d; best = lm; } }
+      this.hurt[best.id] += hurt;
+      this.refresh();
+    }
+    refresh() {
+      const H = this.hurt, u = (x) => Math.max(0, Math.min(1, x));
+      for (const sx of [1, -1]) {
+        const s = this.side[sx], brow = H[sx > 0 ? 'browL' : 'browR'], cheek = H[sx > 0 ? 'cheekL' : 'cheekR'];
+        s.cut.visible = brow >= 5;                       // the brow opens up
+        s.run.set(u((brow - 5) / 16) * 0.08);
+        s.brow.set(u(brow / 22));
+        s.cheek.set(u((cheek + brow * 0.3) / 18));       // a mouse under the eye
+      }
+      for (const t of this.nose) t.set(u((H.nose - 2.5) / 10) * 0.032);
+      this.lip.visible = H.mouth >= 2.5;
+      this.lipRun.set(u((H.mouth - 5) / 12) * 0.048);
+    }
+    // the swelling is skin, tinted towards the bruise, and flashes with the rest of the head
+    update(skinColor, emissive) {
+      this.swellMat.color.copy(skinColor).lerp(this._c.copy(skinColor).multiply(this._swellTint), 0.85);
+      this.swellMat.emissive.copy(emissive);
+    }
+  }
+  const ZERO_DMG = { head: 0, body: 0, legs: 0 };
+
   class FighterModel {
     // opts.ref: dressed as the referee (shirt, slacks, shoes, nitrile gloves) instead of a fighter
+    // opts.look: { hair, hairColor, beard, build, gloves, trim } (see LOOK in js/career.js); missing fields take the defaults
     constructor(scene, color, skin, idx, opts) {
       this.idx = idx;
       const isRef = this.isRef = !!(opts && opts.ref);
+      const look = this.look = Object.assign({ hair: 'short', hairColor: 0x1a1210, beard: 'none', build: 'athletic', gloves: null, trim: 0xf2f2f2 }, opts && opts.look);
+      const bw = isRef ? 1 : (BUILD_SCALE[look.build] || 1); // body width: lean / athletic / heavy
       // ---- segment frames (world-space groups), one per physics body, plus a foot hinged on each shin
       this.segs = {}; this.feet = {};
       for (const name of SEG_ORDER) { const g = new THREE.Group(); scene.add(g); this.segs[name] = g; }
@@ -393,12 +566,12 @@
       this.body = new THREE.Group(); this.root.add(this.body);           // hips; y = hip height
       this.torso = new THREE.Group(); this.body.add(this.torso);         // pitch / yaw
       this.neck = new THREE.Group(); this.neck.position.y = RIG.chestUp + RIG.headUp; this.torso.add(this.neck);
-      this.lSh = new THREE.Group(); this.lSh.position.set(-SH_X, SH_Y, 0); this.torso.add(this.lSh);
-      this.rSh = new THREE.Group(); this.rSh.position.set(SH_X, SH_Y, 0); this.torso.add(this.rSh);
+      this.lSh = new THREE.Group(); this.lSh.position.set(SH_X, SH_Y, 0); this.torso.add(this.lSh);
+      this.rSh = new THREE.Group(); this.rSh.position.set(-SH_X, SH_Y, 0); this.torso.add(this.rSh);
       this.lEl = new THREE.Group(); this.lEl.position.y = -UPPER_L; this.lSh.add(this.lEl);
       this.rEl = new THREE.Group(); this.rEl.position.y = -UPPER_L; this.rSh.add(this.rEl);
-      this.lHip = new THREE.Group(); this.lHip.position.set(-HIP_XX, HIP_Y, 0); this.body.add(this.lHip);
-      this.rHip = new THREE.Group(); this.rHip.position.set(HIP_XX, HIP_Y, 0); this.body.add(this.rHip);
+      this.lHip = new THREE.Group(); this.lHip.position.set(HIP_XX, HIP_Y, 0); this.body.add(this.lHip);
+      this.rHip = new THREE.Group(); this.rHip.position.set(-HIP_XX, HIP_Y, 0); this.body.add(this.rHip);
       this.lKn = new THREE.Group(); this.lKn.position.y = -THIGH_L; this.lHip.add(this.lKn);
       this.rKn = new THREE.Group(); this.rKn.position.y = -THIGH_L; this.rHip.add(this.rKn);
       scene.add(this.root);
@@ -417,13 +590,14 @@
       };
       const MATS = ['body', 'head', 'legs', 'shorts', 'band', 'trim', 'hair', 'sleeve', 'arm', 'feet'];
       const skinOpts = { roughness: 0.62, metalness: 0.0, skinning: true };
-      const bodyMat = new THREE.MeshStandardMaterial(Object.assign({ color: skin }, skinOpts));
+      const bodyMat = new THREE.MeshStandardMaterial(Object.assign({ color: skin, vertexColors: !isRef }, skinOpts)); // vertex colours carry the bruise map
       const headMat = bodyMat.clone(), legMat = bodyMat.clone(), skinMat = bodyMat.clone();
       const shortsMat = new THREE.MeshStandardMaterial({ color, roughness: 0.55, skinning: true, side: THREE.DoubleSide });
       const bandSkinMat = new THREE.MeshStandardMaterial({ color: 0x15151a, roughness: 0.85, skinning: true });
-      const trimSkinMat = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.7, skinning: true });
-      const hairMat = new THREE.MeshStandardMaterial({ color: isRef ? 0x8a8a8e : 0x1a1210, roughness: 0.95, skinning: true });
-      const gloveMat = new THREE.MeshStandardMaterial({ color: isRef ? 0x4f8fe0 : idx === 0 ? 0xc62828 : 0x1e5bd6, roughness: 0.4, metalness: 0.05 });
+      const trimSkinMat = new THREE.MeshStandardMaterial({ color: isRef ? 0xf2f2f2 : look.trim, roughness: 0.7, skinning: true });
+      const hairMat = new THREE.MeshStandardMaterial({ color: isRef ? 0x8a8a8e : look.hairColor, roughness: 0.95, skinning: true });
+      const hairRigidMat = new THREE.MeshStandardMaterial({ color: isRef ? 0x8a8a8e : look.hairColor, roughness: 0.95 }); // beard, top knot
+      const gloveMat = new THREE.MeshStandardMaterial({ color: isRef ? 0x4f8fe0 : look.gloves != null ? look.gloves : idx === 0 ? 0xc62828 : 0x1e5bd6, roughness: 0.4, metalness: 0.05 });
       // the referee: the 'body' (torso) and 'sleeve' groups are his shirt, 'legs' / 'shorts' his slacks, 'feet' his shoes
       const shirtMat = isRef ? new THREE.MeshStandardMaterial({ color: 0x1e2028, roughness: 0.8, skinning: true }) : null;
       const pantsMat = isRef ? new THREE.MeshStandardMaterial({ color: 0x2c2d33, roughness: 0.75, skinning: true, side: THREE.DoubleSide }) : null;
@@ -432,7 +606,7 @@
       const bandMat = new THREE.MeshStandardMaterial({ color: 0x15151a, roughness: 0.85 });
       const eyeWhite = new THREE.MeshStandardMaterial({ color: 0xf4f0ea, roughness: 0.4 });
       const mouthMat = new THREE.MeshStandardMaterial({ color: 0x5a2a2a, roughness: 0.8 });
-      this.mats = { skinMat, shortsMat, gloveMat, headMat, bodyMat, legMat, hairMat };
+      this.mats = { skinMat, shortsMat, gloveMat, headMat, bodyMat, legMat, hairMat, hairRigidMat, trimSkinMat };
       this.skinBase = new THREE.Color(skin);
 
       const B = new MeshBuilder();
@@ -463,18 +637,39 @@
           ring(headY + 0.12, 0.072, 0.078, W1('head'), { mat: 'head' }),
           ring(headY + 0.135, 0.035, 0.04, W1('head'), { mat: 'head' })
         ];
+        // the build widens everything below the neck; a heavy fighter also carries a belly
+        for (const r of T) if (r.c[1] < shY + 0.06) { r.rx *= bw; r.rz *= bw; if (bw > 1 && r.c[1] > hipY && r.c[1] < hipY + 0.35) r.zf = (r.zf || 1) * (1 + (bw - 1) * 1.6); }
         B.loft(T, 36, 'body', [[0, hipY - 0.05, 0], [0, headY + 0.142, 0]]);
         // hair: a thin shell over the crown, open at the forehead, reaching down behind the ears
-        const H = [
+        const style = isRef ? 'short' : look.hair;
+        const crown = [
           { y: headY - 0.01, ha: 80, rx: 0.111, rz: 0.112, zb: 1.04 }, { y: headY + 0.02, ha: 100, rx: 0.114, rz: 0.115, zb: 1.04 },
           { y: headY + 0.05, ha: 125, rx: 0.1135, rz: 0.113, zf: 0.985, zb: 1.07 }, { y: headY + 0.072, ha: 150, rx: 0.11, rz: 0.11, zf: 0.98, zb: 1.075 },
           { y: headY + 0.09, ha: 170, rx: 0.102, rz: 0.106, zb: 1.06 }, { y: headY + 0.105, ha: 180, rx: 0.09, rz: 0.096, zb: 1.03 },
           { y: headY + 0.122, ha: 180, rx: 0.068, rz: 0.075 }, { y: headY + 0.136, ha: 180, rx: 0.033, rz: 0.038 }
-        ].map((h) => ring(h.y + 0.003, h.rx * 1.025, h.rz * 1.025, W1('head'), { ha: h.ha, zf: h.zf, zb: h.zb, mat: 'hair' }));
-        B.loft(H, 36, 'hair', [null, [0, headY + 0.146, 0]]);
+        ];
+        // the long style hangs the shell down the back of the neck; the afro is the whole shell puffed out
+        const mane = [
+          { y: headY - 0.21, ha: 45, rx: 0.108, rz: 0.108, zb: 1.15 }, { y: headY - 0.15, ha: 55, rx: 0.118, rz: 0.118, zb: 1.15 },
+          { y: headY - 0.09, ha: 65, rx: 0.12, rz: 0.12, zb: 1.12 }, { y: headY - 0.04, ha: 75, rx: 0.118, rz: 0.118, zb: 1.08 }
+        ];
+        const shell = (rings, k, lift) => rings.map((h) => ring(h.y + (lift || 0.003), h.rx * k, h.rz * k, W1('head'), { ha: h.ha, zf: h.zf, zb: h.zb, mat: 'hair' }));
+        let H = null;
+        if (style === 'short') H = shell(crown, 1.04);
+        else if (style === 'buzz' || style === 'bun') H = shell(crown, 1.012);
+        else if (style === 'long') H = shell(mane, 1.0).concat(shell(crown, 1.05));
+        else if (style === 'afro') H = shell([[-0.07, 95, 0.12], [-0.03, 110, 0.15], [0.02, 128, 0.165], [0.07, 142, 0.168], [0.12, 165, 0.158], [0.16, 180, 0.135], [0.19, 180, 0.1], [0.21, 180, 0.055]]
+          .map(([y, ha, r]) => ({ y: headY + y, ha, rx: r, rz: r, zf: 0.96 })), 1.0, 0); // a round mass well clear of the skull, open at the face
+        if (H) B.loft(H, 36, 'hair', [null, [0, headY + (style === 'afro' ? 0.222 : 0.146), 0]]);
+        if (style === 'mohawk') {
+          // a crest lofted front to back along the midline, each ring standing upright in the x/y plane (its lower half is inside the skull)
+          const M = [[0.105, 0.072, 0.03], [0.075, 0.106, 0.05], [0.04, 0.127, 0.065], [0, 0.137, 0.075], [-0.04, 0.131, 0.07], [-0.075, 0.113, 0.06], [-0.105, 0.082, 0.045], [-0.122, 0.045, 0.028]]
+            .map(([z, y, h]) => ({ c: [0, headY + y, z], u: [1, 0, 0], v: [0, 1, 0], rx: 0.02, rz: h, zf: 1.7, zb: 0.6, n: 2.6, w: W1('head'), mat: 'hair' }));
+          B.loft(M, 12, 'hair', [[0, headY + 0.078, 0.115], [0, headY + 0.03, -0.13]]);
+        }
       }
       for (const side of ['l', 'r']) {
-        const sx = side === 'l' ? -1 : 1, ua = side + 'UpperArm', fa = side + 'Forearm', th = side + 'Thigh', sh = side + 'Shin', ft = side + 'Foot';
+        const sx = side === 'l' ? 1 : -1, ua = side + 'UpperArm', fa = side + 'Forearm', th = side + 'Thigh', sh = side + 'Shin', ft = side + 'Foot';
         // -- arm: deltoid over the shoulder, bicep / triceps, elbow, forearm, down into the glove
         {
           const { shX, shY, elY, fistY } = L, x = sx * shX;
@@ -497,6 +692,7 @@
             r(fistY + 0.06, 0.036, 0.034, W1(fa))
           ];
           for (let i = 0; i < 5; i++) A[i].mat = 'sleeve'; // shoulder to mid upper arm: a short sleeve on the referee
+          for (const r of A) { r.rx *= bw; r.rz *= bw; r.c[0] += sx * (bw - 1) * 0.12; } // the build: thicker arms, set a little wider on a broad chest
           const d = dome(A[A.length - 1], [0, -1, 0], 0.04);
           B.loft(A.concat(d.rings), 24, 'arm', [[sx * (shX - 0.03), shY + 0.075, 0], d.pole]);
         }
@@ -523,6 +719,7 @@
             r(ankleY, 0.04, 0.045, W2(sh, ft, 0.4), { c: [x, ankleY, ankleZ] }),
             r(ankleY - 0.03, 0.038, 0.042, W2(sh, ft, 0.7), { c: [x, ankleY - 0.03, ankleZ] })
           ];
+          for (const r of G) if (r.c[1] > ankleY + 0.1) { r.rx *= bw; r.rz *= bw; }
           const d = dome(G[G.length - 1], [0, -1, 0], 0.04, W2(sh, ft, 0.85));
           B.loft(G.concat(d.rings), 24, 'legs', [[x, hipY + 0.09, 0], d.pole]);
           // -- foot: cross-sections from the heel to the toes, flat sole, arched instep
@@ -537,7 +734,7 @@
         // -- shorts leg: a loose tube from inside the trunk to just above the knee, with a hem stripe
         {
           const { hipX, hipY } = L, x = sx * (hipX - 0.005);
-          const r = (y, rx, rz, w, o) => Object.assign({ c: [x, y, 0], rx, rz, w }, o || {});
+          const r = (y, rx, rz, w, o) => Object.assign({ c: [x, y, 0], rx: rx * bw, rz: rz * bw, w }, o || {});
           B.loft([
             r(hipY + 0.01, 0.095, 0.104, W2('pelvis', th, 0.45)),
             r(hipY - 0.05, 0.105, 0.112, W2('pelvis', th, 0.7)),
@@ -552,6 +749,8 @@
       // -- shorts trunk: waistband, hips, closed under the crotch
       {
         const { hipY } = L, waistY = hipY + 0.16, th0 = 'rThigh';
+        const belly = bw > 1 ? 1 + (bw - 1) * 1.4 : 1;
+        const ring = (y, rx, rz, w, o) => Object.assign({ c: [0, y, 0], rx: rx * bw, rz: rz * bw }, o || {}, { w, zf: ((o && o.zf) || 1) * belly });
         B.loft([
           ring(waistY + 0.012, 0.165, 0.112, W2('pelvis', 'chest', 0.3), { mat: 'band' }),
           ring(waistY - 0.018, 0.172, 0.117, W2('pelvis', 'chest', 0.2), { mat: 'band' }),
@@ -574,7 +773,7 @@
       // ---- rigid details riding on the segments
       // face: ears, brow ridge, nose, eyes and mouth sit on the head frame (head centre = origin, face at +Z)
       const head = this.segs.head, chest = this.segs.chest;
-      const faceMat = headMat.clone(); faceMat.skinning = false; this.faceMat = faceMat;
+      const faceMat = headMat.clone(); faceMat.skinning = false; faceMat.vertexColors = false; this.faceMat = faceMat;
       addMesh(head, new THREE.SphereGeometry(0.028, 12, 10), faceMat, [0.112, -0.005, -0.012], [0.5, 1.0, 0.8]);    // ears
       addMesh(head, new THREE.SphereGeometry(0.028, 12, 10), faceMat, [-0.112, -0.005, -0.012], [0.5, 1.0, 0.8]);
       addMesh(head, new THREE.SphereGeometry(0.03, 14, 10), faceMat, [0, 0.047, 0.104], [1.75, 0.28, 0.45]);       // brow ridge
@@ -584,9 +783,19 @@
         addMesh(head, new THREE.SphereGeometry(0.011, 10, 8), darkMat, [sx * 0.045, 0.02, 0.117]);
       }
       addMesh(head, new THREE.BoxGeometry(0.05, 0.008, 0.01), mouthMat, [0, -0.065, 0.104]);                     // mouth
+      if (!isRef) {
+        const beard = look.beard;
+        if (beard === 'mustache' || beard === 'goatee' || beard === 'full') addMesh(head, new THREE.SphereGeometry(0.02, 12, 10), hairRigidMat, [0, -0.047, 0.106], [1.7, 0.38, 0.55]);
+        if (beard === 'goatee') addMesh(head, new THREE.SphereGeometry(0.03, 12, 10), hairRigidMat, [0, -0.094, 0.088], [1.0, 0.8, 0.6]);
+        if (beard === 'full') {
+          addMesh(head, new THREE.SphereGeometry(0.05, 14, 12), hairRigidMat, [0, -0.1, 0.05], [1.45, 0.72, 0.9]);                 // under the chin
+          for (const sx of [-1, 1]) addMesh(head, new THREE.SphereGeometry(0.045, 12, 10), hairRigidMat, [sx * 0.08, -0.058, 0.025], [0.6, 1.1, 1.5]); // along the jaw
+        }
+        if (look.hair === 'bun') addMesh(head, new THREE.SphereGeometry(0.036, 12, 10), hairRigidMat, [0, 0.152, -0.015], [1, 0.85, 1]);
+      }
       // MMA gloves: padded fist with a squared knuckle block, thumb and a wrist strap, on the forearm frame
       for (const side of ['l', 'r']) {
-        const sx = side === 'l' ? -1 : 1, g = this.segs[side + 'Forearm'], GB = new MeshBuilder(), fy = R.fistY, w = [[0, 1]];
+        const sx = side === 'l' ? 1 : -1, g = this.segs[side + 'Forearm'], GB = new MeshBuilder(), fy = R.fistY, w = [[0, 1]];
         if (isRef) { // the referee's gloved hand: an open hand, not a fist
           addMesh(g, new THREE.SphereGeometry(0.045, 14, 10), gloveMat, [0, fy + 0.01, 0.004], [0.75, 1.45, 0.62]);
           addMesh(g, new THREE.SphereGeometry(0.018, 10, 8), gloveMat, [-sx * 0.035, fy + 0.03, 0.02], [0.8, 1.5, 0.8]);
@@ -602,14 +811,9 @@
         glove.castShadow = true; glove.receiveShadow = true; g.add(glove);
         addMesh(g, new THREE.SphereGeometry(0.028, 12, 10), gloveMat, [-sx * 0.058, fy + 0.015, 0.03], [0.8, 1.3, 0.8]);   // thumb
       }
-      // blood: a cut over the eye, a bloody nose/mouth, and a smear on the chest (shown as damage climbs)
-      const bloodMat = new THREE.MeshStandardMaterial({ color: 0x8a0f12, roughness: 0.35, transparent: true, opacity: 0 });
-      this.bloodMat = bloodMat;
-      const cut = addMesh(head, new THREE.BoxGeometry(0.05, 0.016, 0.02), bloodMat, [0.05, 0.062, 0.1]); cut.rotation.z = 0.3; cut.castShadow = false;
-      const nose = addMesh(head, new THREE.BoxGeometry(0.03, 0.06, 0.02), bloodMat, [0, -0.05, 0.1]); nose.castShadow = false;
-      const cheek = addMesh(head, new THREE.SphereGeometry(0.03, 8, 6), bloodMat, [-0.075, -0.02, 0.078]); cheek.scale.set(1, 1.3, 0.35); cheek.castShadow = false;
-      const smear = addMesh(chest, new THREE.BoxGeometry(0.14, 0.22, 0.01), bloodMat, [0.02, 0.0, 0.15]); smear.castShadow = false;
-      this.blood = { cut, nose, cheek, smear };
+      // wounds: bruises painted into the skin's vertex colours where strikes land, cuts / bleeding / swelling on the face
+      this.marks = isRef ? null : new SkinMarks(skinMesh, BONES);
+      this.wounds = isRef ? null : new FaceWounds(head, this.marks);
 
       // shadow blob
       const blob = new THREE.Mesh(new THREE.CircleGeometry(0.42, 20), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false }));
@@ -623,15 +827,22 @@
       this._v = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
       this._pole = new THREE.Vector3();
       this._tipV = new THREE.Vector3();
-      this._dmgC = new THREE.Color(); this._red = new THREE.Color(0.75, 0.25, 0.22); this._bruise = new THREE.Color(0.38, 0.22, 0.42);
+      this._dmgC = new THREE.Color(); this._red = new THREE.Color(0.75, 0.25, 0.22); this._wq = new THREE.Vector3();
       this._eul = new THREE.Euler(); this._qHip = new THREE.Quaternion(); this._yAxis = new THREE.Vector3(0, 1, 0);
       this._tipArr = [0, 0, 0];
     }
 
     dispose() {
-      for (const n in this.segs) this.scene.remove(this.segs[n]);
-      this.scene.remove(this.root); this.scene.remove(this.blob);
-      this.scene.remove(this.skinMesh); this.skinMesh.geometry.dispose();
+      // every geometry / material here belongs to this model alone; three keeps their GPU buffers (and the
+      // skeleton's bone texture) until dispose(), so removing them from the scene is not enough
+      const geos = new Set(), mats = new Set();
+      const own = (o) => { if (o.geometry) geos.add(o.geometry); if (o.material) for (const m of [].concat(o.material)) mats.add(m); };
+      for (const n in this.segs) { this.segs[n].traverse(own); this.scene.remove(this.segs[n]); }
+      own(this.blob); own(this.skinMesh);
+      this.scene.remove(this.root); this.scene.remove(this.blob); this.scene.remove(this.skinMesh);
+      for (const g of geos) g.dispose();
+      for (const m of mats) m.dispose();
+      this.skinMesh.skeleton.dispose();
     }
 
     setVisible(v) {
@@ -639,27 +850,75 @@
       this.skinMesh.visible = v; this.blob.visible = v;
     }
 
-    setColors(color, skin) { this.mats.shortsMat.color.setHex(color); this.skinBase.setHex(skin); for (const k of ['skinMat', 'headMat', 'bodyMat', 'legMat']) this.mats[k].color.setHex(skin); this.faceMat.color.setHex(skin); }
+    // look: only its colours can change on a built model (hair style, beard and build are baked into the mesh)
+    setColors(color, skin, look) {
+      this.mats.shortsMat.color.setHex(color); this.skinBase.setHex(skin); for (const k of ['skinMat', 'headMat', 'bodyMat', 'legMat']) this.mats[k].color.setHex(skin); this.faceMat.color.setHex(skin);
+      if (look && !this.isRef) {
+        if (typeof look.hairColor === 'number') { this.mats.hairMat.color.setHex(look.hairColor); this.mats.hairRigidMat.color.setHex(look.hairColor); }
+        if (typeof look.gloves === 'number') this.mats.gloveMat.color.setHex(look.gloves);
+        if (typeof look.trim === 'number') this.mats.trimSkinMat.color.setHex(look.trim);
+      }
+    }
 
-    // bruising + blood per damage region
-    updateDamage(f) {
+    // the skin: hit flash, a faint flush over a region as its damage climbs, the bruise map and the face wounds
+    updateDamage(f, dt) {
       if (this.isRef) return;
-      const B = this.skinBase, fl = Math.max(0, this.flash);
+      const fl = Math.max(0, this.flash), D = f.dmg || ZERO_DMG;
+      if (this.marks && !this.marks.seeded) this.seedCarried(D);
       const tint = (mat, d) => {
-        // reddens first (0-45), then darkens towards purple-blue bruising (45-100)
-        const c = this._dmgC.copy(B);
-        const red = Math.min(1, d / 45), br = Math.max(0, (d - 40) / 60);
-        c.lerp(this._red, red * 0.35); c.lerp(this._bruise, br * 0.55);
-        mat.color.copy(c);
-        mat.emissive.setRGB(fl * 0.6, fl * 0.1, fl * 0.1);
+        this._dmgC.copy(this.skinBase).lerp(this._red, Math.min(1, d / 70) * 0.18);
+        mat.color.copy(this._dmgC); mat.emissive.setRGB(fl * 0.6, fl * 0.1, fl * 0.1);
       };
-      tint(this.mats.headMat, f.dmg.head); tint(this.mats.bodyMat, f.dmg.body); tint(this.mats.legMat, f.dmg.legs);
+      tint(this.mats.headMat, D.head); tint(this.mats.bodyMat, D.body); tint(this.mats.legMat, D.legs);
       this.faceMat.color.copy(this.mats.headMat.color); this.faceMat.emissive.copy(this.mats.headMat.emissive);
       this.mats.skinMat.emissive.setRGB(fl * 0.6, fl * 0.1, fl * 0.1);
-      const h = f.dmg.head;
-      this.bloodMat.opacity = h > 25 ? Math.min(1, (h - 25) / 30) : 0;
-      this.blood.cut.visible = h > 25; this.blood.nose.visible = h > 40; this.blood.cheek.visible = h > 55; this.blood.smear.visible = h > 60;
-      this.blood.smear.scale.y = 0.4 + Math.min(1, (h - 60) / 40) * 0.8;
+      if (this.marks) this.marks.tick(dt || 0);
+      if (this.wounds) this.wounds.update(this.mats.headMat.color, this.mats.headMat.emissive);
+    }
+
+    // damage carried into the fight (career mode) shows as old, settled bruises: a few on the face, ribs and one thigh
+    seedCarried(D) {
+      this.marks.seeded = true;
+      const rnd = (a, b) => a + Math.random() * (b - a), OLD = 900;
+      const nH = Math.min(4, Math.round((D.head || 0) / 10)), nB = Math.min(4, Math.round((D.body || 0) / 12)), nL = Math.min(3, Math.round((D.legs || 0) / 12));
+      for (let i = 0; i < nH; i++) {
+        const lm = FACE_LM[(Math.random() * 9) | 0];
+        this.marks.add('head', lm.p[0] + rnd(-0.02, 0.02), lm.p[1] + rnd(-0.02, 0.02), lm.p[2], 0.045, 0.045, 0.5, 0.7, OLD);
+        if (this.wounds && i === 0 && D.head >= 20) this.wounds.hit({ x: lm.p[0], y: lm.p[1], z: lm.p[2] }, 6 + D.head * 0.15);
+      }
+      for (let i = 0; i < nB; i++) this.marks.add(i % 2 ? 'pelvis' : 'chest', rnd(-0.14, 0.14), rnd(-0.1, 0.14), 0.13, 0.07, 0.07, 0.4, 0.6, OLD);
+      const sx = Math.random() < 0.5 ? 1 : -1;
+      for (let i = 0; i < nL; i++) this.marks.add(sx > 0 ? 'lThigh' : 'rThigh', sx * 0.085, rnd(-0.12, 0.1), 0.01, 0.09, 0.055, 0.4, 0.7, OLD);
+    }
+
+    // a landed or blocked strike marks the skin where it hit. ev.at is the contact point (world) and ev.seg the
+    // collider it struck; ground strikes carry neither, so they get a plausible spot for the part they hit.
+    wound(ev, p) {
+      if (!this.marks) return;
+      const blocked = ev.k === 'block', kind = ev.kind || '', part = ev.part || 'body';
+      const kick = /kick|teep/.test(kind), knee = kind === 'knee', elbow = kind === 'gelbow';
+      const dmg = ev.dmg != null ? ev.dmg : ev.big ? 4 : blocked ? 2 : 1.6;
+      let bone = ev.seg && this.segs[ev.seg] ? ev.seg : null;
+      const q = this._wq;
+      if (p && !bone) { // the collider wasn't a body segment (or wasn't named): the nearest one for the part
+        const cands = part === 'head' ? ['head'] : part === 'legs' ? ['lThigh', 'rThigh', 'lShin', 'rShin'] : ['chest', 'pelvis'];
+        let bd = Infinity; for (const n of cands) { const d = this.segs[n].position.distanceToSquared(p); if (d < bd) { bd = d; bone = n; } }
+      }
+      if (p && bone) this.segs[bone].worldToLocal(q.copy(p));
+      else if (part === 'head') { bone = 'head'; const lm = FACE_LM[(Math.random() * 6) | 0]; q.set(lm.p[0] + (Math.random() - 0.5) * 0.03, lm.p[1] + (Math.random() - 0.5) * 0.03, lm.p[2]); }
+      else if (part === 'body') { bone = 'chest'; q.set((Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.24, 0.14); }
+      else return;
+      const s = clamp(dmg / 4, 0.35, 1.6) * (blocked ? 0.45 : 1) * 0.5; // bruising rate: how much skin colour one shot adds
+      let r, ry, red, br;
+      if (bone === 'head') { r = ry = kick || knee ? 0.07 : 0.055; red = 0.9 * s; br = 0.5 * s; }
+      else if (/Forearm|UpperArm/.test(bone)) { r = 0.04; ry = 0.05; red = 0.6 * s; br = 0.35 * s; }   // blocked shots bruise the arms
+      else if (/Shin/.test(bone)) { r = 0.05; ry = 0.075; red = 0.9 * s; br = 0.55 * s; }
+      else if (/Thigh/.test(bone)) { r = 0.1; ry = 0.06; red = 1.1 * s; br = 0.65 * s; q.y = Math.min(q.y, -0.09); } // a low kick's welt wraps the thigh, kept below the shorts' hem
+      else if (kick || knee) { r = 0.1; ry = 0.06; red = 0.95 * s; br = 0.5 * s; }                      // a shin or knee across the ribs
+      else { r = ry = 0.075; red = 0.8 * s; br = 0.45 * s; }
+      this.marks.add(bone, q.x, q.y, q.z, r, ry, red, br);
+      // sharp weapons open the face up faster than a glove
+      if (bone === 'head' && !blocked && this.wounds) this.wounds.hit(q, dmg * 0.5 * (elbow ? 2.4 : knee ? 1.8 : kick ? 1.5 : kind === 'ghammer' ? 1.2 : 1)); // face rate: cuts, swelling and bleeding build at half speed
     }
 
     // compute target pose from sim state
@@ -735,16 +994,16 @@
       const st = STRIKES[a.name];
       if (!st || st.ground || !st.path) return null;
       const tip = strikeTip(st, a.t, a.tf || 1, this._tipArr);
-      // sim frame [fwd, side(left), height] -> root-local (x = -side, y = height, z = fwd)
-      const lx = -tip[1], ly = tip[2], lz = tip[0];
+      // sim frame [fwd, side(left), height] -> root-local (x = side, y = height, z = fwd)
+      const lx = tip[1], ly = tip[2], lz = tip[0];
       const hand = st.tip === 'hand';
       if (hand) {
         // lunge: if the fist is beyond the arm's reach, carry the body forward with it
-        const sx = (st.limb === 'lh' ? -SH_X : SH_X) + p.ox, sy = p.h + SH_Y, sz = p.oz + 0.05;
+        const sx = (st.limb === 'lh' ? SH_X : -SH_X) + p.ox, sy = p.h + SH_Y, sz = p.oz + 0.05;
         const over = Math.hypot(lx - sx, ly - sy, lz - sz) - (UPPER_L + FORE_L + 0.07);
         if (over > 0) { p.oz += Math.min(0.32, over); p.lean += Math.min(0.25, over * 0.6); }
       } else {
-        const hx0 = st.limb === 'll' ? -HIP_XX : HIP_XX;
+        const hx0 = st.limb === 'll' ? HIP_XX : -HIP_XX;
         const hx = hx0 * Math.cos(p.hipYaw) + p.ox, hy = p.h + HIP_Y, hz = -hx0 * Math.sin(p.hipYaw) + p.oz;
         const reach = st.tip === 'knee' ? THIGH_L : THIGH_L + SHIN_L;
         const over = Math.hypot(lx - hx, ly - hy, lz - hz) - (reach + 0.02);
@@ -804,7 +1063,7 @@
         this.blob.position.set(this.px, 0.012, this.pz);
         this.blob.material.opacity = 0.35;
         if (this.flash > 0) this.flash -= dt * 4;
-        this.updateDamage(f);
+        this.updateDamage(f, dt);
         return;
       }
       const wasPhys = this.physMode;
@@ -825,7 +1084,7 @@
           const off = GROUND_OFF[pos] || GROUND_OFF.guard;   // [along axis, across axis]
           const px = -az, pz = ax;                            // perpendicular
           tx = f.x + ax * off[0] + px * off[1]; tz = f.z + az * off[0] + pz * off[1];
-          tyaw = pos === 'side' ? Math.atan2(-px, -pz) : Math.atan2(ax, az);
+          tyaw = pos === 'side' ? Math.atan2(px, pz) : Math.atan2(ax, az);
         }
       } else if (f.act.type === 'down') {
         tyaw = this.yaw;
@@ -891,11 +1150,11 @@
 
       // ---- IK arms (torso frame) ----
       const v = this._v;
-      v[0].set(-SH_X, SH_Y, 0); v[1].fromArray(p.lh);
-      this._pole.set(-1, -0.4 - p.elbowOut * 0.3 + p.elbowUp, -0.6); // elbows down/out/back (raised for hooks)
+      v[0].set(SH_X, SH_Y, 0); v[1].fromArray(p.lh);
+      this._pole.set(1, -0.4 - p.elbowOut * 0.3 + p.elbowUp, -0.6); // elbows down/out/back (raised for hooks)
       solveIK(v[0], v[1], UPPER_L, FORE_L, this._pole, this.lSh, this.lEl);
-      v[0].set(SH_X, SH_Y, 0); v[1].fromArray(p.rh);
-      this._pole.set(1, -0.4 - p.elbowOut * 0.3 + p.elbowUp, -0.6);
+      v[0].set(-SH_X, SH_Y, 0); v[1].fromArray(p.rh);
+      this._pole.set(-1, -0.4 - p.elbowOut * 0.3 + p.elbowUp, -0.6);
       solveIK(v[0], v[1], UPPER_L, FORE_L, this._pole, this.rSh, this.rEl);
 
       // ---- IK legs (body frame) ----
@@ -919,15 +1178,15 @@
         const ch = Math.cos(p.hipYaw), sh = Math.sin(p.hipYaw);
         const toBody = (x, z, out) => { out.x = x * ch - z * sh; out.z = x * sh + z * ch; return out; };
         toBody(lfx - p.ox, lfz - p.oz, v[1]); v[1].y = lfy - (p.h + bob) + 0.05;
-        v[0].set(-HIP_XX, HIP_Y, 0); this._pole.fromArray(p.lPole); solveIK(v[0], v[1], THIGH_L, SHIN_L, this._pole, this.lHip, this.lKn);
+        v[0].set(HIP_XX, HIP_Y, 0); this._pole.fromArray(p.lPole); solveIK(v[0], v[1], THIGH_L, SHIN_L, this._pole, this.lHip, this.lKn);
         toBody(rfx - p.ox, rfz - p.oz, v[1]); v[1].y = rfy - (p.h + bob) + 0.05;
-        v[0].set(HIP_XX, HIP_Y, 0); this._pole.fromArray(p.rPole); solveIK(v[0], v[1], THIGH_L, SHIN_L, this._pole, this.rHip, this.rKn);
+        v[0].set(-HIP_XX, HIP_Y, 0); this._pole.fromArray(p.rPole); solveIK(v[0], v[1], THIGH_L, SHIN_L, this._pole, this.rHip, this.rKn);
       } else {
         // lying on back: targets are given directly in the body frame (layout documented above POSES.bottomGuard);
         // the +0.3 pole bias tips the knees a little towards the head
-        v[0].set(-HIP_XX, HIP_Y, 0); v[1].set(p.lf[0], p.lfy, p.lf[1]);
+        v[0].set(HIP_XX, HIP_Y, 0); v[1].set(p.lf[0], p.lfy, p.lf[1]);
         this._pole.set(p.lPole[0], p.lPole[1] + 0.3, p.lPole[2]); solveIK(v[0], v[1], THIGH_L, SHIN_L, this._pole, this.lHip, this.lKn);
-        v[0].set(HIP_XX, HIP_Y, 0); v[1].set(p.rf[0], p.rfy, p.rf[1]);
+        v[0].set(-HIP_XX, HIP_Y, 0); v[1].set(p.rf[0], p.rfy, p.rf[1]);
         this._pole.set(p.rPole[0], p.rPole[1] + 0.3, p.rPole[2]); solveIK(v[0], v[1], THIGH_L, SHIN_L, this._pole, this.rHip, this.rKn);
       }
       this._applySkeleton();
@@ -936,7 +1195,7 @@
 
       // hit flash + accumulated damage on the skin
       if (this.flash > 0) { this.flash -= dt * 4; }
-      this.updateDamage(f);
+      this.updateDamage(f, dt);
     }
 
     headWorld(out) { return out.copy(this.segs.head.position); }
@@ -963,36 +1222,36 @@
     const u = l2 > 1e-6 ? clamp(((x - ax) * vx + (z - az) * vz) / l2, 0, 1) : 0;
     return Math.hypot(x - ax - vx * u, z - az - vz * u);
   }
-  const RP = (o) => P(Object.assign({ yaw: 0, hy: 0, hp: 0.05, lean: 0.06, elbowOut: 0.3, lf: [-0.15, 0.02], rf: [0.15, -0.02] }, o));
+  const RP = (o) => P(Object.assign({ yaw: 0, hy: 0, hp: 0.05, lean: 0.06, elbowOut: 0.3, lf: [0.15, 0.02], rf: [-0.15, -0.02] }, o));
   const REF_POSES = {
     // off to the side of the action: knees soft, hands up in front, ready to jump in
-    watch: RP({ h: HIP_H - 0.05, lean: 0.2, hp: -0.12, lh: [-0.17, 0.2, 0.26], rh: [0.17, 0.2, 0.26], lf: [-0.2, 0.06], rf: [0.2, -0.06] }),
+    watch: RP({ h: HIP_H - 0.05, lean: 0.2, hp: -0.12, lh: [0.17, 0.2, 0.26], rh: [-0.17, 0.2, 0.26], lf: [0.2, 0.06], rf: [-0.2, -0.06] }),
     // crouched over a ground fight
-    ground: RP({ h: HIP_H - 0.16, lean: 0.55, hp: -0.1, lh: [-0.18, 0.02, 0.33], rh: [0.18, 0.02, 0.33], lf: [-0.24, 0.08], rf: [0.24, -0.08] }),
-    ready: RP({ lean: 0.04, lh: [-0.06, 0.08, 0.2], rh: [0.06, 0.08, 0.2] }),
+    ground: RP({ h: HIP_H - 0.16, lean: 0.55, hp: -0.1, lh: [0.18, 0.02, 0.33], rh: [-0.18, 0.02, 0.33], lf: [0.24, 0.08], rf: [-0.24, -0.08] }),
+    ready: RP({ lean: 0.04, lh: [0.06, 0.08, 0.2], rh: [-0.06, 0.08, 0.2] }),
     // "fight!": both hands out between them
-    go: RP({ lean: 0.15, lh: [-0.12, 0.4, 0.5], rh: [0.12, 0.4, 0.5] }),
+    go: RP({ lean: 0.15, lh: [0.12, 0.4, 0.5], rh: [-0.12, 0.4, 0.5] }),
     // over a knockdown, facing the attacker: one arm straight out to hold him off
-    stop: RP({ h: HIP_H - 0.03, lean: 0.1, lh: [-0.18, 0.2, 0.25], rh: [0.08, 0.52, 0.56], elbowOut: 0.15 }),
+    stop: RP({ h: HIP_H - 0.03, lean: 0.1, lh: [0.18, 0.2, 0.25], rh: [-0.08, 0.52, 0.56], elbowOut: 0.15 }),
     // bent over the downed fighter, watching him
-    kdWatch: RP({ h: HIP_H - 0.12, lean: 0.5, hp: 0.2, lh: [-0.17, 0.12, 0.34], rh: [0.17, 0.12, 0.34], lf: [-0.2, 0.1], rf: [0.2, -0.1] }),
+    kdWatch: RP({ h: HIP_H - 0.12, lean: 0.5, hp: 0.2, lh: [0.17, 0.12, 0.34], rh: [-0.17, 0.12, 0.34], lf: [0.2, 0.1], rf: [-0.2, -0.1] }),
     waveUp: RP({ h: HIP_H - 0.1, lean: 0.42, hp: 0.15, elbowOut: 0.2 }),
     waveOff: RP({ lean: 0.08, hp: -0.05, elbowOut: 0.6 }),
     // the announcement: a wrist in each hand ...
-    hold: RP({ lean: 0.02, hp: 0, lh: [-0.4, 0.14, 0.08], rh: [0.4, 0.14, 0.08] })
+    hold: RP({ lean: 0.02, hp: 0, lh: [0.4, 0.14, 0.08], rh: [-0.4, 0.14, 0.08] })
   };
-  // ... then up goes the winner's (the fighter on the -x side is on the ref's left; both on a draw)
-  REF_POSES.raiseL = Object.assign(copyPose(REF_POSES.hold), { lh: [-0.36, 1.02, 0.08], hp: -0.1 });
-  REF_POSES.raiseR = Object.assign(copyPose(REF_POSES.hold), { rh: [0.36, 1.02, 0.08], hp: -0.1 });
-  REF_POSES.raiseBoth = Object.assign(copyPose(REF_POSES.hold), { lh: [-0.36, 1.02, 0.08], rh: [0.36, 1.02, 0.08], hp: -0.1 });
-  // the fighters in the line-up, authored for the one on the ref's left (his right hand is in the ref's grip);
+  // ... then up goes the winner's (the fighter on the -x side is on the ref's right, he faces +z; both on a draw)
+  REF_POSES.raiseL = Object.assign(copyPose(REF_POSES.hold), { lh: [0.36, 1.02, 0.08], hp: -0.1 });
+  REF_POSES.raiseR = Object.assign(copyPose(REF_POSES.hold), { rh: [-0.36, 1.02, 0.08], hp: -0.1 });
+  REF_POSES.raiseBoth = Object.assign(copyPose(REF_POSES.hold), { lh: [0.36, 1.02, 0.08], rh: [-0.36, 1.02, 0.08], hp: -0.1 });
+  // the fighters in the line-up, authored for the one on the ref's left, at +x (his right hand is in the ref's grip);
   // the other fighter uses mirrored copies
-  const FL = (o) => P(Object.assign({ yaw: 0, hy: 0, lean: 0.02, hp: 0.05, elbowOut: 0.2, lf: [-0.14, 0.02], rf: [0.14, -0.02], lh: [-0.26, -0.07, 0.05], rh: [0.3, 0.13, 0.08] }, o));
+  const FL = (o) => P(Object.assign({ yaw: 0, hy: 0, lean: 0.02, hp: 0.05, elbowOut: 0.2, lf: [0.14, 0.02], rf: [-0.14, -0.02], lh: [0.26, -0.07, 0.05], rh: [-0.3, 0.13, 0.08] }, o));
   const LINE_POSES = {
     stand: FL({}),
     lose: FL({ hp: 0.38, lean: 0.08 }),
-    raised: FL({ hp: -0.1, rh: [0.24, 1.04, 0.08] }),                                 // hand raised by the ref (a draw)
-    win: FL({ hp: -0.18, lean: -0.04, rh: [0.24, 1.04, 0.08], lh: [-0.3, 0.98, 0.12] }) // ... and the other one up too
+    raised: FL({ hp: -0.1, rh: [-0.24, 1.04, 0.08] }),                                 // hand raised by the ref (a draw)
+    win: FL({ hp: -0.18, lean: -0.04, rh: [-0.24, 1.04, 0.08], lh: [0.3, 0.98, 0.12] }) // ... and the other one up too
   };
   const LINE_POSES_M = {};
   for (const k in LINE_POSES) LINE_POSES_M[k] = mirrorPose(LINE_POSES[k], false);
@@ -1191,7 +1450,7 @@
             tx = lm.px + ux * 0.85; tz = lm.pz + uz * 0.85; fx = lm.px; fz = lm.pz; maxSp = 4.5; repR = 0.55; speed = 24;
             const u = 0.5 + 0.5 * Math.sin(time * 9);
             pose = copyPose(REF_POSES.waveOff, p);
-            pose.lh = [-0.45 + 0.6 * u, 0.86, 0.32]; pose.rh = [0.45 - 0.6 * u, 0.86, 0.24];
+            pose.lh = [0.45 - 0.6 * u, 0.86, 0.32]; pose.rh = [-0.45 + 0.6 * u, 0.86, 0.24];
           } else {
             const g = this._neutral(mx, mz, camSide, 1.5, models); tx = g[0]; tz = g[1]; pose = REF_POSES.ready; route = true;
           }
@@ -1206,10 +1465,10 @@
           }
           tx = 0; tz = 0; fx = 0; fz = 5; speed = 9;
           const up = t >= T.raise, w = res.winner;
-          pose = !up ? REF_POSES.hold : w == null ? REF_POSES.raiseBoth : w === 0 ? REF_POSES.raiseL : REF_POSES.raiseR;
+          pose = !up ? REF_POSES.hold : w == null ? REF_POSES.raiseBoth : w === 0 ? REF_POSES.raiseR : REF_POSES.raiseL;
           if (up) say = w == null ? "It's a draw!" : (S.f[w].name || 'Fighter ' + (w + 1)) + ' Wins!';
           for (let i = 0; i < 2; i++) {
-            const set = i === 0 ? LINE_POSES : LINE_POSES_M;
+            const set = i === 0 ? LINE_POSES_M : LINE_POSES;
             const fp = w != null && w !== i ? set.lose : !up ? set.stand : w == null ? set.raised : set.win;
             models[i].forced = { x: i === 0 ? -LINE_X : LINE_X, z: 0, yaw: 0, pose: fp, moving: false, speed: 9 };
           }
@@ -1239,7 +1498,7 @@
             speed = 22;
             const u = 0.5 + 0.5 * Math.sin(time * 8);
             pose = copyPose(REF_POSES.waveUp, p);
-            pose.lh = [-0.2, 0.05 + 0.6 * u, 0.46 - 0.1 * u]; pose.rh = [0.2, 0.05 + 0.6 * u, 0.46 - 0.1 * u];
+            pose.lh = [0.2, 0.05 + 0.6 * u, 0.46 - 0.1 * u]; pose.rh = [-0.2, 0.05 + 0.6 * u, 0.46 - 0.1 * u];
           } else pose = a.name === 'rise' ? REF_POSES.watch : REF_POSES.kdWatch;
         }
       } else if (S.phase === 'break') {
@@ -1457,6 +1716,8 @@
       this.models = [];
       this.ref = new Referee(this.scene);
       this.ref.setVisible(false);
+      this.sphereOn = true; // the 'Impact sphere' option: off skips the glowing contact sphere (camera shake stays)
+      this.refOn = true; // the 'Show referee' option: off hides him (he still runs the post-fight line-up, unseen)
       // black card in front of the lens for the cut to the post-fight line-up
       this.fadeCard = new THREE.Mesh(new THREE.PlaneGeometry(4, 4), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0, depthTest: false, depthWrite: false, fog: false }));
       this.fadeCard.position.z = -0.15; this.fadeCard.renderOrder = 999; this.fadeCard.visible = false;
@@ -1491,16 +1752,21 @@
     // the career gym (js/gym.js) borrows the scene: hide the cage, crowd and arena lighting while it is up
     setArenaVisible(v) {
       this.arena.visible = v;
-      this.ref.setVisible(v && this.models.length > 0);
+      this.ref.setVisible(this.refOn && v && this.models.length > 0);
       for (const l of this.arenaLights) l.visible = v;
+    }
+
+    setRefVisible(on) {
+      this.refOn = !!on;
+      this.ref.setVisible(this.refOn && this.arena.visible && this.models.length > 0);
     }
 
     setFighters(S) {
       for (const m of this.models) m.dispose();
-      this.models = S.f.map((f, i) => new FighterModel(this.scene, f.color, f.skin, i));
+      this.models = S.f.map((f, i) => new FighterModel(this.scene, f.color, f.skin, i, { look: f.look }));
       this.lastGround = false;
       this.ref.reset();
-      this.ref.setVisible(this.arena.visible);
+      this.ref.setVisible(this.refOn && this.arena.visible);
       if (this.blood) this.blood.clear();
     }
 
@@ -1512,12 +1778,15 @@
       }
     }
 
+    setImpactSphere(on) { this.sphereOn = !!on; }
+
     impact(pos, big, color) {
+      if (big) this.shake = Math.min(1, this.shake + 0.6);
+      if (!this.sphereOn) return;
       const geo = new THREE.SphereGeometry(big ? 0.22 : 0.13, 10, 8);
       const mat = new THREE.MeshBasicMaterial({ color: color || 0xffe9b0, transparent: true, opacity: 0.9 });
       const m = new THREE.Mesh(geo, mat); m.position.copy(pos); this.scene.add(m);
       this.fx.push({ m, t: 0, dur: big ? 0.35 : 0.22 });
-      if (big) this.shake = Math.min(1, this.shake + 0.6);
     }
 
     // Project a contact into the void and let the background particles take the hit.
@@ -1545,11 +1814,18 @@
         else if (ev.big) power = Math.max(power, 0.62);
         if (ev.jammed) power *= 0.4;
         this._voidImpact(p, power);
+        victim.wound(ev, ev.at ? p : null);
       } else if (ev.k === 'block') {
         const victim = this.models[ev.j];
         const p = ev.at ? new THREE.Vector3(ev.at[0], ev.at[1], ev.at[2]) : victim.headWorld(this._tmp.clone()).add(new THREE.Vector3(0, -0.1, 0));
         this.impact(p, false, 0x88aaff);
         this._voidImpact(p, 0.22);
+        if (ev.at) {
+          victim.wound(ev, p);
+          // a checked kick is shin on shin: the kicker's leg takes the worse of it
+          const kicker = ev.checked && this.models[ev.i];
+          if (kicker) kicker.wound({ k: 'hit', kind: ev.kind, part: 'legs', seg: ev.weapon, dmg: 3.2 }, p);
+        }
       } else if (ev.k === 'kd' || ev.k === 'td' || ev.k === 'sweep') {
         this.shake = 1;
         const victim = this.models[ev.j != null ? ev.j : 0];

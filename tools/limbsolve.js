@@ -1,5 +1,5 @@
 // Keyframe authoring aid: given where the elbow and fist (or knee and foot) should be in the PELVIS frame
-// (origin at the hips, +Z towards the opponent, +X the fighter's right, +Y up; stance hips sit at y=0),
+// (origin at the hips, +Z towards the opponent, +X the fighter's left, +Y up; stance hips sit at y=0),
 // find the upper/lower segment Euler angles (deg, THREE 'XYZ') that put them there under the given torso pose.
 // Usage from node: const { solveArm, solveLeg } = require('./tools/limbsolve.js');
 const P = require('../js/physics.js');
@@ -19,7 +19,7 @@ function solve(kind, side, torso, midT, tipT, opts) {
   const base = Object.assign({}, P.POSES.STANCE, torso);
   const wMid = opts.midWeight == null ? 1 : opts.midWeight;
   // joint limits (deg): the elbow / knee is a hinge (lower z fixed at 0, the upper segment's twist orients it)
-  const sgn = side === 'r' ? 1 : -1;
+  const sgn = side === 'l' ? 1 : -1;
   const LIM = kind === 'arm'
     ? { u: [[-185, 50], [-125, 125], sgn > 0 ? [-40, 150] : [-150, 40]], l: [-150, -3] }
     : { u: [[-170, 60], [-70, 70], sgn > 0 ? [-25, 130] : [-130, 25]], l: [3, 150] };

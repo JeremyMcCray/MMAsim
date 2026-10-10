@@ -23,6 +23,7 @@
   const SPAWN = { x: 3.4, z: 1.7, yaw: Math.PI + 0.25 };     // facing -z, into the room
   const LOCK_RANGE = 3.2;                             // how close to the bag you can lock on
   const ROOM_FOV = 50, FIGHT_FOV = 42;                // camera lens walking the room / locked on (the fight camera's)
+  const LOOK_SENS = 0.004;                            // camera turn (radians) per pixel of mouse movement
   const DIRS = IN.FWD | IN.BACK | IN.LEFT | IN.RIGHT;
   const SIM_BITS = 0x3fff | IN.STANCE;                            // input bits the sim reads (the gym's interact / lock bits sit above)
 
@@ -120,6 +121,20 @@
     MATS.water = M(0x5aa8d8, { roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.8 });
     MATS.foam = M(0x3b3b42, { roughness: 0.95 });
     return MATS;
+  }
+  // free a built room: its geometries, the materials made for it (not the shared MATS) with their canvas textures,
+  // and the lights' shadow maps. three holds all of that on the GPU until dispose(); dropping the group isn't enough.
+  function disposeRoom(g) {
+    const shared = new Set(Object.values(MATS));
+    g.traverse((o) => {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) for (const m of [].concat(o.material)) {
+        if (shared.has(m)) continue;
+        for (const k in m) if (m[k] && m[k].isTexture) m[k].dispose();
+        m.dispose();
+      }
+      if (o.isLight && o.shadow) o.shadow.dispose();
+    });
   }
 
   // ---------- the facilities, as furniture. level 0 = nothing (or the cheapest version) ----------
@@ -294,7 +309,7 @@
       this.sim = null;      // the training Sim: you (fighter 0) and the heavy bag (fighter 1)
       this.bagSquash = 0;
       this.session = { hits: 0, combo: 0, bestCombo: 0, hardest: 0, last: '', lastT: -9, comboT: 0 };
-      this.prompt = ''; this.station = null; this.fx = []; this.locked = false;
+      this.prompt = ''; this.station = null; this.fx = []; this.locked = false; this.lookDX = 0;
       this.time = 0;
       this.moveset = null;
       this._saved = null;
@@ -310,7 +325,7 @@
         if (this.R.setArenaVisible) this.R.setArenaVisible(false);
         // mirrors the sim's fighter 0 each frame (stations, lock-on and the camera read it)
         this.player = { x: SPAWN.x, z: SPAWN.z, yaw: SPAWN.yaw, act: { type: 'idle', t: 0 }, blocking: false, stam: 100 };
-        this.model = new FighterModel(this.scene, C.color, C.skin, 0);
+        this.model = new FighterModel(this.scene, C.color, C.skin, 0, { look: C.look });
         this.cam.init = false; this.locked = false;
         this.session = { hits: 0, combo: 0, bestCombo: 0, hardest: 0, last: '', lastT: -9, comboT: 0 };
       }
@@ -320,11 +335,11 @@
     leave() {
       if (!this.active) return;
       this.active = false; this.paused = false;
-      if (this.group) { this.scene.remove(this.group); this.group = null; }
+      if (this.group) { this.scene.remove(this.group); disposeRoom(this.group); this.group = null; }
       if (this.sim) { this.sim.destroy(); this.sim = null; }
       if (this.model) { this.model.dispose(); this.model = null; }
       if (this.coach) { this.coach.dispose(); this.coach = null; }
-      for (const e of this.fx) this.scene.remove(e.m);
+      for (const e of this.fx) { this.scene.remove(e.m); e.m.geometry.dispose(); e.m.material.dispose(); }
       this.fx = [];
       this.sig = null;
       if (this._saved) { this.scene.fog = this._saved.fog; this.scene.background = this._saved.bg; this.R.camera.fov = this._saved.fov; this.R.camera.updateProjectionMatrix(); }
@@ -340,8 +355,13 @@
         for (const k in f.stats) if (typeof C.stats[k] === 'number') f.stats[k] = clamp(C.stats[k], 0, 1);
         f.moveset = root.MMASim.normalizeMoveset(this.moveset);
       }
-      this.model.setColors(C.color, C.skin);
+      this.model.setColors(C.color, C.skin, C.look);
       this.redrawScreens(C);
+    }
+    // the options panel changed the strike mapping: apply it to the live sim right away
+    setMoveset(moveset) {
+      this.moveset = moveset || DEFAULT_MOVESET;
+      if (this.sim) this.sim.state.f[0].moveset = root.MMASim.normalizeMoveset(this.moveset);
     }
 
     totalLevel(C) { return Career.FACILITIES.reduce((a, f) => a + (C.gym[f.id] || 0), 0); }
@@ -350,7 +370,7 @@
 
     // ---- build the room from the save ----
     build(C) {
-      if (this.group) this.scene.remove(this.group);
+      if (this.group) { this.scene.remove(this.group); disposeRoom(this.group); }
       if (this.coach) { this.coach.dispose(); this.coach = null; }
       const m = mats();
       const g = new THREE.Group(); this.group = g; this.obstacles = [];
@@ -530,6 +550,8 @@
     }
 
     // ---- per frame ----
+    // mouse movement (px) for the free-walk camera; read and cleared by update()
+    look(dx) { if (this.active && !this.paused && !this.locked) this.lookDX += dx; }
     canLock() { const P = this.player; return !!P && Math.hypot(BAG.x - P.x, BAG.z - P.z) < LOCK_RANGE; }
     toggleLock() {
       if (this.locked) { this.locked = false; return; }
@@ -544,7 +566,7 @@
       const C = this.C, P = this.player;
       this.sim = new Sim({
         training: true, grappling: false, seed: (Math.random() * 1e9) | 0, spawn: { x: P.x, z: P.z },
-        players: [{ fighter: C.base, name: C.name, stats: C.stats, color: C.color, skin: C.skin, moveset: this.moveset }, { name: 'Heavy bag' }],
+        players: [{ fighter: C.base, name: C.name, stats: C.stats, color: C.color, skin: C.skin, look: C.look, moveset: this.moveset }, { name: 'Heavy bag' }],
         world: { room: { hw: ROOM.hw, hd: ROOM.hd }, bag: { x: BAG.x, z: BAG.z, r: BAG.r, top: BAG.top, bot: BAG.bot, pivot: BAG.pivot }, obstacles: this._physObstacles() }
       });
       const rag = this.sim.phys.fighters[0];
@@ -642,6 +664,9 @@
       if (!cam.init) { cam.yaw = P.yaw; cam.init = true; cam.pos.set(clamp(P.x - Math.sin(P.yaw) * 4.2, -ROOM.hw + 0.35, ROOM.hw - 0.35), 2.5, clamp(P.z - Math.cos(P.yaw) * 4.2, -ROOM.hd + 0.35, ROOM.hd - 0.35)); cam.tgt.set(P.x, 1.0, P.z); }
       // cam.yaw (the free-walk heading W/A/S/D read) follows the bag while locked, so unlocking leaves the camera behind you
       if (locked) { let d = lockYaw - cam.yaw; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; cam.yaw += d * expo(dt, 7); }
+      // free: the mouse swings the camera round (mouse right turns the view right, i.e. lowers cam.yaw)
+      else if (live) cam.yaw -= this.lookDX * LOOK_SENS;
+      this.lookDX = 0;
       if (locked) {
         // the fight camera (Renderer.update): side-on to you and the bag, centred between you, and it never swaps sides
         const dx = BAG.x - P.x, dz = BAG.z - P.z, dist = Math.hypot(dx, dz) || 0.001;
@@ -661,7 +686,7 @@
         cam.tgt.x += (mx - cam.tgt.x) * expo(dt, 5); cam.tgt.z += (mz - cam.tgt.z) * expo(dt, 5); cam.tgt.y += (0.95 - cam.tgt.y) * expo(dt, 4);
       } else {
         cam.fight = false;
-        const back = 4.0, up = 2.2, side = 0.35; // over the right shoulder
+        const back = 4.0, up = 2.2, side = -0.35; // over the right shoulder ((cos yaw, -sin yaw) is his left)
         let cx = P.x - Math.sin(cam.yaw) * back + Math.cos(cam.yaw) * side, cz = P.z - Math.cos(cam.yaw) * back - Math.sin(cam.yaw) * side;
         cx = clamp(cx, -ROOM.hw + 0.35, ROOM.hw - 0.35); cz = clamp(cz, -ROOM.hd + 0.35, ROOM.hd - 0.35);
         cam.pos.x += (cx - cam.pos.x) * expo(dt, 8); cam.pos.z += (cz - cam.pos.z) * expo(dt, 8); cam.pos.y += (up - cam.pos.y) * expo(dt, 3);

@@ -1,6 +1,9 @@
 // Big close-ups of one kick frozen at a few sim times, from three cameras (side, 3/4 front, behind the kicker),
 // to check the arms, the knee turnover and the foot.
 //   node tools/kick-closeups.js [outdir=/tmp/kickshots] [strike=hkick] [t,t,t...]
+// NOTE: turn the referee off before taking reference pictures, so he isn't in the frame or blocking the fighters:
+//   await page.evaluate(() => window.CageRules.renderer.setRefVisible(false));  (any time after page load; it sticks across fights)
+// or untick Options > Show referee (saved as localStorage cr_ref = '0').
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const ROOT = path.resolve(__dirname, '..'); const outdir = process.argv[2] || '/tmp/kickshots'; fs.mkdirSync(outdir, { recursive: true });
@@ -46,7 +49,7 @@ const server = http.createServer((req, res) => {
       const A = window.CageRules, R = A.renderer, m = R.models[0], o = R.models[1];
       const fx = o.px - m.px, fz = o.pz - m.pz, L = Math.hypot(fx, fz) || 1, ux = fx / L, uz = fz / L;
       R.camera.aspect = W / H; R.camera.updateProjectionMatrix();
-      R.camera.position.set(m.px + ux * dz + uz * dx, dy, m.pz + uz * dz - ux * dx); R.camera.lookAt(m.px + ux * 0.2, ly, m.pz + uz * 0.2);
+      R.camera.position.set(m.px + ux * dz - uz * dx, dy, m.pz + uz * dz + ux * dx); R.camera.lookAt(m.px + ux * 0.2, ly, m.pz + uz * 0.2);
       R.renderer.render(R.scene, R.camera);
     }, [dx, dy, dz, ly, W, H]);
     await page.screenshot({ path: path.join(outdir, `${tag}-${cam}.png`) });

@@ -4,7 +4,7 @@
   const { IN, STRIKES, MODS, LIMBS, LIMB_BIT, MOD_BIT, DEFAULT_MOVESET, recovering } = root.MMASim;
 
   class CpuBrain {
-    constructor(idx, difficulty) {
+    constructor(idx, difficulty, rng) {
       this.idx = idx;
       this.diff = difficulty == null ? 0.6 : difficulty; // 0..1
       this.timer = 0;
@@ -12,7 +12,7 @@
       this.pressed = 0;
       this.lateral = 0;
       this.latT = 0;
-      this.rng = Math.random;
+      this.rng = rng || Math.random; // pass a seeded rng (MMASim.mulberry32) for reproducible runs
       this.moveset = DEFAULT_MOVESET;
       this.modHeld = 0;      // modifier to keep held for the strike we just pressed
       this.modT = 0;
@@ -87,8 +87,9 @@
       else if (oppWinding && dist < 1.8) {
         const react = 0.25 + d * 0.6;
         if (r() < react) {
-          if (r() < 0.25 + d * 0.2 && me.stam > 15) { this.pressed |= IN.DODGE; }
-          else held |= IN.BLOCK;
+          // a fresh BLOCK press while the strike is coming slips it (sim); holding it just blocks
+          if (r() < 0.25 + d * 0.2 && me.stam > 15 && !(this.held & IN.BLOCK)) this.pressed |= IN.BLOCK;
+          held |= IN.BLOCK;
         }
       }
       if (tired && r() < 0.7) held |= IN.BLOCK;

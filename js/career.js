@@ -69,6 +69,41 @@
   const CITIES = ['Newark', 'Baton Rouge', 'Youngstown', 'Fresno', 'Tulsa', 'Dayton', 'Reno', 'Spokane', 'Albuquerque', 'Toledo', 'Las Vegas', 'Anaheim', 'Denver', 'Houston', 'Miami', 'Phoenix', 'Atlanta', 'Chicago', 'Boston', 'Sao Paulo', 'Manchester', 'Dagestan', 'Auckland', 'Mexico City'];
   const SKINS = [0xe0b48c, 0x6b4a2c, 0xc9956a, 0xf0c9a0, 0x8d5a3b, 0xd9a77c, 0x4a2f1c, 0xb98a64];
   const COLORS = [0xd93b3b, 0x2f6fd9, 0x2fb36b, 0xe8a62a, 0x8e44ad, 0x16a085, 0xd35400, 0x2c3e50, 0xf1c40f, 0x7f8c8d];
+  // ---------- the look: everything about a fighter's body that isn't skin or trunks colour (drawn by js/render.js) ----------
+  const LOOK = {
+    hair: [{ id: 'short', name: 'Short' }, { id: 'buzz', name: 'Buzz cut' }, { id: 'bald', name: 'Bald' }, { id: 'long', name: 'Long' }, { id: 'mohawk', name: 'Mohawk' }, { id: 'afro', name: 'Afro' }, { id: 'bun', name: 'Top knot' }],
+    hairColors: [0x1a1210, 0x3b2314, 0x6b4423, 0xa3703a, 0xc9a24a, 0xe8dcb0, 0x8b3a1a, 0x8a8a8e, 0xdcdcdc, 0x2a4fd6, 0x2e9e4f, 0xc2185b],
+    beard: [{ id: 'none', name: 'Clean' }, { id: 'mustache', name: 'Mustache' }, { id: 'goatee', name: 'Goatee' }, { id: 'full', name: 'Full beard' }],
+    build: [{ id: 'lean', name: 'Lean', scale: 0.93 }, { id: 'athletic', name: 'Athletic', scale: 1 }, { id: 'heavy', name: 'Heavy', scale: 1.1 }],
+    gloves: [0xc62828, 0x1e5bd6, 0x111114, 0xf2f2f2, 0xe0b23a, 0x2fb36b, 0x8e44ad, 0xff6f00],
+    trims: [0xf2f2f2, 0x111114, 0xe0b23a, 0xd93b3b, 0x2f6fd9, 0x2fb36b, 0xff6f00, 0xc2185b]
+  };
+  const DEFAULT_LOOK = { hair: 'short', hairColor: 0x1a1210, beard: 'none', build: 'athletic', gloves: 0xc62828, trim: 0xf2f2f2 };
+  const BUILD_SCALE = {}; for (const b of LOOK.build) BUILD_SCALE[b.id] = b.scale;
+  // a complete look from a partial / missing one (old saves have none)
+  function normalizeLook(L) {
+    L = L && typeof L === 'object' ? L : {};
+    const has = (list, id) => list.some(x => x.id === id);
+    return {
+      hair: has(LOOK.hair, L.hair) ? L.hair : DEFAULT_LOOK.hair,
+      hairColor: typeof L.hairColor === 'number' ? L.hairColor : DEFAULT_LOOK.hairColor,
+      beard: has(LOOK.beard, L.beard) ? L.beard : DEFAULT_LOOK.beard,
+      build: has(LOOK.build, L.build) ? L.build : DEFAULT_LOOK.build,
+      gloves: typeof L.gloves === 'number' ? L.gloves : DEFAULT_LOOK.gloves,
+      trim: typeof L.trim === 'number' ? L.trim : DEFAULT_LOOK.trim
+    };
+  }
+  // a random look (opponents, the 'randomise' button); r is a 0..1 rng
+  function randomLook(r) {
+    r = r || Math.random;
+    const pk = (arr) => arr[Math.floor(r() * arr.length)];
+    const natural = LOOK.hairColors.slice(0, 9); // dyed hair is rare on the circuit
+    return {
+      hair: pk(LOOK.hair).id, hairColor: r() < 0.08 ? pk(LOOK.hairColors) : pk(natural),
+      beard: pk(LOOK.beard).id, build: r() < 0.3 ? 'lean' : r() < 0.6 ? 'heavy' : 'athletic',
+      gloves: pk(LOOK.gloves), trim: pk(LOOK.trims)
+    };
+  }
 
   // ---------- RNG (seeded so a save reloads the same offers) ----------
   function rng(seed) {
@@ -98,6 +133,7 @@
       name: (opts.name || '').trim().slice(0, 14) || 'You',
       nick: (opts.nick || '').trim().slice(0, 16),
       base, color: opts.color != null ? opts.color : ROSTER[base].color, skin: opts.skin != null ? opts.skin : ROSTER[base].skin,
+      look: normalizeLook(opts.look),
       stats: startingStats(base),
       week: 1,
       money: 2000,
@@ -141,7 +177,7 @@
       name: pick(r, FIRST) + ' ' + pick(r, LAST), nick: r() < 0.7 ? pick(r, NICKS) : '',
       base, style: ROSTER[base].style, stats, rating: rating(stats), level: lvl,
       record: { w: wins, l: fights - wins }, from: pick(r, CITIES),
-      color: pick(r, COLORS), skin: pick(r, SKINS),
+      color: pick(r, COLORS), skin: pick(r, SKINS), look: randomLook(r),
       diff: clamp(lvl, 0.2, 0.97)   // CPU difficulty for the brain that drives him
     };
   }
@@ -257,8 +293,8 @@
     return {
       seed: (Math.random() * 1e9) | 0,
       players: [
-        { fighter: C.base, name: C.name, stats: C.stats, color: C.color, skin: C.skin, dmg: { head: C.injury.head * 0.5, body: C.injury.body * 0.5, legs: C.injury.legs * 0.5 } },
-        { fighter: opp.base, name: opp.name, stats: opp.stats, color: opp.color === C.color ? 0x8e44ad : opp.color, skin: opp.skin }
+        { fighter: C.base, name: C.name, stats: C.stats, color: C.color, skin: C.skin, look: C.look, dmg: { head: C.injury.head * 0.5, body: C.injury.body * 0.5, legs: C.injury.legs * 0.5 } },
+        { fighter: opp.base, name: opp.name, stats: opp.stats, color: opp.color === C.color ? 0x8e44ad : opp.color, skin: opp.skin, look: opp.look || null }
       ],
       settings: { rounds: o.rounds, len: o.len, grappling: true },
       diff: opp.diff
@@ -330,6 +366,7 @@
     try {
       const C = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
       if (!C || C.v !== SAVE_VERSION || !C.stats) return null;
+      C.look = normalizeLook(C.look); // saves from before the look existed get the default
       return C;
     } catch (_) { return null; }
   }
@@ -338,7 +375,7 @@
   const fmtMoney = (n) => '$' + Math.round(n).toLocaleString();
   const weekLabel = (w) => 'Year ' + (Math.floor((w - 1) / 52) + 1) + ' · Week ' + (((w - 1) % 52) + 1);
 
-  const API = { STATS, STAT_BY_KEY, FACILITIES, FACILITY_BY_ID, FACILITY_MAX, ORGS, TIER_NAME, TIER_POP_CAP, TITLE_POP, TOP, SKINS, COLORS,
+  const API = { STATS, STAT_BY_KEY, FACILITIES, FACILITY_BY_ID, FACILITY_MAX, ORGS, TIER_NAME, TIER_POP_CAP, TITLE_POP, TOP, SKINS, COLORS, LOOK, DEFAULT_LOOK, BUILD_SCALE, normalizeLook, randomLook,
     newCareer, startingStats, rating, tierFor, popLabel, makeOffers, offerDanger, accept, trainGain, trainWeek, fightReady, healWeek,
     upgradeCost, buyUpgrade, fightSetup, applyResult, withdraw, injuryTotal, save, load, erase, fmtMoney, weekLabel, SAVE_KEY };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
