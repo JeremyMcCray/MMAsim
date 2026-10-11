@@ -440,3 +440,6 @@ table.hist td.w { color: #52d273; font-family: var(--font-head); font-weight: 70
 .seg button.on { border-color: var(--gold); color: #fff; box-shadow: 0 0 0 1px var(--gold); }
 button.small { font-size: 13px; padding: 6px 12px; }
 @media (max-width: 760px) { .look { grid-template-columns: 1fr; } .look-preview { max-width: 260px; margin: 0 auto; } }
+
+/* the lobby line under the opponent pick: which look you bring to the fight */
+.look-line { display: flex; align-items: center; gap: 12px; margin-top: 12px; color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .08em; }

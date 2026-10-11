@@ -57,6 +57,7 @@
       <button class="ghost small hidden" id="btnCareerNew">NEW CAREER</button>
       <button class="big" id="btnPractice">PRACTICE VS CPU</button>
       <button class="big" id="btnWatch">WATCH AI VS AI</button>
+      <button class="ghost small" id="btnFighter">YOUR FIGHTER · LOOK</button>
       <div class="menu-sep">ONLINE</div>
       <button class="big" id="btnHost">CREATE ROOM</button>
       <button class="big" id="btnJoin" aria-expanded="false" aria-controls="joinRow">JOIN ROOM</button>
@@ -112,6 +113,7 @@
       </div>
     </div>
     <div class="opp-pick" id="oppPick"></div>
+    <div class="look-line" id="lookLine"><span id="lookLineTxt"></span><button class="ghost small" id="btnLobbyLook">EDIT LOOK</button></div>
     <div class="lobby-btns">
       <button class="ghost" id="btnBack">BACK</button>
       <button class="ghost" id="btnLobbyOptions">OPTIONS</button>
@@ -125,15 +127,15 @@
   <div class="panel wide">
     <div class="lobby-head">
       <div>
-        <div class="lobby-title">NEW CAREER</div>
-        <div class="lobby-status">From the regional circuit to the big league. Pick a base style — it only shapes where you start; training decides what you become.</div>
+        <div class="lobby-title" id="careerNewTitle">NEW CAREER</div>
+        <div class="lobby-status" id="careerNewStatus">From the regional circuit to the big league. Pick a base style — it only shapes where you start; training decides what you become.</div>
       </div>
     </div>
     <div class="roster" id="careerBases"></div>
     <div class="look">
       <div class="look-preview"><canvas id="careerPreview"></canvas><div class="look-hint">drag to turn</div></div>
       <div class="look-opts">
-        <div class="look-row names">
+        <div class="look-row names" id="careerNames">
           <label>Name <input id="careerName" maxlength="14" placeholder="Fighter name"></label>
           <label>Nickname <input id="careerNick" maxlength="16" placeholder="optional"></label>
         </div>
@@ -145,7 +147,7 @@
         <div class="look-row"><label>Trunks</label><span class="swatches" id="careerColors"></span></div>
         <div class="look-row"><label>Trim</label><span class="swatches" id="lkTrim"></span></div>
         <div class="look-row"><label>Gloves</label><span class="swatches" id="lkGloves"></span></div>
-        <div class="look-row"><label></label><button class="ghost small" id="btnLookRandom">RANDOMISE LOOK</button></div>
+        <div class="look-row"><label></label><button class="ghost small" id="btnLookRandom">RANDOMISE LOOK</button><button class="ghost small hidden" id="btnLookClear">CLEAR SAVED LOOK</button></div>
       </div>
     </div>
     <div class="lobby-btns">

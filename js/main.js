@@ -84,7 +84,7 @@
   const App = {
     mode: null, net: null, sim: null, renderer: null, audio: new Audio(), brain: null,
     myIdx: 0, held: 0, pressed: 0, remote: { h: 0, p: 0 },
-    lobby: { picks: ['striker', 'wrestler'], names: ['', ''], ready: [false, false], settings: { rounds: 3, len: 180, diff: 0.6 }, cpuPick: 'random', movesets: [null, null] },
+    lobby: { picks: ['striker', 'wrestler'], names: ['', ''], ready: [false, false], settings: { rounds: 3, len: 180, diff: 0.6 }, cpuPick: 'random', movesets: [null, null], looks: [null, null] },
     optionsOpen: false, paused: false,
     state: null, playing: false, lastSnap: 0, lastInputSend: 0, evQueue: [], rematch: [false, false],
     feedLines: [], hintsHidden: false
@@ -94,6 +94,27 @@
   const isLocal = () => App.mode === 'practice' || App.mode === 'watch' || App.mode === 'career';
   // a roster key that arrived over the network (an own key: '__proto__' or 'toString' must not pass)
   const isFighter = (k) => typeof k === 'string' && Object.prototype.hasOwnProperty.call(ROSTER, k);
+
+  // ---------- your fighter: the look (hair / beard / build / colours, skin, trunks) used in practice and online fights ----------
+  // Career fighters carry their own look on the save; this one lives beside it and is optional (none = a random body).
+  const PROFILE_KEY = 'cr_fighter';
+  const Profile = {
+    cache: undefined,
+    get() {
+      if (this.cache !== undefined) return this.cache;
+      try { this.cache = this.clean(JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null')); } catch (_) { this.cache = null; }
+      return this.cache;
+    },
+    set(p) { this.cache = this.clean(p); try { if (this.cache) localStorage.setItem(PROFILE_KEY, JSON.stringify(this.cache)); else localStorage.removeItem(PROFILE_KEY); } catch (_) {} return this.cache; },
+    // a complete profile from anything (a save, the other player's machine), or null
+    clean(p) {
+      if (!p || typeof p !== 'object') return null;
+      return { look: Career.normalizeLook(p.look), skin: typeof p.skin === 'number' ? p.skin : Career.SKINS[0], color: typeof p.color === 'number' ? p.color : Career.COLORS[0] };
+    },
+    // what a fighter with no profile gets: a fresh random body every fight
+    random() { return { look: Career.randomLook(), skin: Career.SKINS[(Math.random() * Career.SKINS.length) | 0], color: undefined }; }
+  };
+  function applyProfile(p, prof) { prof = prof || Profile.random(); p.look = prof.look; p.skin = prof.skin; if (prof.color != null) p.color = prof.color; }
 
   function fighterSelect(id, sel, random) {
     return '<select id="' + id + '">' + (random ? '<option value="random"' + (sel === 'random' ? ' selected' : '') + '>Random</option>' : '') +
@@ -174,6 +195,9 @@
       const on = L.names[opp] || (opp === 0 ? 'Host' : 'Guest');
       op.textContent = App.net && App.net.connected ? on + ' picked ' + ROSTER[L.picks[opp]].name + (L.ready[opp] ? ' ✓' : '') : '';
     }
+    $('#lookLine').classList.toggle('hidden', App.mode === 'watch');
+    $('#lookLineTxt').textContent = Profile.get() ? 'Your fighter: custom look' : 'Your fighter: random look each fight';
+    $('#btnLobbyLook').disabled = !!L.ready[me];
     const rb = $('#btnReady');
     rb.textContent = L.ready[me] ? 'WAITING...' : 'READY';
     rb.disabled = L.ready[me] || (!isLocal() && !(App.net && App.net.connected));
@@ -193,7 +217,7 @@
 
   function sendPick() {
     if (App.mode === 'host') App.net.send({ t: 'lobby', picks: App.lobby.picks, names: App.lobby.names, ready: App.lobby.ready, settings: App.lobby.settings });
-    else if (App.mode === 'guest') App.net.send({ t: 'pick', fighter: App.lobby.picks[1], name: myName(), ready: App.lobby.ready[1], moveset: Controls.moveset });
+    else if (App.mode === 'guest') App.net.send({ t: 'pick', fighter: App.lobby.picks[1], name: myName(), ready: App.lobby.ready[1], moveset: Controls.moveset, profile: Profile.get() });
   }
 
   function enterLobby(mode) {
@@ -242,6 +266,7 @@
         App.lobby.names[1] = String(d.name || '').slice(0, 14);
         App.lobby.ready[1] = !!d.ready;
         App.lobby.movesets[1] = normalizeMoveset(d.moveset);
+        App.lobby.looks[1] = Profile.clean(d.profile);
         refreshLobby(); sendPick(); maybeStart(); break;
       case 'in':
         App.remote.h = (d.h | 0) & SIM_MASK; App.remote.p |= (d.p | 0) & SIM_MASK; break;
@@ -294,7 +319,7 @@
     if (!Array.isArray(d.players) || d.players.length !== 2 || !s || typeof s !== 'object') return null;
     const players = d.players.map((p) => {
       p = p && typeof p === 'object' ? p : {};
-      return { fighter: isFighter(p.fighter) ? p.fighter : 'balanced', name: String(p.name || '').slice(0, 24), color: typeof p.color === 'number' ? p.color : undefined, moveset: p.moveset, look: p.look && typeof p.look === 'object' ? Career.normalizeLook(p.look) : undefined };
+      return { fighter: isFighter(p.fighter) ? p.fighter : 'balanced', name: String(p.name || '').slice(0, 24), color: typeof p.color === 'number' ? p.color : undefined, moveset: p.moveset, skin: typeof p.skin === 'number' ? p.skin : undefined, look: p.look && typeof p.look === 'object' ? Career.normalizeLook(p.look) : undefined };
     });
     return { t: 'start', seed: d.seed | 0, players, settings: { rounds: Math.min(5, Math.max(1, s.rounds | 0)), len: Math.min(300, Math.max(60, s.len | 0)), grappling: s.grappling !== false } };
   }
@@ -317,10 +342,12 @@
       { fighter: L.picks[0], name: App.mode === 'watch' ? ROSTER[L.picks[0]].name + ' (CPU)' : (L.names[0] || myName() || ROSTER[L.picks[0]].name), moveset: App.mode === 'watch' ? DEFAULT_MOVESET : Controls.moveset },
       { fighter: p1, name: isLocal() ? ROSTER[p1].name + ' (CPU)' : (L.names[1] || ROSTER[p1].name), moveset: isLocal() ? DEFAULT_MOVESET : (L.movesets[1] || DEFAULT_MOVESET) }
     ];
-    // same archetype -> alternate shorts colour so they're distinguishable
-    if (players[0].fighter === players[1].fighter) players[1].color = 0x8e44ad;
-    // practice: both fighters get a fresh random look (hair / beard / build / colours) and skin tone every fight
-    if (App.mode === 'practice') for (const p of players) { p.look = Career.randomLook(); p.skin = Career.SKINS[(Math.random() * Career.SKINS.length) | 0]; }
+    // looks: a human wears their own fighter (none saved = random); the CPU gets a fresh random body every fight
+    applyProfile(players[0], App.mode === 'watch' ? null : Profile.get());
+    applyProfile(players[1], App.mode === 'host' ? L.looks[1] : null);
+    // same trunks -> alternate the blue corner's colour so they're distinguishable
+    const trunks = (p) => p.color != null ? p.color : ROSTER[p.fighter].color;
+    if (trunks(players[0]) === trunks(players[1])) players[1].color = trunks(players[0]) === 0x8e44ad ? 0x1e88e5 : 0x8e44ad;
     const msg = { t: 'start', seed: (Math.random() * 1e9) | 0, players, settings: { rounds: L.settings.rounds, len: L.settings.len, grappling: L.settings.grappling !== false } };
     if (App.mode === 'host') App.net.send(msg);
     beginFight(msg);
@@ -912,7 +939,7 @@
   // ============================================================
   //  Career mode (single player campaign) — model in js/career.js
   // ============================================================
-  const CareerUI = { C: null, tab: 'camp', pick: { base: 'striker', color: null, skin: null, look: null }, justFought: false, lastTrain: null, confirmDel: 0 };
+  const CareerUI = { C: null, tab: 'camp', pick: { base: 'striker', color: null, skin: null, look: null }, pickMode: 'career', backTo: 'menu', justFought: false, lastTrain: null, confirmDel: 0 };
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const hex = (c) => '#' + (c >>> 0).toString(16).padStart(6, '0');
   const pct100 = (v) => Math.round(v * 100);
@@ -950,8 +977,41 @@
     }
     renderLookPicks();
     try { if (!$('#careerName').value) $('#careerName').value = localStorage.getItem('cr_name') || ''; } catch (_) {}
+    setPickMode('career');
     screen('careerNew');
     LookPreview.start();
+  }
+  // the same screen edits your fighter for practice / online: no base style or name, SAVE instead of START
+  function setPickMode(mode) {
+    CareerUI.pickMode = mode;
+    const prof = mode === 'profile';
+    $('#careerBases').classList.toggle('hidden', prof);
+    $('#careerNames').classList.toggle('hidden', prof);
+    $('#careerNewTitle').textContent = prof ? 'YOUR FIGHTER' : 'NEW CAREER';
+    $('#careerNewStatus').textContent = prof ? 'This is you in practice and online fights. The CPU always shows up as somebody new.' : 'From the regional circuit to the big league. Pick a base style \u2014 it only shapes where you start; training decides what you become.';
+    $('#btnCareerStart').textContent = prof ? 'SAVE' : 'START CAREER';
+    $('#btnLookClear').classList.toggle('hidden', !prof || !Profile.get());
+  }
+  // backTo: the screen to return to (the lobby keeps its room open while the look is edited)
+  function openProfile(backTo) {
+    const saved = Profile.get() || Profile.random();
+    CareerUI.pick = { base: 'striker', color: saved.color != null ? saved.color : Career.COLORS[0], skin: saved.skin, look: Career.normalizeLook(saved.look) };
+    CareerUI.backTo = backTo || 'menu';
+    renderLookPicks();
+    setPickMode('profile');
+    screen('careerNew');
+    LookPreview.start();
+  }
+  function closeProfile() {
+    LookPreview.stop();
+    screen(CareerUI.backTo);
+    if (CareerUI.backTo === 'lobby') { refreshLobby(); sendPick(); } // the host / guest hears about the new look
+  }
+  function saveProfile() {
+    const P = CareerUI.pick;
+    Profile.set({ look: P.look, skin: P.skin, color: P.color });
+    toast('Fighter saved.', 2000);
+    closeProfile();
   }
   // the pickers for everything the renderer can vary; every change rebuilds the preview model
   function renderLookPicks() {
@@ -1010,6 +1070,7 @@
     }
   };
   function startCareer() {
+    if (CareerUI.pickMode === 'profile') { saveProfile(); return; }
     const name = ($('#careerName').value || '').trim();
     if (!name) { toast('Give your fighter a name.'); $('#careerName').focus(); return; }
     const P = CareerUI.pick;
@@ -1279,7 +1340,10 @@
   }
   function leaveCareerFight() { settleCareerFight(); stopFight(); openCareer(); }
   $('#btnCareer').onclick = () => { App.audio.init(); if (careerLoad()) openCareer(); else openCareerNew(); };
-  $('#btnCareerNewBack').onclick = () => { LookPreview.stop(); screen('menu'); };
+  $('#btnCareerNewBack').onclick = () => { if (CareerUI.pickMode === 'profile') closeProfile(); else { LookPreview.stop(); screen('menu'); } };
+  $('#btnFighter').onclick = () => { App.audio.init(); openProfile('menu'); };
+  $('#btnLobbyLook').onclick = () => openProfile('lobby');
+  $('#btnLookClear').onclick = () => { Profile.set(null); toast('Look cleared \u2014 you get a random fighter each fight.', 2500); closeProfile(); };
   // NEW CAREER on the main menu: shown only when a save exists. Click twice to confirm; the old save is
   // kept until the new fighter is actually started, so backing out of the creation screen loses nothing.
   $('#btnCareerNew').onclick = () => {
