@@ -440,3 +440,47 @@ table.hist td.w { color: #52d273; font-family: var(--font-head); font-weight: 70
 .seg button.on { border-color: var(--gold); color: #fff; box-shadow: 0 0 0 1px var(--gold); }
 button.small { font-size: 13px; padding: 6px 12px; }
 @media (max-width: 760px) { .look { grid-template-columns: 1fr; } .look-preview { max-width: 260px; margin: 0 auto; } }
+
+/* ---------- strike lab (options) ---------- */
+.lab { display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); gap: 24px; margin-top: 6px; align-items: start; }
+.lab h3, .lab-sec h3 { font-family: var(--font-head); font-weight: 700; font-size: 18px; letter-spacing: .15em; color: var(--gold); margin: 10px 0 6px; }
+.lab-sec h3 small { color: var(--muted); font-size: 12px; letter-spacing: .1em; margin-left: 8px; }
+.lab-preview { position: relative; background: radial-gradient(ellipse at 50% 30%, rgba(255,255,255,.07), rgba(0,0,0,.35) 75%); border: 1px solid rgba(255,255,255,.08); border-radius: 12px; overflow: hidden; aspect-ratio: 4 / 4.2; cursor: grab; }
+.lab-preview:active { cursor: grabbing; }
+.lab-preview canvas { width: 100%; height: 100%; display: block; }
+.lab-readout { position: absolute; left: 10px; right: 10px; bottom: 10px; font-size: 12px; line-height: 1.35; padding: 6px 10px; border-radius: 8px; background: rgba(0,0,0,.55); color: var(--muted); pointer-events: none; }
+.lab-readout:empty { display: none; }
+.lab-readout.ok { color: #9be7a9; } .lab-readout.warn { color: #ffd27a; } .lab-readout.bad { color: #ff8f8f; }
+.lab-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 6px 0; }
+.lab-row > label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; width: 92px; flex: 0 0 auto; }
+.lab-row > label.in { width: auto; margin-left: 10px; }
+.lab-row > label b { color: var(--gold); font-family: var(--font-head); letter-spacing: .06em; font-size: 14px; }
+.lab-row > label.mute-music { width: auto; text-transform: none; letter-spacing: 0; font-size: 13px; margin: 0; }
+.lab-row input[type="range"] { flex: 1; min-width: 120px; accent-color: var(--gold); cursor: pointer; }
+.lab-row input[type="number"] { width: 84px; padding: 5px 8px; font-size: 14px; }
+.lab-row input[type="text"], .lab-row input:not([type]) { flex: 1; min-width: 160px; padding: 6px 10px; font-size: 14px; }
+.lab-row select { font-size: 13px; padding: 5px 8px; max-width: 240px; }
+.lab-val { min-width: 4.5em; color: #fff; font-family: var(--font-head); font-size: 15px; letter-spacing: .04em; }
+.lab-left { position: sticky; top: 0; align-self: start; }
+.lab-transport { margin-top: 10px; }
+.lab-transport > label { width: auto; }
+.lab-transport input[type="range"] { min-width: 90px; }
+.lab-transport .lab-val { min-width: 3.6em; }
+.lab button.small { font-size: 13px; padding: 6px 12px; letter-spacing: .1em; }
+.lab button.gold { background: var(--gold); color: #000; }
+.lab button.danger { border-color: rgba(226,59,59,.6); color: #ff9c9c; }
+.lab-sec { padding: 4px 0 10px; border-bottom: 1px solid rgba(255,255,255,.08); }
+.lab-sec:last-child { border-bottom: 0; }
+.lab .seg button { font-size: 12px; padding: 5px 10px; }
+.lab-tl { position: relative; height: 38px; margin: 10px 14px 6px; border-top: 2px solid rgba(255,255,255,.18); }
+.lab-tl-act { position: absolute; top: -2px; height: 6px; background: var(--gold); border-radius: 3px; opacity: .85; }
+.lab-kf { position: absolute; top: 8px; transform: translateX(-50%); width: 26px; height: 26px; padding: 0; border-radius: 50%; font-size: 12px; letter-spacing: 0; background: rgba(255,255,255,.1); border: 2px solid rgba(255,255,255,.3); color: #fff; }
+.lab-kf.end { background: rgba(255,255,255,.04); color: var(--muted); }
+.lab-kf.on { border-color: var(--gold); background: var(--gold); color: #000; }
+.lab-kf:hover { transform: translateX(-50%) translateY(-1px); }
+.lab-joints { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0 8px; }
+.lab-joints button { font-size: 11px; letter-spacing: .06em; padding: 5px 9px; background: rgba(255,255,255,.04); border: 2px solid rgba(255,255,255,.14); color: var(--muted); border-radius: 8px; position: relative; }
+.lab-joints button.set { color: #fff; border-color: rgba(224,178,58,.45); }
+.lab-joints button.set::after { content: ''; position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; border-radius: 50%; background: var(--gold); }
+.lab-joints button.on { border-color: var(--gold); color: #fff; box-shadow: 0 0 0 1px var(--gold); }
+@media (max-width: 900px) { .lab { grid-template-columns: 1fr; } }

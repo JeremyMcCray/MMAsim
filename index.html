@@ -6,7 +6,7 @@
 <title>Cage Rules — 1v1 MMA</title>
 <meta name="description" content="Cage Rules: a 3D one-on-one mixed martial arts simulation you can play online against a friend, right in the browser.">
 <link href="lib/fonts/fonts.css" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=29">
+<link rel="stylesheet" href="css/style.css?v=30">
 </head>
 <body>
 <canvas id="musicbg" aria-hidden="true" hidden></canvas>
@@ -252,6 +252,7 @@
       <button type="button" class="opt-tab on" data-tab="game" role="tab" aria-selected="true">GAME</button>
       <button type="button" class="opt-tab" data-tab="keys" role="tab" aria-selected="false">KEY BINDINGS</button>
       <button type="button" class="opt-tab" data-tab="strikes" role="tab" aria-selected="false">STRIKES</button>
+      <button type="button" class="opt-tab" data-tab="lab" role="tab" aria-selected="false">STRIKE LAB</button>
     </div>
     <div class="opt-page" data-page="game" role="tabpanel">
       <div class="opt-cols game">
@@ -310,8 +311,30 @@
         <h3>STRIKES</h3>
         <p class="opt-help">Each limb key throws a different strike depending on which modifier you are holding. Strikes only do damage when the hand or foot actually reaches the target: step in to add power, and don't throw long shots from the clinch. Press the next strike while one is still landing to chain it.</p>
         <table class="moves" id="moveTable"></table>
+        <p class="opt-help">Strikes you made in the <b>STRIKE LAB</b> show up here under <i>Your strikes</i>.</p>
         <h3>ON THE GROUND</h3>
         <p class="opt-help">Positions: closed guard → half guard → side control → mount, or back control. <b>Takedown key + a direction</b> attempts a pass, escape, sweep or stand-up (the other fighter holds block to base and deny it; attempts have a short cooldown). <b>Takedown key alone</b> goes for a submission from that position; hold it to squeeze, the defender holds block and times escapes. The hands punch; hold <b data-mod="mod1">Q</b> for elbows, <b data-mod="mod2">E</b> for hammer fists, <b data-mod="mod3">R</b> for body shots; leg keys knee the body. Strikes hit hardest from mount; the bottom fighter can only strike from guard.</p>
+      </div>
+    </div>
+    <div class="opt-page hidden" data-page="lab" role="tabpanel">
+      <div class="lab">
+        <div class="lab-left">
+          <h3>STRIKE LAB</h3>
+          <p class="opt-help">Build your own strike from keyframes: pose the fighter frame by frame, set the impact window, then put it on a key. The ragdoll chases these poses with its joint motors, so what lands is still decided by real contact. Drag to orbit, wheel to zoom.</p>
+          <div class="lab-preview"><canvas id="labCanvas"></canvas><div class="lab-readout" id="labReadout"></div></div>
+          <div class="lab-row lab-transport">
+            <button type="button" class="ghost small" id="labPlay">PLAY</button>
+            <input type="range" id="labScrub" min="0" max="1000" value="0" aria-label="Scrub">
+            <span class="lab-val" id="labT">0.00 s</span>
+            <label class="mute-music"><input type="checkbox" id="labSlow"> Slow</label>
+          </div>
+          <div class="lab-row lab-transport">
+            <button type="button" class="small gold" id="labTest">PHYSICS TEST</button>
+            <label>Dummy at</label><input type="range" id="labDist" min="0.5" max="1.8" step="0.01" value="1" aria-label="Dummy distance"><span class="lab-val" id="labDistLbl">1.00 m</span>
+          </div>
+          <p class="opt-help">PHYSICS TEST throws the strike for real at a standing dummy and reports what the weapon met inside the impact window.</p>
+        </div>
+        <div class="lab-right" id="labPanel"></div>
       </div>
     </div>
     <div class="lobby-btns">
@@ -327,8 +350,8 @@
 <!-- Vendored three.js r128 and PeerJS 1.5.x, so the desktop build runs offline. -->
 <script src="lib/three.min.js"></script>
 <script src="lib/peerjs.min.js"></script>
-<script src="js/physics.js?v=17"></script>
-<script src="js/sim.js?v=28"></script>
+<script src="js/physics.js?v=18"></script>
+<script src="js/sim.js?v=29"></script>
 <script src="js/ai.js?v=12"></script>
 <script src="js/career.js?v=17"></script>
 <script src="js/music-env.js?v=17"></script>
@@ -338,7 +361,8 @@
 <script src="js/net.js?v=12"></script>
 <script src="js/audio.js?v=19"></script>
 <script src="js/chat.js?v=1"></script>
-<script src="js/main.js?v=35"></script>
+<script src="js/strikelab.js?v=1"></script>
+<script src="js/main.js?v=36"></script>
 <script src="lib/rapier3d-compat.js?v=12"></script>
 <script>
   // Rapier physics engine (vendored, WASM inlined, plain script so the game also runs from file://).

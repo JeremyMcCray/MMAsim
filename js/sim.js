@@ -49,9 +49,10 @@
     for (const m of MODS) {
       out[m] = {};
       for (const l of LIMBS) {
-        const kinds = (l === 'lh' || l === 'rh') ? HAND_KINDS : LEG_KINDS;
+        const hand = l === 'lh' || l === 'rh', kinds = hand ? HAND_KINDS : LEG_KINDS;
         const v = ms && ms[m] && ms[m][l];
-        out[m][l] = kinds.indexOf(v) >= 0 ? v : DEFAULT_MOVESET[m][l];
+        const custom = CUSTOM_KINDS[v] && CUSTOM_KINDS[v].hand === hand; // a player-made strike for this kind of limb
+        out[m][l] = kinds.indexOf(v) >= 0 || custom ? v : DEFAULT_MOVESET[m][l];
       }
     }
     return out;
@@ -206,6 +207,126 @@
       });
     }
   })();
+
+  // ---------- Player-made strikes ----------
+  // A custom strike is a keyframed pose sequence in the physics rig's terms (see js/physics.js STRIKES), authored in
+  // the options panel's Strike Lab and saved by the app. Record:
+  //   { id: 'c_xxxxxxxx', name, side: 'l'|'r', weapon: 'fist'|'shin'|'foot'|'knee', part: 'head'|'body'|'legs', push,
+  //     power (weapon multiplier), cost (stamina), speed, lunge, active: [t0, t1], frames: [{ t, <joint>: [x,y,z] | absent = stance,
+  //     pelvisYaw, pelvisTilt, lift, lAnkle, rAnkle }] }
+  // register() turns it into a physics strike on the authored side plus its mirror on the other side (keys
+  // '<limb>_<id>'), so the moveset can map any limb key + modifier to it. Records that arrive from the other player
+  // online pass through sanitize() first: every field is coerced and clamped.
+  const CUSTOM_KINDS = {}; // id -> { hand: bool, name } (kinds the moveset may hold besides HAND_KINDS / LEG_KINDS)
+  const CUSTOM_JOINTS = ['chest', 'head', 'lUpperArm', 'lForearm', 'rUpperArm', 'rForearm', 'lThigh', 'lShin', 'rThigh', 'rShin'];
+  const CUSTOM_LIMITS = { power: [0.3, 3], cost: [1, 20], speed: [0.5, 4], lunge: [0, 3], frames: 16, maxT: 3 };
+  const CUSTOM_WEAPON = { fist: 'Fist', shin: 'Shin', foot: 'Foot', knee: 'Shin' };
+  const CustomStrikes = {
+    KINDS: CUSTOM_KINDS, JOINTS: CUSTOM_JOINTS, LIMITS: CUSTOM_LIMITS,
+    newId() { return 'c_' + Math.random().toString(36).slice(2, 10).padEnd(8, '0'); },
+    isId(v) { return typeof v === 'string' && /^c_[a-z0-9]{4,12}$/.test(v); },
+    limbOf(c) { return c.side + (c.weapon === 'fist' ? 'h' : 'l'); },
+    otherLimb(limb) { return OTHER_SIDE[limb]; },
+    // the record coerced into a valid one (or null when it cannot be one)
+    sanitize(c) {
+      if (!c || typeof c !== 'object' || !this.isId(c.id)) return null;
+      const num = (v, lo, hi, d) => { v = +v; return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d; };
+      const eul = (v) => Array.isArray(v) && v.length === 3 && v.every(x => Number.isFinite(+x)) ? v.map(x => Math.round(num(x, -180, 180, 0) * 10) / 10) : null;
+      const o = {
+        id: c.id, name: String(c.name || 'Custom strike').replace(/[^\w .'!&-]/g, '').slice(0, 24) || 'Custom strike',
+        side: c.side === 'l' ? 'l' : 'r', weapon: CUSTOM_WEAPON[c.weapon] ? c.weapon : 'fist',
+        part: c.part === 'body' || c.part === 'legs' ? c.part : 'head', push: !!c.push,
+        power: num(c.power, CUSTOM_LIMITS.power[0], CUSTOM_LIMITS.power[1], 1.2), cost: num(c.cost, CUSTOM_LIMITS.cost[0], CUSTOM_LIMITS.cost[1], 5),
+        speed: num(c.speed, CUSTOM_LIMITS.speed[0], CUSTOM_LIMITS.speed[1], 1.5), lunge: num(c.lunge, CUSTOM_LIMITS.lunge[0], CUSTOM_LIMITS.lunge[1], 0.5),
+        frames: []
+      };
+      const src = Array.isArray(c.frames) ? c.frames.slice(0, CUSTOM_LIMITS.frames) : [];
+      for (const f of src) {
+        if (!f || typeof f !== 'object') continue;
+        const g = { t: Math.round(num(f.t, 0, CUSTOM_LIMITS.maxT, 0) * 1000) / 1000 };
+        for (const j of CUSTOM_JOINTS) { const e = eul(f[j]); if (e) g[j] = e; }
+        if (f.pelvisYaw != null && Number.isFinite(+f.pelvisYaw)) g.pelvisYaw = Math.round(num(f.pelvisYaw, -180, 180, 0) * 10) / 10;
+        const tilt = eul(f.pelvisTilt); if (tilt) g.pelvisTilt = tilt;
+        if (f.lift != null && Number.isFinite(+f.lift)) g.lift = Math.round(num(f.lift, -0.3, 0.3, 0) * 1000) / 1000;
+        for (const a of ['lAnkle', 'rAnkle']) if (f[a] != null && Number.isFinite(+f[a])) g[a] = Math.round(num(f[a], -90, 90, 0) * 10) / 10;
+        o.frames.push(g);
+      }
+      o.frames.sort((a, b) => a.t - b.t);
+      // first frame at t = 0 and strictly increasing times; at least a start, an impact and an end
+      if (o.frames.length) o.frames[0].t = 0;
+      for (let i = 1; i < o.frames.length; i++) if (o.frames[i].t <= o.frames[i - 1].t) o.frames[i].t = Math.round((o.frames[i - 1].t + 0.02) * 1000) / 1000;
+      while (o.frames.length < 2) o.frames.push({ t: (o.frames.length ? o.frames[o.frames.length - 1].t : 0) + 0.2 });
+      // the strike starts and ends in the stance
+      o.frames[0] = { t: 0 }; o.frames[o.frames.length - 1] = { t: o.frames[o.frames.length - 1].t };
+      const dur = o.frames[o.frames.length - 1].t;
+      const a0 = num(c.active && c.active[0], 0.02, Math.max(0.02, dur - 0.02), dur * 0.4), a1 = num(c.active && c.active[1], a0 + 0.02, dur, Math.min(dur, a0 + 0.15));
+      o.active = [Math.round(a0 * 1000) / 1000, Math.round(Math.min(dur, Math.max(a0 + 0.02, a1)) * 1000) / 1000];
+      return o;
+    },
+    // the physics strike for the authored side (keyframes resolved to the rig's conventions)
+    toPhysDef(c) {
+      const S = 'stance';
+      const weapon = c.side + CUSTOM_WEAPON[c.weapon];
+      const keys = [];
+      const used = (k) => c.frames.some(f => f[k] != null);
+      for (const k of ['chest', 'head', 'lUpperArm', 'lForearm', 'rUpperArm', 'rForearm', 'lThigh', 'lShin', 'rThigh', 'rShin', 'pelvisYaw', 'pelvisTilt', 'lift', 'lAnkle', 'rAnkle']) if (used(k)) keys.push(k);
+      // the joints of the striking limb are always driven, so the preview and the strike agree even when a frame leaves them in the stance
+      for (const k of (c.weapon === 'fist' ? [c.side + 'UpperArm', c.side + 'Forearm'] : [c.side + 'Thigh', c.side + 'Shin'])) if (!keys.includes(k)) keys.push(k);
+      const frames = c.frames.map(f => {
+        const o = { t: f.t };
+        for (const k of keys) {
+          if (k === 'lift' || k === 'lAnkle' || k === 'rAnkle') o[k] = f[k] != null ? f[k] : 0;
+          else o[k] = f[k] != null ? (Array.isArray(f[k]) ? f[k].slice() : f[k]) : S;
+        }
+        return o;
+      });
+      return { name: c.name, part: c.part, push: c.push || undefined, keys, weapon, weaponMult: c.power, active: c.active.slice(), cost: c.cost, speed: c.speed,
+        lunge: c.lunge || undefined, kneeStrike: c.weapon === 'knee' || undefined, custom: c.id, frames };
+    },
+    // physics + sim entries for one side's version
+    _simEntry(key, limb, c, def) {
+      const PH = root.MMAPhys;
+      const tip = c.weapon === 'fist' ? 'hand' : c.weapon === 'knee' ? 'knee' : 'foot';
+      const wname = def.knee ? def.weapon[0] + 'Knee' : def.weapon;
+      const path = []; let reach = 0;
+      for (const f of def.frames) {
+        const r = PH.fk(PH.resolveFrameExport(def, f, PH.STANCE), 0), wp = r.w[wname];
+        path.push([f.t, wp.z, wp.x, wp.y]); reach = Math.max(reach, wp.z);
+      }
+      return { key, limb, kind: c.id, bit: LIMB_BIT[limb], name: c.name, w: def.w, a: def.a, r: def.r, dmg: 2.2 * c.power, stam: c.cost, part: c.part, push: !!c.push,
+        tip, reach, path, range: def.range, custom: true };
+    },
+    register(c) {
+      const PH = root.MMAPhys;
+      c = this.sanitize(c); if (!c || !PH) return null;
+      const limb = this.limbOf(c), other = OTHER_SIDE[limb];
+      const def = PH.registerStrike(limb + '_' + c.id, this.toPhysDef(c));
+      const mdef = PH.registerStrike(other + '_' + c.id, PH.mirrorToOtherSide(def));
+      mdef.custom = c.id;
+      STRIKES[limb + '_' + c.id] = this._simEntry(limb + '_' + c.id, limb, c, def);
+      STRIKES[other + '_' + c.id] = this._simEntry(other + '_' + c.id, other, c, mdef);
+      CUSTOM_KINDS[c.id] = { hand: c.weapon === 'fist', name: c.name };
+      KIND_LABEL[c.id] = c.name;
+      return c;
+    },
+    unregister(id) {
+      const PH = root.MMAPhys;
+      for (const limb of LIMBS) { delete STRIKES[limb + '_' + id]; if (PH) PH.unregisterStrike(limb + '_' + id); }
+      delete CUSTOM_KINDS[id]; delete KIND_LABEL[id];
+    },
+    // a built-in strike as an editable record (the starting point for a new one)
+    fromBuiltin(key, name) {
+      const PH = root.MMAPhys; const d = PH && PH.STRIKES[key]; if (!d) return null;
+      const c = { id: this.newId(), name: name || d.name, side: d.weapon[0], weapon: d.knee ? 'knee' : d.weapon.endsWith('Fist') ? 'fist' : d.weapon.endsWith('Foot') ? 'foot' : 'shin',
+        part: d.part, push: !!d.push, power: d.weaponMult, cost: d.cost, speed: d.speed, lunge: d.lunge || 0, active: d.active.slice(), frames: [] };
+      for (const f of d.frames) {
+        const g = { t: f.t };
+        for (const k of d.keys) { const v = f[k]; if (v == null || v === 'stance') continue; g[k] = Array.isArray(v) ? v.slice() : v; }
+        c.frames.push(g);
+      }
+      return this.sanitize(c);
+    }
+  };
 
   const SUBS = ['armbar', 'rear-naked choke', 'guillotine', 'kimura', 'triangle choke', 'americana', 'arm triangle'];
 
@@ -1395,7 +1516,8 @@
 
   const API = { IN, STRIKES, ROSTER, SUBS, POS_NAME, MOVES, SUBS_BY, BOTTOM_CAN_STRIKE, Sim, describe, CAGE_R, DT, BREAK_T,
     KD: { FALL: KD_FALL, STAY: KD_STAY, RISE: KD_RISE, FOLLOW_DIST: KD_FOLLOW_DIST },
-    LIMBS, LIMB_BIT, LIMB_NAME, MODS, MOD_BIT, HAND_KINDS, LEG_KINDS, KIND_LABEL, KIND_STATS, DEFAULT_MOVESET, normalizeMoveset, modOf, isSouthpaw, strikeTip, TIP_R, recovering, mulberry32 };
+    LIMBS, LIMB_BIT, LIMB_NAME, MODS, MOD_BIT, HAND_KINDS, LEG_KINDS, KIND_LABEL, KIND_STATS, DEFAULT_MOVESET, normalizeMoveset, modOf, isSouthpaw, strikeTip, TIP_R, recovering, mulberry32,
+    CustomStrikes, CUSTOM_KINDS };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   root.MMASim = API;
 })(typeof window !== 'undefined' ? window : globalThis);

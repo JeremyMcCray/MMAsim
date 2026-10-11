@@ -3,7 +3,8 @@
    ============================================================ */
 (function () {
   'use strict';
-  const { IN, Sim, ROSTER, describe, LIMBS, LIMB_NAME, MODS, HAND_KINDS, LEG_KINDS, KIND_LABEL, DEFAULT_MOVESET, normalizeMoveset, POS_NAME, MOVES, SUBS_BY, BOTTOM_CAN_STRIKE, KD, BREAK_T } = window.MMASim;
+  const { IN, Sim, ROSTER, describe, LIMBS, LIMB_NAME, MODS, HAND_KINDS, LEG_KINDS, KIND_LABEL, DEFAULT_MOVESET, normalizeMoveset, POS_NAME, MOVES, SUBS_BY, BOTTOM_CAN_STRIKE, KD, BREAK_T, CustomStrikes } = window.MMASim;
+  const StrikeLab = window.MMAStrikeLab;
   const { CpuBrain } = window.MMAAI;
   const { Renderer } = window.MMARender;
   const { Net } = window.MMANet;
@@ -36,7 +37,8 @@
     { id: 'lock', label: 'Lock on to the heavy bag (gym)', bit: 1 << 15, def: ['KeyT', ''] }
   ];
   const IN_INTERACT = 1 << 14, IN_LOCK = 1 << 15, SIM_MASK = 0x3fff | IN.STANCE | IN.CHECK; // interact/lock are app-only bits; mask with SIM_MASK before input reaches the sim
-  const Controls = { binds: {}, moveset: null, keyMap: {}, pad: {} };
+  const Controls = { binds: {}, moveset: null, keyMap: {}, pad: {}, custom: [] }; // custom: player-made strikes (MMASim.CustomStrikes records), registered at load
+  const MAX_CUSTOM = 16;
   // ---------- gamepad (standard layout: Xbox / PlayStation / Steam Input) ----------
   // pad codes: 'B<n>' = button n, 'A<axis><+|->' = a stick axis pushed past the deadzone
   const PAD_DEFAULT = { fwd: 'A1-', back: 'A1+', left: 'A0-', right: 'A0+', lh: 'B2', rh: 'B3', ll: 'B0', rl: 'B1', mod1: 'B4', mod2: 'B5', mod3: 'B6', block: 'B7', grapple: 'B10', dodge: 'B11', stance: 'B14', check: 'B13', interact: 'B12', lock: 'B15' };
@@ -65,14 +67,24 @@
       if (b) for (const a of ACTIONS) if (Array.isArray(b[a.id])) Controls.binds[a.id] = [String(b[a.id][0] || ''), String(b[a.id][1] || '')];
       const g = JSON.parse(localStorage.getItem('cr_pad') || 'null');
       if (g) for (const a of ACTIONS) if (typeof g[a.id] === 'string') Controls.pad[a.id] = g[a.id];
+      const cs = JSON.parse(localStorage.getItem('cr_custom_strikes') || 'null');
+      if (Array.isArray(cs)) for (const c of cs.slice(0, MAX_CUSTOM)) { const clean = CustomStrikes.register(c); if (clean) Controls.custom.push(clean); }
       const m = JSON.parse(localStorage.getItem('cr_moveset') || 'null');
       if (m) Controls.moveset = normalizeMoveset(m);
     } catch (_) {}
     rebuildKeyMap();
   }
+  // the custom strikes a moveset throws (sent to the other player online so their copy of the fight knows them)
+  function customsIn(moveset) {
+    const ids = new Set(); for (const m of MODS) for (const l of LIMBS) if (CustomStrikes.isId(moveset[m][l])) ids.add(moveset[m][l]);
+    return Controls.custom.filter(c => ids.has(c.id));
+  }
+  // register strikes that arrived from the other player (CustomStrikes.register checks and clamps every field)
+  function registerRemote(list) { if (Array.isArray(list)) for (const c of list.slice(0, MAX_CUSTOM)) CustomStrikes.register(c); }
   function syncGymMoveset() { if (App.gym && App.gym.active) App.gym.setMoveset(Controls.moveset); }
   function saveControls() {
-    try { localStorage.setItem('cr_binds', JSON.stringify(Controls.binds)); localStorage.setItem('cr_pad', JSON.stringify(Controls.pad)); localStorage.setItem('cr_moveset', JSON.stringify(Controls.moveset)); } catch (_) {}
+    Controls.moveset = normalizeMoveset(Controls.moveset); // drops strikes that no longer exist
+    try { localStorage.setItem('cr_binds', JSON.stringify(Controls.binds)); localStorage.setItem('cr_pad', JSON.stringify(Controls.pad)); localStorage.setItem('cr_moveset', JSON.stringify(Controls.moveset)); localStorage.setItem('cr_custom_strikes', JSON.stringify(Controls.custom)); } catch (_) {}
     rebuildKeyMap(); syncGymMoveset();
   }
   function rebuildKeyMap() {
@@ -193,7 +205,7 @@
 
   function sendPick() {
     if (App.mode === 'host') App.net.send({ t: 'lobby', picks: App.lobby.picks, names: App.lobby.names, ready: App.lobby.ready, settings: App.lobby.settings });
-    else if (App.mode === 'guest') App.net.send({ t: 'pick', fighter: App.lobby.picks[1], name: myName(), ready: App.lobby.ready[1], moveset: Controls.moveset });
+    else if (App.mode === 'guest') App.net.send({ t: 'pick', fighter: App.lobby.picks[1], name: myName(), ready: App.lobby.ready[1], moveset: Controls.moveset, custom: customsIn(Controls.moveset) });
   }
 
   function enterLobby(mode) {
@@ -241,6 +253,7 @@
         App.lobby.picks[1] = isFighter(d.fighter) ? d.fighter : 'balanced';
         App.lobby.names[1] = String(d.name || '').slice(0, 14);
         App.lobby.ready[1] = !!d.ready;
+        registerRemote(d.custom); App.lobby.customs = Array.isArray(d.custom) ? d.custom.slice(0, MAX_CUSTOM).map(c => CustomStrikes.sanitize(c)).filter(Boolean) : [];
         App.lobby.movesets[1] = normalizeMoveset(d.moveset);
         refreshLobby(); sendPick(); maybeStart(); break;
       case 'in':
@@ -294,6 +307,7 @@
     if (!Array.isArray(d.players) || d.players.length !== 2 || !s || typeof s !== 'object') return null;
     const players = d.players.map((p) => {
       p = p && typeof p === 'object' ? p : {};
+      registerRemote(p.custom);
       return { fighter: isFighter(p.fighter) ? p.fighter : 'balanced', name: String(p.name || '').slice(0, 24), color: typeof p.color === 'number' ? p.color : undefined, moveset: p.moveset, look: p.look && typeof p.look === 'object' ? Career.normalizeLook(p.look) : undefined };
     });
     return { t: 'start', seed: d.seed | 0, players, settings: { rounds: Math.min(5, Math.max(1, s.rounds | 0)), len: Math.min(300, Math.max(60, s.len | 0)), grappling: s.grappling !== false } };
@@ -314,8 +328,8 @@
     let p1 = L.picks[1];
     if (isLocal()) { p1 = L.cpuPick === 'random' ? Object.keys(ROSTER)[Math.floor(Math.random() * 4)] : L.cpuPick; }
     const players = [
-      { fighter: L.picks[0], name: App.mode === 'watch' ? ROSTER[L.picks[0]].name + ' (CPU)' : (L.names[0] || myName() || ROSTER[L.picks[0]].name), moveset: App.mode === 'watch' ? DEFAULT_MOVESET : Controls.moveset },
-      { fighter: p1, name: isLocal() ? ROSTER[p1].name + ' (CPU)' : (L.names[1] || ROSTER[p1].name), moveset: isLocal() ? DEFAULT_MOVESET : (L.movesets[1] || DEFAULT_MOVESET) }
+      { fighter: L.picks[0], name: App.mode === 'watch' ? ROSTER[L.picks[0]].name + ' (CPU)' : (L.names[0] || myName() || ROSTER[L.picks[0]].name), moveset: App.mode === 'watch' ? DEFAULT_MOVESET : Controls.moveset, custom: App.mode === 'watch' ? [] : customsIn(Controls.moveset) },
+      { fighter: p1, name: isLocal() ? ROSTER[p1].name + ' (CPU)' : (L.names[1] || ROSTER[p1].name), moveset: isLocal() ? DEFAULT_MOVESET : (L.movesets[1] || DEFAULT_MOVESET), custom: isLocal() ? [] : (L.customs || []) }
     ];
     // same archetype -> alternate shorts colour so they're distinguishable
     if (players[0].fighter === players[1].fighter) players[1].color = 0x8e44ad;
@@ -559,8 +573,10 @@
     for (const m of MODS) {
       h += '<tr><td>' + (m === 'none' ? '<span class="muted">nothing</span>' : '<b>' + keyName(Controls.binds[m][0]) + '</b>') + '</td>';
       for (const l of LIMBS) {
-        const kinds = (l === 'lh' || l === 'rh') ? HAND_KINDS : LEG_KINDS;
-        h += '<td><select data-mod="' + m + '" data-limb="' + l + '">' + kinds.map(k => '<option value="' + k + '"' + (Controls.moveset[m][l] === k ? ' selected' : '') + '>' + KIND_LABEL[k] + '</option>').join('') + '</select></td>';
+        const hand = l === 'lh' || l === 'rh', kinds = hand ? HAND_KINDS : LEG_KINDS;
+        const opt = (k, label) => '<option value="' + k + '"' + (Controls.moveset[m][l] === k ? ' selected' : '') + '>' + esc(label) + '</option>';
+        const customs = Controls.custom.filter(c => (c.weapon === 'fist') === hand);
+        h += '<td><select data-mod="' + m + '" data-limb="' + l + '">' + kinds.map(k => opt(k, KIND_LABEL[k])).join('') + (customs.length ? '<optgroup label="Your strikes">' + customs.map(c => opt(c.id, c.name)).join('') + '</optgroup>' : '') + '</select></td>';
       }
       h += '</tr>';
     }
@@ -620,7 +636,7 @@
     $('#kbLegend').innerHTML = KB_LEGEND.map(([c, n]) => '<span class="c-' + c + '"><i></i>' + n + '</span>').join('');
     const ms = Controls.moveset;
     const showMod = (m) => {
-      host.querySelectorAll('.ks').forEach(s => { s.textContent = KB_KIND[ms[m][s.dataset.limb]] || KIND_LABEL[ms[m][s.dataset.limb]]; });
+      host.querySelectorAll('.ks').forEach(s => { const k = ms[m][s.dataset.limb]; s.textContent = KB_KIND[k] || String(KIND_LABEL[k] || k).slice(0, 7); });
       host.querySelectorAll('.kk[data-act^="mod"]').forEach(k => k.classList.toggle('hot', k.dataset.act === m));
     };
     showMod('none');
@@ -668,12 +684,13 @@
   }
   function openOptions() {
     App.optionsOpen = true; App.held = 0; App.pressed = 0; releasePointer();
+    if (App.optTab === 'lab') StrikeLab.open();
     if (App.playing && isLocal()) App.paused = true;
     $('#btnOptQuit').style.display = ($('#menu').classList.contains('hidden') && $('#career').classList.contains('hidden') && $('#careerNew').classList.contains('hidden')) || (App.gym && App.gym.active) ? '' : 'none'; // QUIT shows only in a fight/lobby or the gym, hidden on the menus
     buildOptions(); show($('#options'));
   }
   function closeOptions() {
-    cancelCapture();
+    cancelCapture(); StrikeLab.close();
     App.optionsOpen = false; App.paused = false;
     hide($('#options')); updateHint();
   }
@@ -1323,6 +1340,7 @@
   // options pages: the chosen tab sticks for the session
   function showOptTab(name) {
     cancelCapture(); App.optTab = name;
+    if (name === 'lab') StrikeLab.open(); else StrikeLab.close();
     document.querySelectorAll('#optTabs .opt-tab').forEach(b => { const on = b.dataset.tab === name; b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
     document.querySelectorAll('#options .opt-page').forEach(p => p.classList.toggle('hidden', p.dataset.page !== name));
   }
@@ -1514,6 +1532,23 @@
   App.talk = new CageTalk.Talk();
   App.talk.mount();
   App.talk.onLine = postLine;
+
+  // the Strike Lab (js/strikelab.js) edits Controls.custom in place and maps strikes into the moveset through this bridge
+  StrikeLab.mount({
+    list: () => Controls.custom,
+    save: () => { saveControls(); },
+    getMoveset: () => Controls.moveset,
+    binds: () => Controls.binds,
+    keyName,
+    onChange: () => { if (App.optionsOpen) buildOptions(); updateHint(); },
+    // put the strike on limb + modifier (mod null: take it off every modifier of that limb)
+    assign: (id, limb, mod) => {
+      for (const m of MODS) if (Controls.moveset[m][limb] === id) Controls.moveset[m][limb] = DEFAULT_MOVESET[m][limb];
+      if (mod) Controls.moveset[mod][limb] = id;
+      saveControls(); buildOptions(); updateHint();
+    },
+    unassign: (id) => { for (const m of MODS) for (const l of LIMBS) if (Controls.moveset[m][l] === id) Controls.moveset[m][l] = DEFAULT_MOVESET[m][l]; }
+  });
 
   window.CageRules = App; // dev hook: window.CageRules.sim / .state / .renderer
   // dev hook: advance the career gym by n 60 Hz frames with these inputs (tools/gym-test.js)

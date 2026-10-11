@@ -381,13 +381,14 @@
   STRIKES.ll_bkick = mirrorStrike(RAW.rl_bkick, 'll_bkick', 'lead body kick', 0.92);
   STRIKES.ll_teep = mirrorStrike(RAW.rl_teep, 'll_teep', 'teep', 0.9);
   STRIKES.ll_knee = mirrorStrike(RAW.rl_knee, 'll_knee', 'lead knee', 0.92); STRIKES.ll_knee.weaponMult = 1.25;
-  for (const k in STRIKES) {
-    const d = STRIKES[k];
+  // derived fields every strike (built-in or player-made, see registerStrike) carries
+  function finalizeStrike(k, d) {
     d.key = k; d.limb = k.slice(0, 2); d.kind = k.slice(3);
     d.dur = d.frames[d.frames.length - 1].t;
     d.isKick = d.weapon.endsWith('Shin') || d.weapon.endsWith('Foot');
+    d.knee = d.kind === 'knee' || !!d.kneeStrike; // lands with the kneecap (top of the shin), driven by the hips
     // a roundhouse lands with the shin or the instep; a teep with the sole; a knee with the top of the shin
-    d.weapons = d.weapon.endsWith('Shin') && d.kind !== 'knee' ? [d.weapon, d.weapon[0] + 'Foot'] : [d.weapon];
+    d.weapons = d.weapon.endsWith('Shin') && !d.knee ? [d.weapon, d.weapon[0] + 'Foot'] : [d.weapon];
     // sim-side timing: windup / active / recovery
     d.w = d.active[0]; d.a = d.active[1] - d.active[0]; d.r = d.dur - d.active[1];
   }
@@ -427,28 +428,20 @@
   // impact reach of each strike: furthest forward the weapon gets inside the active window, measured
   // from the impact keyframe. range = root-to-root distance at which a square-on opponent is hit.
   const TARGET_R = { head: 0.14, body: 0.2, legs: 0.17 };
-  (function computeRanges() {
-    for (const k in STRIKES) {
-      const d = STRIKES[k];
-      let best = -1, bestY = 0;
-      for (const f of d.frames) {
-        if (f.t < d.active[0] - 1e-6 || f.t > d.active[1] + 1e-6) continue;
-        const pose = resolveFrame(d, f, STANCE);
-        const r = fk(pose, 0);
-        const wname = d.kind === 'knee' ? (d.weapon[0] + 'Knee') : d.weapon;
-        const wp = r.w[wname];
-        if (wp.z > best) { best = wp.z; bestY = wp.y; }
-      }
-      d.reach = best; d.reachY = bestY;
-      const weaponR = d.weapon.endsWith('Fist') ? 0.062 : d.weapon.endsWith('Foot') ? 0.11 : 0.055;
-      d.range = best + weaponR + TARGET_R[d.part] + 0.04;
+  function computeRange(d) {
+    let best = -1, bestY = 0;
+    for (const f of d.frames) {
+      if (f.t < d.active[0] - 1e-6 || f.t > d.active[1] + 1e-6) continue;
+      const pose = resolveFrame(d, f, STANCE);
+      const r = fk(pose, 0);
+      const wname = d.knee ? (d.weapon[0] + 'Knee') : d.weapon;
+      const wp = r.w[wname];
+      if (wp.z > best) { best = wp.z; bestY = wp.y; }
     }
-    // measured with tools/probe.js (furthest root-to-root distance at which the strike still lands on its
-    // target); overrides the FK estimate above. The AI picks strikes from these.
-    const RANGE = { lh_straight: 1.0, rh_straight: 1.0, lh_hook: 0.85, rh_hook: 0.85, rh_uppercut: 0.75, lh_uppercut: 0.9, rh_overhand: 1.3, lh_overhand: 1.25,
-      ll_lkick: 1.2, rl_lkick: 1.2, rl_hkick: 1.4, ll_hkick: 1.3, rl_bkick: 1.4, ll_bkick: 1.2, rl_teep: 1.25, ll_teep: 1.15, rl_knee: 1.05, ll_knee: 1.05 };
-    for (const k in RANGE) if (STRIKES[k]) STRIKES[k].range = RANGE[k];
-  })();
+    d.reach = best; d.reachY = bestY;
+    const weaponR = d.weapon.endsWith('Fist') ? 0.062 : d.weapon.endsWith('Foot') ? 0.11 : 0.055;
+    d.range = best + weaponR + TARGET_R[d.part] + 0.04;
+  }
 
   // ---------------------------------------------------------------- southpaw
   // Southpaw is the whole body mirrored left-right: every pose and strike above is authored orthodox, and a
@@ -471,15 +464,39 @@
   const SOUTHPAW_POSE = new Map(); // orthodox pose -> its mirror
   POSES.SLIP_R = mirrorFrame(SLIP); // the slip past the rear shoulder
   for (const k in POSES) SOUTHPAW_POSE.set(POSES[k], mirrorFrame(POSES[k]));
-  for (const k in STRIKES) {
-    const d = STRIKES[k];
-    d.southpaw = Object.assign({}, d, {
+  function southpawOf(d) {
+    return Object.assign({}, d, {
       keys: d.keys.map(j => MIRROR[j] || j),
       weapon: flipSide(d.weapon), weapons: d.weapons.map(flipSide),
       turnover: d.turnover ? mirrorEuler(d.turnover) : undefined,
       frames: d.frames.map(mirrorFrame)
     });
   }
+  // (re)register a strike under `key` ('<limb>_<kind>', limb = lh / rh / ll / rl): derives timing, weapons, reach and
+  // the southpaw mirror. Player-made strikes (js/sim.js CustomStrikes) come through here at load and on every edit.
+  function registerStrike(key, def) {
+    finalizeStrike(key, def);
+    computeRange(def);
+    def.southpaw = southpawOf(def);
+    STRIKES[key] = def;
+    return def;
+  }
+  function unregisterStrike(key) { delete STRIKES[key]; }
+  // the other side's version of a strike, same timing and power (built-in lead versions are tuned apart, see mirrorStrike)
+  function mirrorToOtherSide(def) {
+    const m = mirrorStrike(def, '', def.name, 1);
+    m.weaponMult = def.weaponMult; m.cost = def.cost; m.speed = def.speed; m.lead = undefined; m.kneeStrike = def.kneeStrike;
+    return m;
+  }
+  for (const k in STRIKES) registerStrike(k, STRIKES[k]);
+  // measured with tools/probe.js (furthest root-to-root distance at which the strike still lands on its
+  // target); overrides the FK estimate from computeRange. The AI picks strikes from these.
+  (function measuredRanges() {
+    const RANGE = { lh_straight: 1.0, rh_straight: 1.0, lh_hook: 0.85, rh_hook: 0.85, rh_uppercut: 0.75, lh_uppercut: 0.9, rh_overhand: 1.3, lh_overhand: 1.25,
+      ll_lkick: 1.2, rl_lkick: 1.2, rl_hkick: 1.4, ll_hkick: 1.3, rl_bkick: 1.4, ll_bkick: 1.2, rl_teep: 1.25, ll_teep: 1.15, rl_knee: 1.05, ll_knee: 1.05 };
+    for (const k in RANGE) if (STRIKES[k]) { STRIKES[k].range = RANGE[k]; STRIKES[k].southpaw.range = RANGE[k]; }
+  })();
+  const BUILTIN_KEYS = Object.keys(STRIKES);
 
   // ---------------------------------------------------------------- Rapier helpers
   const GROUP_FIGHTER = [0b0001, 0b0010];
@@ -1008,7 +1025,7 @@
       const st = this.strike;
       if (!st || st.hit || !this.opponent) return null;
       const tt = st.t / st.tf;
-      const knee = st.def.kind === 'knee';
+      const knee = !!st.def.knee;
       // a knee is driven in by the hips: the kneecap's closing speed peaks on the way up and the body arrives a
       // moment later, so the drive it built (decaying fast) is what lands, not just the speed at the instant of contact
       if (knee) {
@@ -1282,6 +1299,6 @@
   let initDone = false;
   function init(RAPIER) { R = RAPIER; return (R.init ? R.init() : Promise.resolve()).then((v) => { initDone = true; return v; }); }
 
-  root.MMAPhys = { init, ready: () => !!R && initDone, World, Ragdoll, HeavyBag, STRIKES, POSES, SEGS, SEG_ORDER, JOINTS, fk, resolveFrameExport: resolveFrame, impactDamage, PHYS_DT, SUBSTEPS, HOVER_HEIGHT, VMIN, DMG_SCALE, TARGET_R, math: { qMul, qEuler, qRot, qYaw, qSlerp, vAdd } };
+  root.MMAPhys = { init, ready: () => !!R && initDone, World, Ragdoll, HeavyBag, STRIKES, BUILTIN_KEYS, registerStrike, unregisterStrike, mirrorToOtherSide, STANCE, SCALAR_KEYS, MIRROR, POSES, SEGS, SEG_ORDER, JOINTS, fk, resolveFrameExport: resolveFrame, impactDamage, PHYS_DT, SUBSTEPS, HOVER_HEIGHT, VMIN, DMG_SCALE, TARGET_R, math: { qMul, qEuler, qRot, qYaw, qSlerp, vAdd } };
   if (typeof module !== 'undefined' && module.exports) module.exports = root.MMAPhys;
 })(typeof window !== 'undefined' ? window : globalThis);

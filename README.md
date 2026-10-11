@@ -54,7 +54,11 @@ Once connected, traffic is direct WebRTC between the two browsers.
 
 Every key can be rebound and every strike remapped from **OPTIONS** (main menu,
 lobby, or **Esc** during a fight). Settings are saved in the
-browser. Defaults:
+browser. The **STRIKE LAB** tab there lets you build your own strikes: start
+from a built-in one, pose the fighter keyframe by keyframe (per-joint angles in
+the rig's own frame), set the impact window, test it against a physics dummy,
+and put it on any limb key + modifier; the other hand or leg throws its mirror
+image. Custom strikes travel with your moveset into online fights. Defaults:
 
 | Key | Standing | On top (ground) | On bottom (ground) |
 |---|---|---|---|
