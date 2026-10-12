@@ -1812,6 +1812,17 @@
     const syncMute = () => { for (const box of boxes) box.checked = App.audio.musicMuted; };
     syncMute();
     for (const box of boxes) box.addEventListener('change', () => { App.audio.setMusicMuted(box.checked); syncMute(); });
+    const fx = $('#sfxVol'), fxLbl = $('#sfxVolLbl');
+    fx.value = String(Math.round(App.audio.sfxVol * 100)); fxLbl.textContent = fx.value;
+    let fxPing = 0;
+    fx.addEventListener('input', () => {
+      const p = Math.max(0, Math.min(100, parseInt(fx.value, 10) || 0));
+      App.audio.setSfxVolume(p / 100);
+      fxLbl.textContent = String(p);
+      // a short tick so the level can be judged while dragging
+      const now = performance.now();
+      if (now - fxPing > 140) { fxPing = now; App.audio.init(); App.audio.block(); }
+    });
   })();
   updateHint();
   $('#btnBack').onclick = () => { if (App.net) { App.net.destroy(); App.net = null; } App.mode = null; screen('menu'); };
