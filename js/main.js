@@ -9,6 +9,8 @@
   const { Net } = window.MMANet;
   const { Audio } = window.MMAAudio;
   const Career = window.MMACareer;
+  // playtest analytics (js/analytics.js, PostHog); every call is a no-op without a project key
+  const Analytics = window.MMAAnalytics || { enabled: false, track() {}, register() {}, person() {}, identify() {}, fightStarted() {}, replayUrl() { return ''; } };
 
   const $ = (s) => document.querySelector(s);
   const show = (el) => el.classList.remove('hidden');
@@ -95,7 +97,7 @@
   // Apps Script only takes cross-origin POSTs as text/plain (no preflight); it parses the JSON body on its side.
   const FEEDBACK = { endpoint: 'https://script.google.com/macros/s/AKfycbw9oMRVcbESqB-gtSHNlm1gg12Y10b9X3mToQ3Mc5Sjo29jzf3qqdo_Dc7LgPxw2ep1pA/exec', subject: 'Cage Rules feedback' };
   const Diag = { errors: [], started: Date.now() }; // the last few script errors ride along with every report
-  function logErr(m) { Diag.errors.push(new Date().toISOString().slice(11, 19) + ' ' + String(m).slice(0, 200)); if (Diag.errors.length > 8) Diag.errors.shift(); }
+  function logErr(m) { Diag.errors.push(new Date().toISOString().slice(11, 19) + ' ' + String(m).slice(0, 200)); if (Diag.errors.length > 8) Diag.errors.shift(); Analytics.track('client_error', { message: String(m).slice(0, 200), where: whereAmI() }); }
   window.addEventListener('error', (e) => logErr((e.message || 'error') + (e.filename ? ' @ ' + e.filename.split('/').pop() + ':' + e.lineno : '')));
   window.addEventListener('unhandledrejection', (e) => logErr('promise: ' + (e.reason && (e.reason.message || e.reason))));
 
@@ -139,6 +141,7 @@
     clearTimeout(toastT); toastT = setTimeout(() => hide(t), ms || 3500);
   }
   function screen(name) {
+    Analytics.track('screen_view', { screen: name || 'fight', mode: App.mode });
     // leaving the walkable gym for anything but one of its own station panels tears the room down
     if (App.gym && App.gym.active && name !== 'career') exitGym(name === null); // screen(null) = a fight is taking the scene
     hide($('#gymHud'));
@@ -231,6 +234,7 @@
   }
 
   function enterLobby(mode) {
+    Analytics.track('lobby_enter', { mode });
     App.mode = mode; App.myIdx = mode === 'guest' ? 1 : 0;
     App.lobby.ready = [false, false]; App.rematch = [false, false];
     buildRoster(); screen('lobby'); refreshLobby();
@@ -240,11 +244,12 @@
     if (App.net) App.net.destroy(); // a join still connecting must not keep running behind the new room
     App.net = new Net({
       onReady: (code) => { $('#codeLbl').textContent = code; refreshLobby(); },
-      onConnect: () => { toast('Opponent connected!'); App.lobby.names[0] = myName(); sendPick(); refreshLobby(); },
+      onConnect: () => { toast('Opponent connected!'); Analytics.track('online_connected', { role: 'host' }); App.lobby.names[0] = myName(); sendPick(); refreshLobby(); },
       onData: onHostData,
       onClose: () => { onOpponentLeft(); },
-      onError: (m) => toast(m, 6000)
+      onError: (m) => { toast(m, 6000); Analytics.track('online_error', { role: 'host', message: String(m).slice(0, 200) }); }
     });
+    Analytics.track('online_host');
     App.net.host();
     enterLobby('host');
     $('#codeLbl').textContent = '…';
@@ -252,17 +257,19 @@
   function startJoin(code) {
     if (App.net) App.net.destroy();
     const net = App.net = new Net({
-      onConnect: () => { toast('Connected to room ' + net.code); enterLobby('guest'); App.lobby.names[1] = myName(); sendPick(); },
+      onConnect: () => { toast('Connected to room ' + net.code); Analytics.track('online_connected', { role: 'guest' }); enterLobby('guest'); App.lobby.names[1] = myName(); sendPick(); },
       onData: onGuestData,
       onClose: () => { onOpponentLeft(); },
       // a failed join drops its own Net — never a newer one that took App.net since
-      onError: (m) => { toast(m, 6000); if (App.net === net && !net.connected) { net.destroy(); App.net = null; } }
+      onError: (m) => { toast(m, 6000); Analytics.track('online_error', { role: 'guest', message: String(m).slice(0, 200) }); if (App.net === net && !net.connected) { net.destroy(); App.net = null; } }
     });
+    Analytics.track('online_join');
     net.join(code);
     toast('Connecting to ' + code + '…', 8000);
   }
   function onOpponentLeft() {
     toast('Opponent disconnected.', 5000);
+    Analytics.track('online_opponent_left', { mode: App.mode, in_fight: App.playing && !(App.state && App.state.result) });
     stopFight(); if (App.net) { App.net.destroy(); App.net = null; }
     App.mode = null; screen('menu');
   }
@@ -384,7 +391,7 @@
     if (App.sim) App.sim.destroy();
     if (App.mode !== 'tutorial') tutorStop();
     clearTimeout(App.endT); App.endT = 0;
-    App.sim = null; App.state = null; App.evQueue = []; App.remote = { h: 0, p: 0 }; App.rematch = [false, false];
+    App.sim = null; App.state = null; App.evQueue = []; App.remote = { h: 0, p: 0 }; App.rematch = [false, false]; App.endTracked = false;
     App.lobby.ready = [false, false];
     if (isHost) {
       App.sim = new Sim({ seed: msg.seed, rounds: msg.settings.rounds, roundLen: msg.settings.len, players: msg.players, grappling: msg.settings.grappling !== false });
@@ -408,15 +415,34 @@
     $('#fp1 .tag').textContent = App.myIdx === 1 ? 'YOU' : App.mode === 'career' ? 'OPP' : (isLocal() ? 'CPU' : 'P2');
     screen(null);
     App.playing = true;
+    App.fightT0 = Date.now();
+    Analytics.fightStarted();
+    Analytics.track('fight_start', Object.assign(fightProps(), {
+      p1: msg.players[0].fighter, p2: msg.players[1].fighter, p1_name: App.state.f[0].name, p2_name: App.state.f[1].name,
+      rounds: msg.settings.rounds, round_len: msg.settings.len, grappling: msg.settings.grappling !== false,
+      difficulty: isLocal() ? App.lobby.settings.diff : null, input: Pad.active ? 'gamepad' : 'keyboard'
+    }));
     syncHint();
     App.audio.setCrowd(0.06);
     centerMsg('ROUND 1<small>' + esc(App.state.f[0].name) + ' vs ' + esc(App.state.f[1].name) + (App.state.grappling === false ? ' · striking only' : '') + '</small>', 2600);
   }
 
-  function stopFight() { clearTimeout(App.endT); App.endT = 0; App.playing = false; App.paused = false; if (App.sim) App.sim.destroy(); App.sim = null; App.audio.setCrowd(0); hideCenter(); $('#grapple').classList.remove('show'); tutorStop(); }
+  // what every fight event carries: the mode, who the player is, and how far in the fight is
+  function fightProps() {
+    const S = App.state;
+    return { mode: App.mode, my_idx: App.myIdx, round: S ? S.round : null, clock: S ? Math.round(S.clock) : null, fight_sec: App.fightT0 ? Math.round((Date.now() - App.fightT0) / 1000) : null };
+  }
+  const statProps = (prefix, s) => { const o = {}; for (const k of ['thrown', 'landed', 'blocked', 'sig', 'td', 'tdAtt', 'ctrl', 'subs', 'kd']) o[prefix + '_' + k] = Math.round(s[k] || 0); return o; };
+  function stopFight() { if (App.playing && !(App.state && App.state.result)) Analytics.track('fight_quit', fightProps()); clearTimeout(App.endT); App.endT = 0; App.playing = false; App.paused = false; if (App.sim) App.sim.destroy(); App.sim = null; App.audio.setCrowd(0); hideCenter(); $('#grapple').classList.remove('show'); tutorStop(); }
 
   function showEnd(S) {
     const R = S.result; if (!R) return;
+    if (!App.endTracked) {
+      App.endTracked = true;
+      const mine = App.mode === 'watch' ? null : R.winner == null ? 'draw' : R.winner === App.myIdx ? 'win' : 'loss';
+      Analytics.track('fight_end', Object.assign(fightProps(), { method: R.method, winner: R.winner, result: mine, end_round: R.round, end_time: R.time, p1_name: S.f[0].name, p2_name: S.f[1].name }, statProps('p1', S.f[0].ts), statProps('p2', S.f[1].ts)));
+      if (mine) Analytics.person({ ['last_' + mine]: new Date().toISOString() });
+    }
     const w = R.winner == null ? null : S.f[R.winner];
     $('#endMethod').textContent = R.method.toUpperCase() + (!/Decision|Draw/.test(R.method) ? ' · ROUND ' + R.round + ' · ' + R.time : '');
     $('#endWinner').textContent = w ? w.name + ' WINS' : 'DRAW';
@@ -492,7 +518,7 @@
         case 'tap': A.tap(); feed(text, true); break;
         case 'ko': A.horn(); feed(text, true); break;
         case 'bell':
-          if (ev.end) { A.bell(2); centerMsg('END OF ROUND ' + (ev.round | 0), 2500); }
+          if (ev.end) { A.bell(2); centerMsg('END OF ROUND ' + (ev.round | 0), 2500); if (App.state) Analytics.track('round_end', Object.assign(fightProps(), { round: ev.round | 0 }, statProps('p1', App.state.f[0].rs), statProps('p2', App.state.f[1].rs))); }
           else { A.bell(1); centerMsg('FIGHT!', 900); }
           feed(text); break;
         case 'round': centerMsg('ROUND ' + (ev.round | 0), 2200); break;
@@ -751,6 +777,7 @@
     saveControls(); buildOptions(); updateHint();
   }
   function openOptions() {
+    Analytics.track('options_open', { where: whereAmI() });
     App.optionsOpen = true; App.held = 0; App.pressed = 0; releasePointer();
     if (App.playing && isLocal()) App.paused = true;
     $('#btnOptQuit').style.display = ($('#menu').classList.contains('hidden') && $('#career').classList.contains('hidden') && $('#careerNew').classList.contains('hidden')) || (App.gym && App.gym.active) ? '' : 'none'; // QUIT shows only in a fight/lobby or the gym, hidden on the menus
@@ -791,7 +818,8 @@
       picks: App.lobby.picks,
       fight: S ? { round: S.round, clock: Math.round(S.clock), phase: S.phase, ground: !!S.ground } : null,
       career: C ? { name: C.name, record: C.record } : null,
-      errors: Diag.errors
+      errors: Diag.errors,
+      replay: Analytics.replayUrl() // the PostHog session replay for this tester, so a bug report can be watched back
     };
   }
   function fbText(r, msg, contact) {
@@ -803,6 +831,7 @@
   }
   function openFeedback() {
     if (App.feedbackOpen) return;
+    Analytics.track('feedback_open', { where: whereAmI() });
     App.feedbackOpen = true; App.held = 0; App.pressed = 0; releasePointer();
     if (App.playing && isLocal()) App.paused = true;
     $('#fbReport').textContent = fbText(fbReport(), '', '').split('--- attached ---')[1].trim();
@@ -829,6 +858,8 @@
       sent = res.ok && (await res.json()).ok === true;
     } catch (_) {}
     btn.disabled = false; btn.textContent = 'SEND';
+    Analytics.track('feedback_sent', { kind: r.kind, delivered: sent, where: r.where, has_contact: !!contact, length: msg.length });
+    if (contact) Analytics.identify(contact, { contact });
     if (sent) { toast('Sent. Thank you!', 2500); $('#fbText').value = ''; closeFeedback(); return; }
     // the inbox is unreachable: keep the report on their clipboard so it can still be pasted to the dev
     const copied = await copyText(text);
@@ -1162,6 +1193,7 @@
   function saveProfile() {
     const P = CareerUI.pick;
     Profile.set({ look: P.look, skin: P.skin, color: P.color });
+    Analytics.track('look_saved');
     toast('Fighter saved.', 2000);
     closeProfile();
   }
@@ -1227,6 +1259,7 @@
     if (!name) { toast('Give your fighter a name.'); $('#careerName').focus(); return; }
     const P = CareerUI.pick;
     CareerUI.C = Career.newCareer({ name, nick: $('#careerNick').value, base: P.base, color: P.color, skin: P.skin, look: P.look });
+    Analytics.track('career_start', { base: P.base, name }); Analytics.person({ career_name: name, career_base: P.base });
     careerSave(); CareerUI.justFought = false; CareerUI.lastTrain = null;
     LookPreview.stop();
     openCareer();
@@ -1392,6 +1425,7 @@
     root.querySelectorAll('.train').forEach(b => b.onclick = () => {
       const C = CareerUI.C; if (!C) return;
       const out = Career.trainWeek(C, b.dataset.focus); if (!out) return;
+      Analytics.track('career_train', { focus: b.dataset.focus, week: C.week });
       CareerUI.lastTrain = out; CareerUI.justFought = false; careerSave();
       if (Career.fightReady(C)) { CareerUI.tab = 'camp'; toast('Fight week. Step in when you are ready.', 2500); }
       renderCareer();
@@ -1445,7 +1479,7 @@
       'Wins at bigger shows are worth more; fast finishes are worth a lot more; losses cost you. Each level of the sport can only make you so famous (' + Career.TIER_POP_CAP.slice(0, 3).join(' / ') + ') — move up to keep climbing.</div>';
     el.innerHTML = h;
     el.querySelectorAll('button[data-offer]').forEach(b => b.onclick = () => {
-      if (Career.accept(C, +b.dataset.offer)) { CareerUI.justFought = false; careerSave(); CareerUI.tab = 'camp'; renderCareer(); }
+      if (Career.accept(C, +b.dataset.offer)) { Analytics.track('career_offer_accepted', { opponent: C.booked && C.booked.offer.opp.name, org: C.booked && C.booked.offer.orgName, week: C.week }); CareerUI.justFought = false; careerSave(); CareerUI.tab = 'camp'; renderCareer(); }
     });
   }
   function renderGym(C) {
@@ -1457,7 +1491,7 @@
         (cost == null ? '<button class="ghost" disabled>MAXED</button>' : '<button data-up="' + f.id + '"' + (C.money < cost ? ' class="ghost" disabled' : '') + '>UPGRADE · ' + Career.fmtMoney(cost) + '</button>') + '</div>';
     }).join('');
     el.innerHTML = h;
-    el.querySelectorAll('button[data-up]').forEach(b => b.onclick = () => { if (Career.buyUpgrade(C, b.dataset.up)) { careerSave(); renderCareer(); } });
+    el.querySelectorAll('button[data-up]').forEach(b => b.onclick = () => { if (Career.buyUpgrade(C, b.dataset.up)) { Analytics.track('career_upgrade', { facility: b.dataset.up, level: C.gym[b.dataset.up] || 0 }); careerSave(); renderCareer(); } });
   }
   function renderHistory(C) {
     const el = $('#tabHistory');
@@ -1486,8 +1520,11 @@
     if (App.careerApplied) return;
     App.careerApplied = true;
     const S = App.state;
+    const booked = C.booked ? { opponent: C.booked.offer.opp.name, org: C.booked.offer.orgName } : {};
     if (S && S.result && C.booked) Career.applyResult(C, S);
     else if (C.booked) { Career.withdraw(C); toast('You pulled out of the fight. No purse, popularity -4.', 4000); }
+    const lf = C.lastFight;
+    Analytics.track('career_fight_settled', Object.assign(booked, { withdrew: !(S && S.result), won: lf ? !!lf.won : null, method: lf ? lf.method : null, pay: lf ? lf.pay : null, pop: Math.round(C.pop), record: C.record.w + '-' + C.record.l + '-' + (C.record.d || 0), week: C.week, money: Math.round(C.money) }));
     CareerUI.justFought = true; CareerUI.lastTrain = null; careerSave();
   }
   function leaveCareerFight() { settleCareerFight(); stopFight(); openCareer(); }
@@ -1514,6 +1551,7 @@
   $('#btnCareerOptions').onclick = () => openOptions();
   $('#btnCareerDelete').onclick = () => {
     if (CareerUI.confirmDel++ < 1) { $('#btnCareerDelete').textContent = 'CLICK AGAIN TO DELETE'; setTimeout(() => { CareerUI.confirmDel = 0; $('#btnCareerDelete').textContent = 'RETIRE (DELETE SAVE)'; }, 4000); return; }
+    Analytics.track('career_delete', CareerUI.C ? { record: CareerUI.C.record.w + '-' + CareerUI.C.record.l, week: CareerUI.C.week } : {});
     Career.erase(); CareerUI.C = null; CareerUI.confirmDel = 0; $('#btnCareerDelete').textContent = 'RETIRE (DELETE SAVE)';
     toast('Career deleted.', 2000); screen('menu');
   };
@@ -1632,6 +1670,7 @@
     ];
     applyProfile(players[0], Profile.get()); applyProfile(players[1], null);
     Tutor.brain = new TutorBrain(); Tutor.active = true;
+    Analytics.track('tutorial_start');
     tutorEnter(0);
     beginFight({ t: 'start', seed: (Math.random() * 1e9) | 0, players, settings: { rounds: 1, len: 180, grappling: false } });
   }
@@ -1642,6 +1681,7 @@
   }
   function tutorEnter(i) {
     Tutor.i = i; Tutor.n = 0; Tutor.dirty = true;
+    Analytics.track('tutorial_step', { step: i + 1, step_id: TUT_STEPS[i].id, of: TUT_STEPS.length });
     const S = App.sim && App.state; Tutor.d0 = S ? Math.hypot(S.f[1].x - S.f[0].x, S.f[1].z - S.f[0].z) : 2.6;
     const st = TUT_STEPS[i];
     if (Tutor.brain) Tutor.brain.set(st.mode);
@@ -1719,11 +1759,11 @@
     if ($('#tutNever').checked) { try { localStorage.setItem(TUT_KEYS.off, '1'); } catch (_) {} }
     hide($('#tutorPrompt'));
   }
-  $('#btnTutNo').onclick = () => closeTutorPrompt();
-  $('#btnTutYes').onclick = () => { closeTutorPrompt(); startTutorial(); };
+  $('#btnTutNo').onclick = () => { Analytics.track('tutorial_prompt', { accepted: false, never: $('#tutNever').checked }); closeTutorPrompt(); };
+  $('#btnTutYes').onclick = () => { Analytics.track('tutorial_prompt', { accepted: true }); closeTutorPrompt(); startTutorial(); };
   $('#btnTutorial').onclick = () => startTutorial();
-  $('#btnTutSkip').onclick = (e) => { e.currentTarget.blur(); if (Tutor.active) tutorAdvance(); };
-  $('#btnTutQuit').onclick = (e) => { e.currentTarget.blur(); stopFight(); App.mode = null; screen('menu'); };
+  $('#btnTutSkip').onclick = (e) => { e.currentTarget.blur(); if (Tutor.active) { Analytics.track('tutorial_skip', { step: Tutor.i + 1, step_id: TUT_STEPS[Tutor.i].id }); tutorAdvance(); } };
+  $('#btnTutQuit').onclick = (e) => { e.currentTarget.blur(); Analytics.track('tutorial_quit', { step: Tutor.i + 1, step_id: TUT_STEPS[Tutor.i] && TUT_STEPS[Tutor.i].id }); stopFight(); App.mode = null; screen('menu'); };
 
   // ============================================================
   //  Wire up buttons
@@ -1746,7 +1786,7 @@
   window.addEventListener('resize', syncHint);
   if (window.desktop) { // Electron build (desktop/preload.js)
     $('#btnQuit').classList.remove('hidden');
-    $('#btnQuit').onclick = () => window.desktop.quit();
+    $('#btnQuit').onclick = () => { Analytics.track('quit_to_desktop'); setTimeout(() => window.desktop.quit(), 150); };
     if (window.desktop.version) $('#menuVersion').textContent = 'v' + window.desktop.version;
   }
   $('#btnLobbyOptions').onclick = () => openOptions();
@@ -1777,6 +1817,7 @@
   $('#btnBack').onclick = () => { if (App.net) { App.net.destroy(); App.net = null; } App.mode = null; screen('menu'); };
   $('#btnCopy').onclick = () => { navigator.clipboard && navigator.clipboard.writeText($('#codeLbl').textContent).then(() => toast('Room code copied', 1500)); };
   $('#btnReady').onclick = () => {
+    Analytics.track('lobby_ready', { mode: App.mode, pick: App.lobby.picks[App.myIdx], cpu_pick: App.lobby.cpuPick });
     App.lobby.ready[App.myIdx] = true; App.lobby.names[App.myIdx] = myName();
     readSettings(); refreshLobby(); sendPick(); maybeStart();
   };
@@ -1785,6 +1826,7 @@
   $('#btnMenu').onclick = () => { if (App.mode === 'career') settleCareerFight(); stopFight(); if (App.net) { App.net.destroy(); App.net = null; } App.mode = null; screen('menu'); };
   $('#btnOptQuit').onclick = () => { closeOptions(); if (App.mode === 'career') { leaveCareerFight(); return; } if (App.mode === 'gym') { careerSave(); screen('menu'); return; } stopFight(); if (App.net) { App.net.destroy(); App.net = null; } App.mode = null; screen('menu'); };
   $('#btnRematch').onclick = () => {
+    Analytics.track('rematch', { mode: App.mode });
     if (App.mode === 'career') { leaveCareerFight(); return; }
     if (App.mode === 'tutorial') { startTutorial(); return; }
     if (App.mode === 'guest') { App.net.send({ t: 'rematch' }); $('#btnRematch').textContent = 'WAITING FOR HOST…'; $('#btnRematch').disabled = true; return; }
@@ -1891,6 +1933,8 @@
   };
 
   // Build the arena right away so the menu has a live 3D background
+  Analytics.register({ build: window.desktop && window.desktop.version ? 'desktop v' + window.desktop.version : 'web', has_career: !!careerLoad(), has_look: !!Profile.get() });
+  Analytics.track('app_open', { screen_px: innerWidth + 'x' + innerHeight, dpr: devicePixelRatio || 1, lang: navigator.language });
   window.addEventListener('load', () => {
     try { menuScene(); syncExtras(); } catch (e) { console.error(e); toast('WebGL failed to start: ' + e.message, 8000); }
   });
