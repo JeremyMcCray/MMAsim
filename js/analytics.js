@@ -36,7 +36,7 @@
     posthog.init(KEY, {
       api_host: HOST,
       person_profiles: 'always',          // alpha testers are few: a profile per tester makes them easy to follow
-      capture_pageview: false,            // the game is one page; screens are tracked by hand below
+      capture_pageview: true,             // one $pageview per load so the Web Analytics page counts visitors; screens are tracked by hand below
       capture_pageleave: true,
       autocapture: false,                 // menu clicks are tracked as named events instead
       disable_session_recording: false,
