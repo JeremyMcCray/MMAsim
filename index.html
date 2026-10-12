@@ -319,7 +319,10 @@
 </div>
 
 <!-- ===== FEEDBACK (playtest notes straight to the dev; always one click away) ===== -->
-<button id="fbTab" type="button" title="Send feedback to the dev">FEEDBACK</button>
+<div id="corner">
+  <button id="ctlTab" type="button" class="hidden" title="Show / hide the control hints (H)">CONTROLS [H]</button>
+  <button id="fbTab" type="button" title="Send feedback to the dev">FEEDBACK</button>
+</div>
 <div id="feedback" class="layer screen hidden" role="dialog" aria-labelledby="fbTitle">
   <div class="panel fb">
     <div class="lobby-head">

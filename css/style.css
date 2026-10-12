@@ -444,8 +444,10 @@ button.small { font-size: 13px; padding: 6px 12px; }
 .look-line { display: flex; align-items: center; gap: 12px; margin-top: 12px; color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .08em; }
 
 /* ---------- feedback (playtest notes to the dev) ---------- */
-#fbTab { position: fixed; right: 14px; bottom: 14px; z-index: 31; font-size: 12px; letter-spacing: .14em; padding: 7px 12px; background: rgba(14,14,20,.8); border: 1px solid rgba(255,255,255,.25); color: var(--muted); border-radius: 8px; }
-#fbTab:hover { color: #fff; border-color: var(--gold); }
+/* #corner holds the always-there tabs; while the control hints are open it is lifted above them (main.js syncHint) */
+#corner { position: fixed; right: 14px; bottom: 14px; z-index: 31; display: flex; gap: 8px; align-items: center; }
+#fbTab, #ctlTab { font-size: 12px; letter-spacing: .14em; padding: 7px 12px; background: rgba(14,14,20,.8); border: 1px solid rgba(255,255,255,.25); color: var(--muted); border-radius: 8px; }
+#fbTab:hover, #ctlTab:hover { color: #fff; border-color: var(--gold); }
 #feedback { z-index: 40; }
 .panel.fb { width: min(620px, 94vw); text-align: left; padding: 26px 30px; max-height: 94vh; overflow: auto; }
 .panel.fb .lobby-title { font-size: 34px; }
@@ -458,4 +460,4 @@ button.small { font-size: 13px; padding: 6px 12px; }
 .fb-details { margin-top: 12px; color: var(--muted); font-size: 12px; }
 .fb-details summary { cursor: pointer; }
 .fb-details pre { margin: 8px 0 0; max-height: 160px; overflow: auto; font-size: 11px; line-height: 1.35; white-space: pre-wrap; word-break: break-word; background: rgba(0,0,0,.35); padding: 8px 10px; border-radius: 6px; color: var(--text); }
-@media (max-width: 760px) { #fbTab { right: 10px; bottom: 10px; } }
+@media (max-width: 760px) { #corner { right: 10px; bottom: 10px; } #ctlTab { display: none; } }

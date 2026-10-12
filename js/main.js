@@ -87,7 +87,7 @@
     lobby: { picks: ['striker', 'wrestler'], names: ['', ''], ready: [false, false], settings: { rounds: 3, len: 180, diff: 0.6, grappling: false }, cpuPick: 'random', movesets: [null, null], looks: [null, null] },
     optionsOpen: false, paused: false,
     state: null, playing: false, lastSnap: 0, lastInputSend: 0, evQueue: [], rematch: [false, false],
-    feedLines: [], hintsHidden: false, gFlash: null
+    feedLines: [], hintsHidden: true, gFlash: null
   };
 
   // ---------- playtest feedback: where SEND FEEDBACK goes ----------
@@ -145,6 +145,7 @@
     for (const id of ['menu', 'lobby', 'end', 'career', 'careerNew', 'more']) { const el = $('#' + id); if (el && id === name) show(el); else if (el) hide(el); }
     if (App.optionsOpen) closeOptions();
     if (name) hide($('#hud')); else show($('#hud'));
+    syncHint();
     if (name === 'menu') refreshMenuCareer();
     if (!name || name === 'end') App.audio.play('fight');
     else App.audio.stop();
@@ -405,8 +406,8 @@
     $('#fp0 .tag').textContent = App.mode === 'watch' ? 'CPU' : App.myIdx === 0 ? 'YOU' : 'P1';
     $('#fp1 .tag').textContent = App.myIdx === 1 ? 'YOU' : App.mode === 'career' ? 'OPP' : (isLocal() ? 'CPU' : 'P2');
     screen(null);
-    $('#controlsHint').style.display = App.mode === 'watch' || App.hintsHidden ? 'none' : '';
     App.playing = true;
+    syncHint();
     App.audio.setCrowd(0.06);
     centerMsg('ROUND 1<small>' + esc(App.state.f[0].name) + ' vs ' + esc(App.state.f[1].name) + (App.state.grappling === false ? ' · striking only' : '') + '</small>', 2600);
   }
@@ -848,7 +849,21 @@
       '<div class="ctl-row">' + [B('fwd'), B('left'), B('back'), B('right')].join(' ') + ' move / circle (stepping into a shot adds power, backing off takes it away) · ' + B('dodge') + ' dash the way you are stepping (straight back if standing still) · ' + B('lh') + ' left hand · ' + B('rh') + ' right hand · ' + B('ll') + ' left leg · ' + B('rl') + ' right leg</div>' +
       '<div class="ctl-row">' + MODS.map(row).join(' · ') + '</div>' +
       '<div class="ctl-row">' + B('block') + ' hold: block / sprawl (+ ' + B('mod3') + ' drops into a shell that covers the body), press as a strike comes in: block and slip it, tap twice: push them off · ' + B('grapple') + ' takedown / dive on a downed opponent · ' + B('stance') + ' switch stance · knocked down: a direction or ' + B('dodge') + ' gets up, or stay down to recover · ground: hands & legs strike, direction + ' + B('grapple') + ' move (see the compass), ' + B('grapple') + ' alone submission, their direction + ' + B('grapple') + ' denies, ' + B('block') + ' covers, ' + B('dodge') + ' let up · <b>Enter</b> chat · <b>ESC</b>' + (Pad.active ? ' / <b>START</b>' : '') + ' options · <b>H</b> hide this · <b>M</b> mute</div>';
+    syncHint();
   }
+  // the hint panel is closed by default; the CONTROLS tab (or H) opens it, and the corner tabs move up so they never sit on top of it
+  function syncHint() {
+    const hud = $('#hud'), hint = $('#controlsHint'), tab = $('#ctlTab'), corner = $('#corner');
+    if (!hud || !hint || !tab || !corner) return;
+    const inFight = App.playing && !hud.classList.contains('hidden') && App.mode !== 'watch';
+    const open = inFight && !App.hintsHidden;
+    hint.style.display = open ? '' : 'none';
+    tab.classList.toggle('hidden', !inFight);
+    tab.textContent = (open ? 'HIDE CONTROLS' : 'CONTROLS') + ' [H]';
+    const h = open ? hint.offsetHeight : 0;
+    corner.style.bottom = h > 0 ? (h + 22) + 'px' : '';
+  }
+  function toggleHint() { App.hintsHidden = !App.hintsHidden; syncHint(); }
 
   // ============================================================
   //  Input
@@ -884,7 +899,7 @@
       if (onScreen) { e.preventDefault(); padFocusMove(e.code.slice(5).toLowerCase()); return; }
     }
     if (App.optionsOpen) return;
-    if (e.code === 'KeyH' && !Controls.keyMap.KeyH) { if (!e.repeat) { App.hintsHidden = !App.hintsHidden; $('#controlsHint').style.display = App.hintsHidden ? 'none' : ''; } return; }
+    if (e.code === 'KeyH' && !Controls.keyMap.KeyH) { if (!e.repeat) toggleHint(); return; }
     if (e.code === 'KeyM' && !Controls.keyMap.KeyM) { if (!e.repeat) { App.audio.setMuted(!App.audio.muted); toast(App.audio.muted ? 'Muted' : 'Sound on', 1200); } return; }
     const b = Controls.keyMap[e.code]; if (!b) return;
     e.preventDefault();
@@ -1506,6 +1521,8 @@
   $('#btnFbCopy').onclick = async () => { const ok = await copyText(fbText(fbReport(), $('#fbText').value.trim(), $('#fbContact').value.trim())); toast(ok ? 'Copied. Paste it anywhere.' : 'Copy failed. Select the text and copy it by hand.', 2500); };
   document.querySelectorAll('#fbKind button').forEach(b => b.onclick = () => { FB.kind = b.dataset.kind; document.querySelectorAll('#fbKind button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', x === b ? 'true' : 'false'); }); });
   try { $('#fbContact').value = localStorage.getItem('cr_fb_contact') || ''; } catch (_) {}
+  $('#ctlTab').onclick = () => toggleHint();
+  window.addEventListener('resize', syncHint);
   if (window.desktop) { // Electron build (desktop/preload.js)
     $('#btnQuit').classList.remove('hidden');
     $('#btnQuit').onclick = () => window.desktop.quit();
