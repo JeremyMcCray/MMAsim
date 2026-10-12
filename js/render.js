@@ -139,6 +139,14 @@
     return out;
   }
   function copyPose(a, out) { return lerpPose(a, a, 0, out); }
+  // a ground transition: commit into the move over its duration, rolling / pitching the way it goes (a.dir)
+  function transK(a) { return 0.25 + 0.55 * Math.min(1, a.t / Math.max(0.2, a.dur)); }
+  function transLean(p, a) {
+    const k = Math.min(1, a.t / Math.max(0.2, a.dur));
+    if (a.dir === 'LEFT') p.roll += 0.35 * k; else if (a.dir === 'RIGHT') p.roll -= 0.35 * k;
+    else if (a.dir === 'FWD') p.lean += 0.25 * k; else if (a.dir === 'BACK') p.lean -= 0.2 * k;
+    return p;
+  }
   // take the hips and legs of `legs` (a lying position pose) into `pose`, keeping its upper body
   function legsFrom(pose, legs) {
     pose.h = legs.h; pose.lfy = legs.lfy; pose.rfy = legs.rfy;
@@ -936,7 +944,7 @@
         if (a.type === 'sub') pose = POSES.bottomSub;
         else if (a.type === 'hit') pose = pos === 'back' ? POSES.turtle : POSES.bottomHit;
         else if (a.type === 'caught') pose = POSES.bottomHit;
-        else if (a.type === 'trans') return lerpPose(base, pos === 'back' ? POSES.bottomHalf : POSES.bottomHit, 0.35 + 0.25 * Math.sin(a.t * 14), out);
+        else if (a.type === 'trans') return transLean(lerpPose(base, pos === 'back' ? POSES.bottomHalf : POSES.bottomHit, transK(a), out), a);
         else if ((this.inputHint & IN.BLOCK) && pos !== 'back') return legsFrom(lerpPose(base, POSES.bottomBlock, 0.6, out), base);
         else pose = base;
         if (wrap && pose !== base && pose !== POSES.bottomSub) return legsFrom(copyPose(pose, out), base);
@@ -947,7 +955,7 @@
         if (a.type === 'sub') pose = pos === 'back' ? POSES.topBack : POSES.topSub;
         else if (a.type === 'caught') pose = POSES.topCaught;
         else if (a.type === 'hit') pose = POSES.topHit;
-        else if (a.type === 'trans') return lerpPose(base, POSES.topPosture, 0.35 + 0.25 * Math.sin(a.t * 14), out);
+        else if (a.type === 'trans') return transLean(lerpPose(base, POSES.topPosture, transK(a), out), a);
         else pose = f.posture ? POSES.topPosture : base;
       } else {
         switch (a.type) {
@@ -1642,9 +1650,8 @@
       segments.push({ dir: [Math.cos(am), Math.sin(am)], postDir: [Math.cos(a0), Math.sin(a0)], mats: [fM, dM, aM], postMats: [pM, dM], meshes: [post, pad, panel, rail, rail2] });
     }
     g.userData.segments = segments;
-    const legacy = new THREE.Group();
     const floor = new THREE.Mesh(new THREE.CircleGeometry(40, 48), new THREE.MeshStandardMaterial({ color: 0x08080b, roughness: 1 }));
-    floor.rotation.x = -Math.PI / 2; floor.position.y = -0.7; floor.receiveShadow = true; legacy.add(floor);
+    floor.rotation.x = -Math.PI / 2; floor.position.y = -0.7; floor.receiveShadow = true; g.add(floor);
     const crowdGeo = new THREE.BoxGeometry(0.5, 1.0, 0.5);
     const crowdMat = new THREE.MeshStandardMaterial({ color: 0x3a3a48, roughness: 1 });
     const count = 900;
@@ -1659,25 +1666,22 @@
       col.setHSL(Math.random(), 0.35, 0.18 + Math.random() * 0.15); crowd.setColorAt(i, col);
     }
     crowd.instanceMatrix.needsUpdate = true;
-    legacy.add(crowd);
+    g.add(crowd);
     for (let r = 0; r < 6; r++) {
       const tier = new THREE.Mesh(new THREE.CylinderGeometry(8 + r * 1.6 + 1.2, 8 + r * 1.6 + 1.2, 0.55, 48, 1, true), new THREE.MeshStandardMaterial({ color: 0x101016, roughness: 1, side: THREE.DoubleSide }));
-      tier.position.y = -0.7 + r * 0.55 + 0.27; legacy.add(tier);
+      tier.position.y = -0.7 + r * 0.55 + 0.27; g.add(tier);
     }
-    g.add(legacy);
-    g.userData.legacy = legacy;
     scene.add(g);
     return g;
   }
 
   // ---------- renderer ----------
   class Renderer {
-    constructor(canvas, audio) {
+    constructor(canvas) {
       this.canvas = canvas;
-      // Alpha stays on so a color void can show through the fence. Legacy paints an opaque arena instead.
-      this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, premultipliedAlpha: false, powerPreference: 'high-performance' });
+      this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
       this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-      this.renderer.setClearColor(0x000000, 0);
+      this.renderer.setClearColor(0x07070a, 1);
       this.renderer.shadowMap.enabled = true;
       this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       this.renderer.outputEncoding = THREE.sRGBEncoding;
@@ -1686,10 +1690,8 @@
       this.scene = new THREE.Scene();
       this.blood = new BloodField(this.scene);
       this.stain = false;
-      this.legacy = true;
-      this._legacyColor = new THREE.Color(0x07070a);
-      this._legacyFog = new THREE.Fog(0x07070a, 18, 42);
-      this.musicBg = root.MMAMusicBg ? new root.MMAMusicBg.MusicBackground(audio) : null;
+      this.scene.background = new THREE.Color(0x07070a);
+      this.scene.fog = new THREE.Fog(0x07070a, 18, 42);
       this.camera = new THREE.PerspectiveCamera(42, 16 / 9, 0.1, 100);
       this.camera.position.set(0, 2.2, 7.5);
       this.camTarget = new THREE.Vector3(0, 1, 0);
@@ -1727,25 +1729,13 @@
       this.fx = [];
       this.time = 0;
       this._tmp = new THREE.Vector3();
-      this.setBackdrop(this.musicBg ? this.musicBg.presetId : 'legacy');
       this.resize();
       window.addEventListener('resize', () => this.resize());
-    }
-
-    setBackdrop(id) {
-      const legacy = !id || id === 'legacy';
-      this.legacy = legacy;
-      if (this.arena && this.arena.userData.legacy) this.arena.userData.legacy.visible = legacy;
-      this.scene.background = legacy ? this._legacyColor : null;
-      this.scene.fog = legacy ? this._legacyFog : null;
-      this.renderer.setClearColor(legacy ? 0x07070a : 0x000000, legacy ? 1 : 0);
-      if (this.musicBg) this.musicBg.setPreset(legacy ? 'legacy' : id);
     }
 
     resize() {
       const w = this.canvas.clientWidth || window.innerWidth, h = this.canvas.clientHeight || window.innerHeight;
       this.renderer.setSize(w, h, false);
-      this.renderer.setClearColor(this.legacy ? 0x07070a : 0x000000, this.legacy ? 1 : 0);
       this.camera.aspect = w / h; this.camera.updateProjectionMatrix();
     }
 
@@ -1789,14 +1779,6 @@
       this.fx.push({ m, t: 0, dur: big ? 0.35 : 0.22 });
     }
 
-    // Project a contact into the void and let the background particles take the hit.
-    _voidImpact(pos, power) {
-      if (!this.musicBg || this.legacy || !this.musicBg.impactOn || !pos) return;
-      const proj = pos.clone().project(this.camera);
-      if (proj.z > 1) return;
-      this.musicBg.punch((proj.x * 0.5 + 0.5) * this.musicBg.w, (-proj.y * 0.5 + 0.5) * this.musicBg.h, power);
-    }
-
     handleEvent(ev) {
       if (!this.models.length) return;
       if (ev.k === 'hit') {
@@ -1809,17 +1791,11 @@
           const power = Math.max(0.45, Math.min(1.35, (ev.dmg || 4) / 7));
           this.blood.burst(p, power);
         }
-        let power = clamp((ev.dmg || (ev.big ? 4 : 1.6)) / 7.5, 0.28, 1);
-        if (ev.rocked) power = Math.max(power, 0.92);
-        else if (ev.big) power = Math.max(power, 0.62);
-        if (ev.jammed) power *= 0.4;
-        this._voidImpact(p, power);
         victim.wound(ev, ev.at ? p : null);
       } else if (ev.k === 'block') {
         const victim = this.models[ev.j];
         const p = ev.at ? new THREE.Vector3(ev.at[0], ev.at[1], ev.at[2]) : victim.headWorld(this._tmp.clone()).add(new THREE.Vector3(0, -0.1, 0));
         this.impact(p, false, 0x88aaff);
-        this._voidImpact(p, 0.22);
         if (ev.at) {
           victim.wound(ev, p);
           // a checked kick is shin on shin: the kicker's leg takes the worse of it
@@ -1828,18 +1804,12 @@
         }
       } else if (ev.k === 'kd' || ev.k === 'td' || ev.k === 'sweep') {
         this.shake = 1;
-        const victim = this.models[ev.j != null ? ev.j : 0];
-        if (victim) this._voidImpact(new THREE.Vector3(victim.px, 0.8, victim.pz), 1);
       } else if (ev.k === 'ko' || ev.k === 'tap') {
         this.shake = 1.2;
-        const who = ev.j != null ? ev.j : ev.i;
-        const victim = this.models[who != null ? who : 0];
-        if (victim) this._voidImpact(new THREE.Vector3(victim.px, 1.1, victim.pz), 1);
       }
     }
 
     update(S, dt, inputs) {
-      if (this.musicBg) this.musicBg.step();
       this.time += dt;
       if (this.blood) this.blood.step(dt);
       if (!this.models.length) return;

@@ -6,10 +6,9 @@
 <title>Cage Rules — 1v1 MMA</title>
 <meta name="description" content="Cage Rules: a 3D one-on-one mixed martial arts simulation you can play online against a friend, right in the browser.">
 <link href="lib/fonts/fonts.css" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=29">
+<link rel="stylesheet" href="css/style.css?v=30">
 </head>
 <body>
-<canvas id="musicbg" aria-hidden="true" hidden></canvas>
 <canvas id="gl"></canvas>
 
 <!-- ===== HUD ===== -->
@@ -37,9 +36,17 @@
   <div class="kd-hint" id="kdHint"></div>
   <div class="grapple" id="grapple">
     <div class="g-title" id="gTitle">GROUND</div>
-    <div class="g-row att" id="attRow"><span id="attName">ATTEMPT</span><div class="bar g att"><div class="fill"></div></div></div>
+    <div class="g-adv"><div class="g-advbar me"><i id="gAdvMe"></i></div><span>ADVANTAGE</span><div class="g-advbar op"><i id="gAdvOp"></i></div></div>
+    <div class="g-compass" id="gCompass">
+      <div class="g-cell c-fwd" data-dir="FWD"></div>
+      <div class="g-cell c-left" data-dir="LEFT"></div>
+      <div class="g-cell c-sub" data-dir="SUB"></div>
+      <div class="g-cell c-right" data-dir="RIGHT"></div>
+      <div class="g-cell c-back" data-dir="BACK"></div>
+    </div>
+    <div class="g-read" id="gRead"><span id="gReadLbl"></span><div class="bar g read"><div class="fill"></div></div></div>
     <div class="g-row sub"><span id="subName">SUBMISSION</span><div class="bar g sub"><div class="fill"></div></div></div>
-    <div class="g-state" id="subState"></div>
+    <div class="g-state" id="gState"></div>
     <div class="g-hint" id="gHint"></div>
   </div>
   <div class="bottom">
@@ -56,7 +63,9 @@
       <button class="big gold" id="btnCareer">CAREER</button>
       <button class="ghost small hidden" id="btnCareerNew">NEW CAREER</button>
       <button class="big" id="btnPractice">PRACTICE VS CPU</button>
+      <button class="ghost small" id="btnTutorial">STRIKING TUTORIAL</button>
       <button class="big" id="btnWatch">WATCH AI VS AI</button>
+      <button class="ghost small" id="btnFighter">YOUR FIGHTER · LOOK</button>
       <div class="menu-sep">ONLINE</div>
       <button class="big" id="btnHost">CREATE ROOM</button>
       <button class="big" id="btnJoin" aria-expanded="false" aria-controls="joinRow">JOIN ROOM</button>
@@ -66,6 +75,7 @@
       </div>
       <div class="menu-sep"></div>
       <button class="ghost" id="btnOptions">OPTIONS · CONTROLS</button>
+      <button class="ghost small" id="btnFeedback">SEND FEEDBACK</button>
       <button class="ghost hidden" id="btnQuit">QUIT TO DESKTOP</button>
     </nav>
     <div class="menu-foot">
@@ -107,11 +117,12 @@
       <div class="settings" id="settingsBox">
         <label>Rounds <select id="selRounds"><option>1</option><option selected>3</option><option>5</option></select></label>
         <label>Round length <select id="selLen"><option value="60">1:00</option><option value="120">2:00</option><option value="180" selected>3:00</option><option value="300">5:00</option></select></label>
-        <label>Grappling <select id="selGrapple"><option value="1" selected>On</option><option value="0">Off (striking only)</option></select></label>
-        <label id="diffWrap">CPU level <select id="selDiff"><option value="0.3">Rookie</option><option value="0.6" selected>Contender</option><option value="0.9">Champion</option></select></label>
+        <label>Rules <select id="selGrapple"><option value="0" selected>Striking only</option><option value="1">Grappling (Experimental)</option></select></label>
+        <label id="diffWrap">CPU level <select id="selDiff"><option value="0.12">Novice</option><option value="0.3">Rookie</option><option value="0.55" selected>Contender</option><option value="0.8">Champion</option><option value="1">Legend</option></select></label>
       </div>
     </div>
     <div class="opp-pick" id="oppPick"></div>
+    <div class="look-line" id="lookLine"><span id="lookLineTxt"></span><button class="ghost small" id="btnLobbyLook">EDIT LOOK</button></div>
     <div class="lobby-btns">
       <button class="ghost" id="btnBack">BACK</button>
       <button class="ghost" id="btnLobbyOptions">OPTIONS</button>
@@ -125,15 +136,15 @@
   <div class="panel wide">
     <div class="lobby-head">
       <div>
-        <div class="lobby-title">NEW CAREER</div>
-        <div class="lobby-status">From the regional circuit to the big league. Pick a base style — it only shapes where you start; training decides what you become.</div>
+        <div class="lobby-title" id="careerNewTitle">NEW CAREER</div>
+        <div class="lobby-status" id="careerNewStatus">From the regional circuit to the big league. Pick a base style — it only shapes where you start; training decides what you become.</div>
       </div>
     </div>
     <div class="roster" id="careerBases"></div>
     <div class="look">
       <div class="look-preview"><canvas id="careerPreview"></canvas><div class="look-hint">drag to turn</div></div>
       <div class="look-opts">
-        <div class="look-row names">
+        <div class="look-row names" id="careerNames">
           <label>Name <input id="careerName" maxlength="14" placeholder="Fighter name"></label>
           <label>Nickname <input id="careerNick" maxlength="16" placeholder="optional"></label>
         </div>
@@ -145,7 +156,7 @@
         <div class="look-row"><label>Trunks</label><span class="swatches" id="careerColors"></span></div>
         <div class="look-row"><label>Trim</label><span class="swatches" id="lkTrim"></span></div>
         <div class="look-row"><label>Gloves</label><span class="swatches" id="lkGloves"></span></div>
-        <div class="look-row"><label></label><button class="ghost small" id="btnLookRandom">RANDOMISE LOOK</button></div>
+        <div class="look-row"><label></label><button class="ghost small" id="btnLookRandom">RANDOMISE LOOK</button><button class="ghost small hidden" id="btnLookClear">CLEAR SAVED LOOK</button></div>
       </div>
     </div>
     <div class="lobby-btns">
@@ -259,31 +270,17 @@
           <div class="opt-audio">
             <h3>AUDIO</h3>
             <label class="vol-row">Music volume
-              <input type="range" id="musicVol" min="0" max="100" step="1" value="20" aria-label="Music volume">
-              <span id="musicVolLbl">20</span>
+              <input type="range" id="musicVol" min="0" max="100" step="1" value="10" aria-label="Music volume">
+              <span id="musicVolLbl">10</span>
             </label>
             <label class="mute-music"><input type="checkbox" id="muteMusicOpt"> Mute music</label>
           </div>
         </div>
         <div class="opt-col">
           <div class="opt-look">
-            <h3>BACKGROUND</h3>
-            <p class="opt-help">Legacy is the original arena. Any other color is a flat void, light grey by default. Music particles follow the track, and impact particles burst when a strike lands. Both stay off on Legacy.</p>
-            <div class="fx-row">
-              <label class="mute-music"><input type="checkbox" id="bgMusicFx" disabled> Music particles</label>
-              <label class="mute-music"><input type="checkbox" id="bgImpactFx" disabled> Impact particles</label>
-            </div>
+            <h3>ARENA</h3>
             <label class="mute-music"><input type="checkbox" id="optRef" checked> Show referee</label>
             <label class="mute-music"><input type="checkbox" id="optSphere" checked> Impact sphere</label>
-            <div class="bg-menu-wrap">
-              <button type="button" class="bg-menu" id="bgColorBtn" aria-expanded="false" aria-controls="bgColorSub">
-                <span>Colors</span><b id="bgColorName">Legacy</b>
-              </button>
-              <div class="bg-sub hidden" id="bgColorSub">
-                <div class="bg-swatches" id="bgSwatches" role="radiogroup" aria-label="Background color"></div>
-                <div class="bg-preview" id="bgPreview"></div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -308,16 +305,70 @@
     <div class="opt-page hidden" data-page="strikes" role="tabpanel">
       <div class="opt-strikes">
         <h3>STRIKES</h3>
-        <p class="opt-help">Each limb key throws a different strike depending on which modifier you are holding. Strikes only do damage when the hand or foot actually reaches the target: step in to add power, and don't throw long shots from the clinch. Press the next strike while one is still landing to chain it.</p>
+        <p class="opt-help">Each limb key throws a different strike depending on which modifier you are holding.</p>
         <table class="moves" id="moveTable"></table>
         <h3>ON THE GROUND</h3>
-        <p class="opt-help">Positions: closed guard → half guard → side control → mount, or back control. <b>Takedown key + a direction</b> attempts a pass, escape, sweep or stand-up (the other fighter holds block to base and deny it; attempts have a short cooldown). <b>Takedown key alone</b> goes for a submission from that position; hold it to squeeze, the defender holds block and times escapes. The hands punch; hold <b data-mod="mod1">Q</b> for elbows, <b data-mod="mod2">E</b> for hammer fists, <b data-mod="mod3">R</b> for body shots; leg keys knee the body. Strikes hit hardest from mount; the bottom fighter can only strike from guard.</p>
+        <p class="opt-help"><b>Takedown key + a direction</b> starts a pass, sweep, escape or stand-up; for a short window the other fighter can deny it with <b>the same direction + the takedown key</b> (the compass on screen shows which): one key, your move when you are free, your read while theirs is up.Landing moves, denying them and landing strikes build <b>momentum and advantage</b>, which shrink the other fighter's windows. <b>Takedown key alone</b> goes for a submission (deny it with <b data-dir="back">S</b> + the takedown key). Once it is locked: hold the takedown key to squeeze and tap a direction to <b>crank</b>; the defender holds block to fight the hands and answers a crank with its direction + the takedown key. Block covers up and never reads; reading leaves you open. Hands punch; hold <b data-mod="mod1">Q</b> for elbows, <b data-mod="mod2">E</b> for hammer fists, <b data-mod="mod3">R</b> for body shots; leg keys knee the body. Strikes hit hardest from mount; the bottom fighter can only strike from guard. The referee stands up a stalled fight after eight seconds.</p>
       </div>
     </div>
     <div class="lobby-btns">
       <button class="ghost" id="btnOptReset">RESET DEFAULTS</button>
       <button class="ghost" id="btnOptQuit">QUIT TO MAIN MENU</button>
       <button class="big" id="btnOptClose">DONE</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== FEEDBACK (playtest notes straight to the dev; always one click away) ===== -->
+<div id="corner">
+  <button id="ctlTab" type="button" class="hidden" title="Show / hide the control hints (H)">CONTROLS [H]</button>
+  <button id="fbTab" type="button" title="Send feedback to the dev">FEEDBACK</button>
+</div>
+<div id="feedback" class="layer screen hidden" role="dialog" aria-labelledby="fbTitle">
+  <div class="panel fb">
+    <div class="lobby-head">
+      <div>
+        <div class="lobby-title" id="fbTitle">SEND FEEDBACK</div>
+        <div class="lobby-status" id="fbStatus">Bugs, balance gripes, ideas, anything. It goes straight to the dev.</div>
+      </div>
+    </div>
+    <div class="fb-kind" id="fbKind" role="radiogroup" aria-label="Type">
+      <button type="button" class="ghost small on" role="radio" aria-checked="true" data-kind="bug">BUG</button>
+      <button type="button" class="ghost small" role="radio" aria-checked="false" data-kind="balance">BALANCE</button>
+      <button type="button" class="ghost small" role="radio" aria-checked="false" data-kind="idea">IDEA</button>
+      <button type="button" class="ghost small" role="radio" aria-checked="false" data-kind="other">OTHER</button>
+    </div>
+    <textarea id="fbText" rows="6" maxlength="4000" placeholder="What happened? What did you expect? How do I make it happen again?"></textarea>
+    <label class="fb-contact">Reply to (optional) <input id="fbContact" maxlength="80" placeholder="email / discord" autocomplete="off"></label>
+    <details class="fb-details"><summary>Attached automatically: version, browser, screen, where you were in the game, recent errors</summary><pre id="fbReport"></pre></details>
+    <div class="lobby-btns">
+      <button class="ghost" id="btnFbClose">CANCEL</button>
+      <button class="ghost" id="btnFbCopy">COPY</button>
+      <button class="big gold" id="btnFbSend">SEND</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== STRIKING TUTORIAL: the step card over the fight (js/main.js, "Striking tutorial") ===== -->
+<div id="tutor" class="tutor hidden" role="region" aria-live="polite">
+  <div class="tut-step" id="tutStep"></div>
+  <div class="tut-title" id="tutTitle"></div>
+  <div class="tut-text" id="tutText"></div>
+  <div class="tut-prog" id="tutProg"><div class="tbar"><div class="fill"></div></div><span id="tutCount"></span></div>
+  <div class="tut-btns"><button type="button" class="ghost small" id="btnTutSkip">SKIP STEP</button><button type="button" class="ghost small" id="btnTutQuit">QUIT TUTORIAL</button></div>
+</div>
+
+<!-- ===== FIRST RUNS: offer the striking tutorial ===== -->
+<div id="tutorPrompt" class="layer screen hidden" role="dialog" aria-labelledby="tutPromptTitle">
+  <div class="panel tut-prompt">
+    <div class="end-method">NEW HERE?</div>
+    <div class="lobby-title" id="tutPromptTitle">LEARN THE STRIKING GAME</div>
+    <p class="tut-blurb">A five-minute guided session with a sparring partner: footwork, every punch and kick, power, combinations, blocking, slipping and checking kicks. Then one round for real.</p>
+    <p class="fine" id="tutPromptNote"></p>
+    <label class="mute-music tut-never"><input type="checkbox" id="tutNever"> Don't show this again</label>
+    <div class="lobby-btns">
+      <button class="ghost" id="btnTutNo">NOT NOW</button>
+      <button class="big gold" id="btnTutYes">PLAY THE TUTORIAL</button>
     </div>
   </div>
 </div>
@@ -332,13 +383,12 @@
 <script src="js/ai.js?v=12"></script>
 <script src="js/career.js?v=17"></script>
 <script src="js/music-env.js?v=17"></script>
-<script src="js/music-bg.js?v=21"></script>
 <script src="js/render.js?v=30"></script>
 <script src="js/gym.js?v=21"></script>
 <script src="js/net.js?v=12"></script>
 <script src="js/audio.js?v=19"></script>
 <script src="js/chat.js?v=1"></script>
-<script src="js/main.js?v=35"></script>
+<script src="js/main.js?v=36"></script>
 <script src="lib/rapier3d-compat.js?v=12"></script>
 <script>
   // Rapier physics engine (vendored, WASM inlined, plain script so the game also runs from file://).

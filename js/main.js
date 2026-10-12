@@ -3,7 +3,7 @@
    ============================================================ */
 (function () {
   'use strict';
-  const { IN, Sim, ROSTER, describe, LIMBS, LIMB_NAME, MODS, HAND_KINDS, LEG_KINDS, KIND_LABEL, DEFAULT_MOVESET, normalizeMoveset, POS_NAME, MOVES, SUBS_BY, BOTTOM_CAN_STRIKE, KD, BREAK_T } = window.MMASim;
+  const { IN, Sim, ROSTER, describe, LIMBS, LIMB_NAME, LIMB_BIT, MODS, MOD_BIT, HAND_KINDS, LEG_KINDS, KIND_LABEL, DEFAULT_MOVESET, normalizeMoveset, POS_NAME, MOVES, SUBS_BY, BOTTOM_CAN_STRIKE, KD, BREAK_T } = window.MMASim;
   const { CpuBrain } = window.MMAAI;
   const { Renderer } = window.MMARender;
   const { Net } = window.MMANet;
@@ -84,16 +84,46 @@
   const App = {
     mode: null, net: null, sim: null, renderer: null, audio: new Audio(), brain: null,
     myIdx: 0, held: 0, pressed: 0, remote: { h: 0, p: 0 },
-    lobby: { picks: ['striker', 'wrestler'], names: ['', ''], ready: [false, false], settings: { rounds: 3, len: 180, diff: 0.6 }, cpuPick: 'random', movesets: [null, null] },
+    lobby: { picks: ['striker', 'wrestler'], names: ['', ''], ready: [false, false], settings: { rounds: 3, len: 180, diff: 0.55, grappling: false }, cpuPick: 'random', movesets: [null, null], looks: [null, null] },
     optionsOpen: false, paused: false,
     state: null, playing: false, lastSnap: 0, lastInputSend: 0, evQueue: [], rematch: [false, false],
-    feedLines: [], hintsHidden: false
+    feedLines: [], hintsHidden: true, gFlash: null
   };
 
-  // practice (you vs CPU), watch (CPU vs CPU) and career run the sim locally with no network
-  const isLocal = () => App.mode === 'practice' || App.mode === 'watch' || App.mode === 'career';
+  // ---------- playtest feedback: where SEND FEEDBACK goes ----------
+  // endpoint: the Google Apps Script web app in tools/feedback-sheet.gs; every report lands as a row in the dev's sheet.
+  // Apps Script only takes cross-origin POSTs as text/plain (no preflight); it parses the JSON body on its side.
+  const FEEDBACK = { endpoint: 'https://script.google.com/macros/s/AKfycbw9oMRVcbESqB-gtSHNlm1gg12Y10b9X3mToQ3Mc5Sjo29jzf3qqdo_Dc7LgPxw2ep1pA/exec', subject: 'Cage Rules feedback' };
+  const Diag = { errors: [], started: Date.now() }; // the last few script errors ride along with every report
+  function logErr(m) { Diag.errors.push(new Date().toISOString().slice(11, 19) + ' ' + String(m).slice(0, 200)); if (Diag.errors.length > 8) Diag.errors.shift(); }
+  window.addEventListener('error', (e) => logErr((e.message || 'error') + (e.filename ? ' @ ' + e.filename.split('/').pop() + ':' + e.lineno : '')));
+  window.addEventListener('unhandledrejection', (e) => logErr('promise: ' + (e.reason && (e.reason.message || e.reason))));
+
+  // practice (you vs CPU), watch (CPU vs CPU), career and the striking tutorial run the sim locally with no network
+  const isLocal = () => App.mode === 'practice' || App.mode === 'watch' || App.mode === 'career' || App.mode === 'tutorial';
   // a roster key that arrived over the network (an own key: '__proto__' or 'toString' must not pass)
   const isFighter = (k) => typeof k === 'string' && Object.prototype.hasOwnProperty.call(ROSTER, k);
+
+  // ---------- your fighter: the look (hair / beard / build / colours, skin, trunks) used in practice and online fights ----------
+  // Career fighters carry their own look on the save; this one lives beside it and is optional (none = a random body).
+  const PROFILE_KEY = 'cr_fighter';
+  const Profile = {
+    cache: undefined,
+    get() {
+      if (this.cache !== undefined) return this.cache;
+      try { this.cache = this.clean(JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null')); } catch (_) { this.cache = null; }
+      return this.cache;
+    },
+    set(p) { this.cache = this.clean(p); try { if (this.cache) localStorage.setItem(PROFILE_KEY, JSON.stringify(this.cache)); else localStorage.removeItem(PROFILE_KEY); } catch (_) {} return this.cache; },
+    // a complete profile from anything (a save, the other player's machine), or null
+    clean(p) {
+      if (!p || typeof p !== 'object') return null;
+      return { look: Career.normalizeLook(p.look), skin: typeof p.skin === 'number' ? p.skin : Career.SKINS[0], color: typeof p.color === 'number' ? p.color : Career.COLORS[0] };
+    },
+    // what a fighter with no profile gets: a fresh random body every fight
+    random() { return { look: Career.randomLook(), skin: Career.SKINS[(Math.random() * Career.SKINS.length) | 0], color: undefined }; }
+  };
+  function applyProfile(p, prof) { prof = prof || Profile.random(); p.look = prof.look; p.skin = prof.skin; if (prof.color != null) p.color = prof.color; }
 
   function fighterSelect(id, sel, random) {
     return '<select id="' + id + '">' + (random ? '<option value="random"' + (sel === 'random' ? ' selected' : '') + '>Random</option>' : '') +
@@ -115,6 +145,7 @@
     for (const id of ['menu', 'lobby', 'end', 'career', 'careerNew', 'more']) { const el = $('#' + id); if (el && id === name) show(el); else if (el) hide(el); }
     if (App.optionsOpen) closeOptions();
     if (name) hide($('#hud')); else show($('#hud'));
+    syncHint();
     if (name === 'menu') refreshMenuCareer();
     if (!name || name === 'end') App.audio.play('fight');
     else App.audio.stop();
@@ -174,6 +205,9 @@
       const on = L.names[opp] || (opp === 0 ? 'Host' : 'Guest');
       op.textContent = App.net && App.net.connected ? on + ' picked ' + ROSTER[L.picks[opp]].name + (L.ready[opp] ? ' ✓' : '') : '';
     }
+    $('#lookLine').classList.toggle('hidden', App.mode === 'watch');
+    $('#lookLineTxt').textContent = Profile.get() ? 'Your fighter: custom look' : 'Your fighter: random look each fight';
+    $('#btnLobbyLook').disabled = !!L.ready[me];
     const rb = $('#btnReady');
     rb.textContent = L.ready[me] ? 'WAITING...' : 'READY';
     rb.disabled = L.ready[me] || (!isLocal() && !(App.net && App.net.connected));
@@ -193,7 +227,7 @@
 
   function sendPick() {
     if (App.mode === 'host') App.net.send({ t: 'lobby', picks: App.lobby.picks, names: App.lobby.names, ready: App.lobby.ready, settings: App.lobby.settings });
-    else if (App.mode === 'guest') App.net.send({ t: 'pick', fighter: App.lobby.picks[1], name: myName(), ready: App.lobby.ready[1], moveset: Controls.moveset });
+    else if (App.mode === 'guest') App.net.send({ t: 'pick', fighter: App.lobby.picks[1], name: myName(), ready: App.lobby.ready[1], moveset: Controls.moveset, profile: Profile.get() });
   }
 
   function enterLobby(mode) {
@@ -242,6 +276,7 @@
         App.lobby.names[1] = String(d.name || '').slice(0, 14);
         App.lobby.ready[1] = !!d.ready;
         App.lobby.movesets[1] = normalizeMoveset(d.moveset);
+        App.lobby.looks[1] = Profile.clean(d.profile);
         refreshLobby(); sendPick(); maybeStart(); break;
       case 'in':
         App.remote.h = (d.h | 0) & SIM_MASK; App.remote.p |= (d.p | 0) & SIM_MASK; break;
@@ -294,7 +329,7 @@
     if (!Array.isArray(d.players) || d.players.length !== 2 || !s || typeof s !== 'object') return null;
     const players = d.players.map((p) => {
       p = p && typeof p === 'object' ? p : {};
-      return { fighter: isFighter(p.fighter) ? p.fighter : 'balanced', name: String(p.name || '').slice(0, 24), color: typeof p.color === 'number' ? p.color : undefined, moveset: p.moveset, look: p.look && typeof p.look === 'object' ? Career.normalizeLook(p.look) : undefined };
+      return { fighter: isFighter(p.fighter) ? p.fighter : 'balanced', name: String(p.name || '').slice(0, 24), color: typeof p.color === 'number' ? p.color : undefined, moveset: p.moveset, skin: typeof p.skin === 'number' ? p.skin : undefined, look: p.look && typeof p.look === 'object' ? Career.normalizeLook(p.look) : undefined };
     });
     return { t: 'start', seed: d.seed | 0, players, settings: { rounds: Math.min(5, Math.max(1, s.rounds | 0)), len: Math.min(300, Math.max(60, s.len | 0)), grappling: s.grappling !== false } };
   }
@@ -317,10 +352,12 @@
       { fighter: L.picks[0], name: App.mode === 'watch' ? ROSTER[L.picks[0]].name + ' (CPU)' : (L.names[0] || myName() || ROSTER[L.picks[0]].name), moveset: App.mode === 'watch' ? DEFAULT_MOVESET : Controls.moveset },
       { fighter: p1, name: isLocal() ? ROSTER[p1].name + ' (CPU)' : (L.names[1] || ROSTER[p1].name), moveset: isLocal() ? DEFAULT_MOVESET : (L.movesets[1] || DEFAULT_MOVESET) }
     ];
-    // same archetype -> alternate shorts colour so they're distinguishable
-    if (players[0].fighter === players[1].fighter) players[1].color = 0x8e44ad;
-    // practice: both fighters get a fresh random look (hair / beard / build / colours) and skin tone every fight
-    if (App.mode === 'practice') for (const p of players) { p.look = Career.randomLook(); p.skin = Career.SKINS[(Math.random() * Career.SKINS.length) | 0]; }
+    // looks: a human wears their own fighter (none saved = random); the CPU gets a fresh random body every fight
+    applyProfile(players[0], App.mode === 'watch' ? null : Profile.get());
+    applyProfile(players[1], App.mode === 'host' ? L.looks[1] : null);
+    // same trunks -> alternate the blue corner's colour so they're distinguishable
+    const trunks = (p) => p.color != null ? p.color : ROSTER[p.fighter].color;
+    if (trunks(players[0]) === trunks(players[1])) players[1].color = trunks(players[0]) === 0x8e44ad ? 0x1e88e5 : 0x8e44ad;
     const msg = { t: 'start', seed: (Math.random() * 1e9) | 0, players, settings: { rounds: L.settings.rounds, len: L.settings.len, grappling: L.settings.grappling !== false } };
     if (App.mode === 'host') App.net.send(msg);
     beginFight(msg);
@@ -330,7 +367,7 @@
   //  Fight lifecycle
   // ============================================================
   function ensureRenderer() {
-    if (!App.renderer) App.renderer = new Renderer($('#gl'), App.audio);
+    if (!App.renderer) App.renderer = new Renderer($('#gl'));
     return App.renderer;
   }
 
@@ -345,6 +382,7 @@
     }
     if (isHost && App.physFailed) return; // the host needs physics to run a fight; the failure toast was already shown
     if (App.sim) App.sim.destroy();
+    if (App.mode !== 'tutorial') tutorStop();
     clearTimeout(App.endT); App.endT = 0;
     App.sim = null; App.state = null; App.evQueue = []; App.remote = { h: 0, p: 0 }; App.rematch = [false, false];
     App.lobby.ready = [false, false];
@@ -352,7 +390,7 @@
       App.sim = new Sim({ seed: msg.seed, rounds: msg.settings.rounds, roundLen: msg.settings.len, players: msg.players, grappling: msg.settings.grappling !== false });
       App.state = App.sim.state;
       const diff = App.lobby.settings.diff;
-      App.brain = isLocal() ? new CpuBrain(1, diff) : null;
+      App.brain = App.mode === 'tutorial' ? Tutor.brain : isLocal() ? new CpuBrain(1, diff) : null;
       // watch mode: the CPU drives the red corner too. ?auto=1 in practice: the CPU also drives your fighter (testing aid)
       App.autoPilot = App.mode === 'watch' ? new CpuBrain(0, diff)
         : App.mode === 'practice' && /[?&]auto=1/.test(location.search) ? new CpuBrain(0, diff) : null;
@@ -369,13 +407,13 @@
     $('#fp0 .tag').textContent = App.mode === 'watch' ? 'CPU' : App.myIdx === 0 ? 'YOU' : 'P1';
     $('#fp1 .tag').textContent = App.myIdx === 1 ? 'YOU' : App.mode === 'career' ? 'OPP' : (isLocal() ? 'CPU' : 'P2');
     screen(null);
-    $('#controlsHint').style.display = App.mode === 'watch' || App.hintsHidden ? 'none' : '';
     App.playing = true;
+    syncHint();
     App.audio.setCrowd(0.06);
     centerMsg('ROUND 1<small>' + esc(App.state.f[0].name) + ' vs ' + esc(App.state.f[1].name) + (App.state.grappling === false ? ' · striking only' : '') + '</small>', 2600);
   }
 
-  function stopFight() { clearTimeout(App.endT); App.endT = 0; App.playing = false; App.paused = false; if (App.sim) App.sim.destroy(); App.sim = null; App.audio.setCrowd(0); hideCenter(); $('#grapple').classList.remove('show'); }
+  function stopFight() { clearTimeout(App.endT); App.endT = 0; App.playing = false; App.paused = false; if (App.sim) App.sim.destroy(); App.sim = null; App.audio.setCrowd(0); hideCenter(); $('#grapple').classList.remove('show'); tutorStop(); }
 
   function showEnd(S) {
     const R = S.result; if (!R) return;
@@ -398,6 +436,10 @@
       row('Strikes landed / blocked / thrown', s => (s.landed | 0) + ' / ' + (s.blocked | 0) + ' / ' + (s.thrown | 0)) + row('Damage dealt', s => Math.round(s.sig)) +
       row('Takedowns', s => (s.td | 0) + ' / ' + (s.tdAtt | 0)) + row('Control time', s => Math.round(s.ctrl) + 's') + row('Submission attempts', s => s.subs | 0) + row('Knockdowns', s => s.kd | 0);
     $('#btnRematch').textContent = 'REMATCH'; $('#btnRematch').disabled = false;
+    if (App.mode === 'tutorial') {
+      $('#endDetail').textContent = 'Tutorial complete. ' + (w ? (R.winner === 0 ? 'You finished the sparring round on top.' : 'The sparring partner got the better of you this time.') : 'Nothing between you and the sparring partner.') + ' Practice vs CPU is the next step.';
+      $('#btnRematch').textContent = 'RUN IT AGAIN';
+    }
     if (App.mode === 'career') {
       settleCareerFight();
       const lf = CareerUI.C && CareerUI.C.lastFight;
@@ -420,6 +462,7 @@
     const R = App.renderer, A = App.audio;
     for (const ev of evs) {
       R && R.handleEvent(ev, S);
+      if (Tutor.active) tutorEvent(ev);
       const text = describe(ev, S);
       switch (ev.k) {
         case 'hit': A.hit(ev.big || ev.rocked, ev.part); feed(text, ev.big || ev.rocked || ev.counter); break;
@@ -435,9 +478,17 @@
         case 'tdfail': case 'shoot': case 'standup': case 'subfail': feed(text); break;
         case 'sub': A.roar(0.2); feed(text, true); break;
         case 'gattempt': feed(text); break;
-        case 'gresult': if (ev.ok) { A.slam(); feed(text, !!(ev.flip || ev.stand)); } else { A.block(); feed(text); } break;
+        case 'gread': {
+          // the read window closed: a flash on the ground panel for whoever had to read it (ev.i = the reader)
+          const mineRead = ev.i === App.myIdx, txt = ev.res === 'denied' ? (mineRead ? 'READ IT!' : 'THEY READ IT') : ev.res === 'wrong' ? (mineRead ? 'WRONG WAY' : 'THEY GUESSED WRONG') : (mineRead ? 'TOO LATE' : 'IT LANDS');
+          App.gFlash = { at: performance.now(), txt };
+          if (ev.res === 'denied') A.block();
+          break;
+        }
+        case 'gresult': if (ev.ok) { A.slam(); feed(text, !!(ev.flip || ev.stand)); } else { if (ev.flip) A.slam(); else A.block(); feed(text, !!ev.flip); } break;
+        case 'subcrank': if (ev.ok) { A.hit(false, 'body'); feed(text); } else { A.block(); feed(text); } break;
+        case 'refwarn': feed(text); break;
         case 'subescape': A.whistle(); feed(text, true); break;
-        case 'subhold': A.block(); feed(text); break;
         case 'tap': A.tap(); feed(text, true); break;
         case 'ko': A.horn(); feed(text, true); break;
         case 'bell':
@@ -490,7 +541,7 @@
     }
     $('#roundLbl').textContent = App.paused ? 'PAUSED' : S.phase === 'break' ? 'BREAK ' + Math.ceil(BREAK_T - S.phaseT) : 'ROUND ' + S.round + '/' + S.rounds;
     const c = Math.max(0, S.clock); $('#clock').textContent = Math.floor(c / 60) + ':' + String(Math.floor(c % 60)).padStart(2, '0');
-    $('#pingLbl').textContent = App.net && App.net.connected ? App.net.ping + ' ms' : App.mode === 'practice' ? 'CPU' : App.mode === 'watch' ? 'AI vs AI' : '';
+    $('#pingLbl').textContent = App.net && App.net.connected ? App.net.ping + ' ms' : App.mode === 'practice' ? 'CPU' : App.mode === 'watch' ? 'AI vs AI' : App.mode === 'tutorial' ? 'TUTORIAL' : '';
     // knockdown prompt: the downed fighter chooses when to get up; the other may dive on him
     const kh = $('#kdHint');
     const me = S.f[App.myIdx], op = S.f[1 - App.myIdx];
@@ -507,38 +558,71 @@
       }
     }
     if (kdTxt) { kh.innerHTML = kdTxt; kh.classList.add('show'); } else kh.classList.remove('show');
-    // ground panel
+    // ground panel: a compass of my moves (one per direction, submission in the middle). The opponent's move
+    // lights up the cell in its direction while it can still be denied (GRAPPLE + that direction), with a shrinking
+    // bar for the window; my own move fills its cell as it plays out. Cranks on a hold use the same compass.
     const g = $('#grapple');
     if (S.ground && S.phase === 'fight') {
-      const G = S.ground;
-      g.classList.add('show'); g.classList.toggle('subbing', !!G.sub);
-      const meTop = G.top === App.myIdx, role = meTop ? 'top' : 'bottom';
-      $('#gTitle').textContent = (POS_NAME[G.pos] + ' · ' + S.f[G.top].name + ' on top').toUpperCase();
-      // transition attempt
-      const ar = $('#attRow');
-      if (G.trans) {
-        ar.classList.add('show');
-        $('#attName').textContent = (G.trans.by === App.myIdx && App.mode !== 'watch' ? 'YOU: ' : S.f[G.trans.by].name.toUpperCase() + ': ') + G.trans.name.toUpperCase();
-        ar.querySelector('.fill').style.width = pct(G.trans.t / G.trans.dur * 100);
-        ar.classList.toggle('mine', G.trans.by === App.myIdx);
-      } else ar.classList.remove('show');
-      if (G.sub) {
-        const sub = G.sub, mineAtt = sub.att === App.myIdx;
+      const G = S.ground, T = G.trans, sub = G.sub;
+      const my = App.myIdx, op = 1 - my, meTop = G.top === my, role = meTop ? 'top' : 'bottom';
+      const watch = App.mode === 'watch';
+      g.classList.add('show'); g.classList.toggle('subbing', !!sub);
+      g.classList.toggle('mom-me', G.mom[my] > 0); g.classList.toggle('mom-op', G.mom[op] > 0);
+      const momTxt = G.mom[my] > 0 ? (watch ? ' · ' + S.f[my].name + ' has momentum' : ' · momentum') : G.mom[op] > 0 ? (watch ? ' · ' + S.f[op].name + ' has momentum' : ' · their momentum') : '';
+      $('#gTitle').textContent = (POS_NAME[G.pos] + ' · ' + S.f[G.top].name + ' on top' + momTxt).toUpperCase();
+      $('#gAdvMe').style.width = pct(G.adv[my]); $('#gAdvOp').style.width = pct(G.adv[op]);
+      const incoming = sub ? (sub.crank && sub.att !== my ? sub.crank : null) : (T && T.by !== my ? T : null);
+      const mine = sub ? null : (T && T.by === my ? T : null);
+      const DK = { FWD: 'fwd', BACK: 'back', LEFT: 'left', RIGHT: 'right' };
+      for (const cell of $('#gCompass').querySelectorAll('.g-cell')) {
+        const dir = cell.dataset.dir;
+        let key = '', name = '', cls = 'g-cell c-' + dir.toLowerCase();
+        if (sub) {
+          if (dir !== 'SUB') { if (sub.att === my) { key = kn(DK[dir]); name = 'crank'; cls += ' mine'; } else { key = kn(DK[dir]) + '+' + kn('grapple'); name = 'read a crank'; } }
+        } else if (dir === 'SUB') {
+          const subs = SUBS_BY[role][G.pos];
+          if (subs.length) { key = kn('grapple'); name = subs.length > 1 ? 'submission' : subs[0]; cls += ' mine'; }
+        } else {
+          const mv = MOVES[role][G.pos][dir];
+          if (mv) { key = kn(DK[dir]) + '+' + kn('grapple'); name = mv.name; cls += ' mine'; }
+        }
+        if (incoming && dir === incoming.dir && (incoming.res == null || sub)) {
+          cls += ' in'; key = kn(DK[dir]) + '+' + kn('grapple');
+          name = sub ? 'READ THE CRANK' : 'DENY ' + incoming.name.toUpperCase();
+        }
+        if (incoming && incoming.guess === dir) cls += incoming.guess === incoming.dir ? ' right' : ' guessed';
+        if (mine && (mine.sub ? dir === 'SUB' : dir === mine.dir)) { cls += ' going'; }
+        if (cell.className !== cls) cell.className = cls;
+        const html = key ? '<b>' + esc(key) + '</b><span>' + esc(name) + '</span>' : '';
+        if (cell.innerHTML !== html) cell.innerHTML = html;
+      }
+      // the read bar: their window shrinking (red), or my move playing out (gold)
+      const rd = $('#gRead');
+      if (incoming) {
+        const open = incoming.t < incoming.win;
+        rd.className = 'g-read show in';
+        $('#gReadLbl').textContent = open ? (sub ? 'READ IT' : 'READ IT: ' + kn(DK[incoming.dir]) + ' + ' + kn('grapple')) : (incoming.res === 'denied' ? 'DENIED!' : incoming.res === 'wrong' ? 'WRONG WAY' : sub ? '' : 'TOO LATE');
+        rd.querySelector('.fill').style.width = pct(open ? (1 - incoming.t / incoming.win) * 100 : 0);
+      } else if (mine) {
+        rd.className = 'g-read show mine';
+        $('#gReadLbl').textContent = mine.res === 'denied' ? 'READ!' : mine.res ? (mine.sub ? 'LOCKING' : 'LANDS') : mine.name.toUpperCase();
+        rd.querySelector('.fill').style.width = pct(mine.t / mine.dur * 100);
+      } else rd.className = 'g-read';
+      if (sub) {
+        const mineAtt = sub.att === my;
         g.querySelector('.sub .fill').style.width = pct(sub.prog); $('#subName').textContent = sub.name.toUpperCase();
-        $('#subState').textContent = (sub.squeezing ? 'SQUEEZING' : 'LOOSE') + (sub.defending ? ' · DEFENDING' : '');
-        $('#gHint').textContent = App.mode === 'watch' ? '' : mineAtt
-          ? 'Hold ' + kn('grapple') + ' to squeeze (burns stamina) — let go to breathe, but they can slip out when it\'s loose.'
-          : 'Hold ' + kn('block') + ' to fight the hold (slows it). Tap ' + kn('grapple') + ' to attempt an escape — best when the squeeze is loose.';
+        $('#gState').textContent = (sub.squeezing ? 'SQUEEZING' : 'LOOSE') + (sub.defending ? ' · HAND FIGHTING' : '');
+        $('#gHint').textContent = watch ? '' : mineAtt
+          ? 'Hold ' + kn('grapple') + ' to squeeze (burns stamina) · tap a direction to crank: unread it tightens, read it loosens'
+          : 'Hold ' + kn('block') + ' to fight the hands (slows it) · when a crank lights up, that direction + ' + kn('grapple') + ' loosens it · at 0 you are out';
       } else {
-        const moves = MOVES[role][G.pos], subs = SUBS_BY[role][G.pos];
+        const fl = App.gFlash;
+        $('#gState').textContent = fl && performance.now() - fl.at < 900 ? fl.txt : '';
         const parts = [];
-        for (const dir in moves) parts.push(kn(dir.toLowerCase() === 'fwd' ? 'fwd' : dir.toLowerCase()) + '+' + kn('grapple') + ' ' + moves[dir].name);
-        if (subs.length) parts.push(kn('grapple') + ' ' + (subs.length > 1 ? 'submission' : subs[0]));
-        if (role === 'top' || BOTTOM_CAN_STRIKE[G.pos]) parts.push(kn('lh') + '/' + kn('rh') + '/' + kn('ll') + '/' + kn('rl') + ' strike');
-        parts.push('hold ' + kn('block') + (role === 'top' ? ' base (deny escapes)' : ' frame (deny passes, cover up)'));
+        if (role === 'top' || BOTTOM_CAN_STRIKE[G.pos]) parts.push(kn('lh') + '/' + kn('rh') + '/' + kn('ll') + '/' + kn('rl') + ' strike (builds advantage)');
+        parts.push('hold ' + kn('block') + (role === 'top' ? ' posture' : ' cover') + ' · their move lights a direction: that direction + ' + kn('grapple') + ' denies it');
         if (role === 'top') parts.push(kn('dodge') + ' let them up');
-        const cd = G.cd[App.myIdx] > 0 ? ' · recovering ' + G.cd[App.myIdx].toFixed(1) + 's' : '';
-        $('#gHint').textContent = App.mode === 'watch' ? '' : parts.join(' · ') + cd;
+        $('#gHint').textContent = watch ? '' : parts.join(' · ');
       }
     } else g.classList.remove('show');
   }
@@ -677,12 +761,82 @@
     App.optionsOpen = false; App.paused = false;
     hide($('#options')); updateHint();
   }
+  // ============================================================
+  //  Feedback (playtest notes to the dev)
+  // ============================================================
+  const FB = { kind: 'bug' };
+  function whereAmI() {
+    if (App.playing || App.sim) return 'fight (' + (App.mode || '?') + (App.paused ? ', paused' : '') + ')';
+    if (App.gym && App.gym.active) return 'career gym';
+    for (const id of ['end', 'career', 'careerNew', 'lobby', 'more', 'menu']) if (!$('#' + id).classList.contains('hidden')) return id + (id === 'lobby' && App.mode ? ' (' + App.mode + ')' : '');
+    return 'unknown';
+  }
+  function fbReport() {
+    let gpu = '';
+    try { const gl = App.renderer && App.renderer.getContext(); const dbg = gl && gl.getExtension('WEBGL_debug_renderer_info'); if (dbg) gpu = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL); } catch (_) {}
+    const S = App.state, C = CareerUI.C;
+    return {
+      kind: FB.kind,
+      version: window.desktop && window.desktop.version ? 'desktop v' + window.desktop.version : 'web',
+      page: location.href.split('?')[0],
+      where: whereAmI(),
+      time: new Date().toISOString(),
+      sessionMin: Math.round((Date.now() - Diag.started) / 60000),
+      browser: navigator.userAgent,
+      lang: navigator.language,
+      screen: innerWidth + 'x' + innerHeight + ' @' + (devicePixelRatio || 1) + 'x' + (document.fullscreenElement ? ' fullscreen' : ''),
+      gpu,
+      input: Pad.active ? 'gamepad' : 'keyboard',
+      rules: App.lobby.settings,
+      picks: App.lobby.picks,
+      fight: S ? { round: S.round, clock: Math.round(S.clock), phase: S.phase, ground: !!S.ground } : null,
+      career: C ? { name: C.name, record: C.record } : null,
+      errors: Diag.errors
+    };
+  }
+  function fbText(r, msg, contact) {
+    const lines = ['[' + r.kind.toUpperCase() + '] ' + FEEDBACK.subject, '', msg || '(no message)', ''];
+    if (contact) lines.push('Reply to: ' + contact);
+    lines.push('--- attached ---');
+    for (const k of Object.keys(r)) if (k !== 'kind') lines.push(k + ': ' + (r[k] !== null && typeof r[k] === 'object' ? JSON.stringify(r[k]) : r[k]));
+    return lines.join('\n');
+  }
+  function openFeedback() {
+    if (App.feedbackOpen) return;
+    App.feedbackOpen = true; App.held = 0; App.pressed = 0; releasePointer();
+    if (App.playing && isLocal()) App.paused = true;
+    $('#fbReport').textContent = fbText(fbReport(), '', '').split('--- attached ---')[1].trim();
+    hide($('#fbTab')); show($('#feedback'));
+    $('#fbText').focus();
+  }
+  function closeFeedback() {
+    App.feedbackOpen = false; if (!App.optionsOpen) App.paused = false;
+    hide($('#feedback')); show($('#fbTab'));
+  }
+  async function copyText(t) {
+    try { await navigator.clipboard.writeText(t); return true; } catch (_) {}
+    try { const ta = document.createElement('textarea'); ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); const ok = document.execCommand('copy'); ta.remove(); return ok; } catch (_) { return false; }
+  }
+  async function sendFeedback() {
+    const msg = $('#fbText').value.trim(), contact = $('#fbContact').value.trim();
+    if (msg.length < 3) { toast('Write a line first.'); $('#fbText').focus(); return; }
+    try { localStorage.setItem('cr_fb_contact', contact); } catch (_) {}
+    const r = fbReport(), text = fbText(r, msg, contact);
+    const btn = $('#btnFbSend'); btn.disabled = true; btn.textContent = 'SENDING\u2026';
+    let sent = false;
+    try {
+      const res = await fetch(FEEDBACK.endpoint, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(Object.assign({ message: msg, contact }, r)) });
+      sent = res.ok && (await res.json()).ok === true;
+    } catch (_) {}
+    btn.disabled = false; btn.textContent = 'SEND';
+    if (sent) { toast('Sent. Thank you!', 2500); $('#fbText').value = ''; closeFeedback(); return; }
+    // the inbox is unreachable: keep the report on their clipboard so it can still be pasted to the dev
+    const copied = await copyText(text);
+    toast(copied ? 'Could not reach the inbox. The report is copied to your clipboard, paste it to the dev instead.' : 'Could not reach the inbox. Use COPY and paste the report to the dev.', 6000);
+  }
   function resetControls() {
     Controls.binds = defaultBinds(); Controls.pad = defaultPad(); Controls.moveset = normalizeMoveset(DEFAULT_MOVESET);
     saveControls();
-    if (App.setMusicParticles) App.setMusicParticles(true);
-    if (App.setImpactParticles) App.setImpactParticles(true);
-    if (App.setBackground) App.setBackground('legacy');
     buildOptions(); updateHint(); toast('Options reset to defaults', 1500);
   }
   function menuHint() {
@@ -693,6 +847,7 @@
   }
   function updateHint() {
     menuHint();
+    Tutor.dirty = true; Tutor.shown = -1; // the step card names keys for whichever device is in use
     const B = id => '<b>' + bindName(id) + '</b>';
     const ms = Controls.moveset;
     const kind = k => KIND_LABEL[k].toLowerCase();
@@ -700,13 +855,33 @@
     $('#controlsHint').innerHTML =
       '<div class="ctl-row">' + [B('fwd'), B('left'), B('back'), B('right')].join(' ') + ' move / circle (stepping into a shot adds power, backing off takes it away) · ' + B('dodge') + ' dash the way you are stepping (straight back if standing still) · ' + B('lh') + ' left hand · ' + B('rh') + ' right hand · ' + B('ll') + ' left leg · ' + B('rl') + ' right leg</div>' +
       '<div class="ctl-row">' + MODS.map(row).join(' · ') + '</div>' +
-      '<div class="ctl-row">' + B('block') + ' hold: block / sprawl (+ ' + B('mod3') + ' drops into a shell that covers the body), press as a strike comes in: block and slip it, tap twice: push them off · ' + B('grapple') + ' takedown / dive on a downed opponent · ' + B('stance') + ' switch stance · knocked down: a direction or ' + B('dodge') + ' gets up, or stay down to recover · ground: hands & legs strike, ' + B('grapple') + ' submission / sweep, ' + B('block') + ' posture / cover, ' + B('dodge') + ' let up · <b>Enter</b> chat · <b>ESC</b>' + (Pad.active ? ' / <b>START</b>' : '') + ' options · <b>H</b> hide this · <b>M</b> mute</div>';
+      '<div class="ctl-row">' + B('block') + ' hold: block / sprawl (+ ' + B('mod3') + ' drops into a shell that covers the body), press as a strike comes in: block and slip it, tap twice: push them off · ' + B('grapple') + ' takedown / dive on a downed opponent · ' + B('stance') + ' switch stance · knocked down: a direction or ' + B('dodge') + ' gets up, or stay down to recover · ground: hands & legs strike, direction + ' + B('grapple') + ' move (see the compass), ' + B('grapple') + ' alone submission, their direction + ' + B('grapple') + ' denies, ' + B('block') + ' covers, ' + B('dodge') + ' let up · <b>Enter</b> chat · <b>ESC</b>' + (Pad.active ? ' / <b>START</b>' : '') + ' options · <b>H</b> hide this · <b>M</b> mute</div>';
+    syncHint();
   }
+  // the hint panel is closed by default; the CONTROLS tab (or H) opens it, and the corner tabs move up so they never sit on top of it
+  function syncHint() {
+    const hud = $('#hud'), hint = $('#controlsHint'), tab = $('#ctlTab'), corner = $('#corner');
+    if (!hud || !hint || !tab || !corner) return;
+    const inFight = App.playing && !hud.classList.contains('hidden') && App.mode !== 'watch';
+    const open = inFight && !App.hintsHidden;
+    hint.style.display = open ? '' : 'none';
+    tab.classList.toggle('hidden', !inFight);
+    tab.textContent = (open ? 'HIDE CONTROLS' : 'CONTROLS') + ' [H]';
+    const h = open ? hint.offsetHeight : 0;
+    corner.style.bottom = h > 0 ? (h + 22) + 'px' : '';
+  }
+  function toggleHint() { App.hintsHidden = !App.hintsHidden; syncHint(); }
 
   // ============================================================
   //  Input
   // ============================================================
   window.addEventListener('keydown', (e) => {
+    if (App.feedbackOpen) { if (e.code === 'Escape' && !e.repeat) { e.preventDefault(); closeFeedback(); } return; } // ESC closes it even from inside the text box
+    if (tutorPromptOpen()) { // the first-run prompt: ESC is NOT NOW, arrows move between its buttons, Enter / Space press the focused one
+      if (e.code === 'Escape') { e.preventDefault(); if (!e.repeat) closeTutorPrompt(); }
+      else if (/^Arrow(Up|Down|Left|Right)$/.test(e.code)) { e.preventDefault(); padFocusMove(e.code.slice(5).toLowerCase()); }
+      return;
+    }
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA')) { if (e.code === 'Escape') e.target.blur(); return; }
     if (e.code === 'Enter' && !e.repeat) {
       const el = document.activeElement;
@@ -736,7 +911,7 @@
       if (onScreen) { e.preventDefault(); padFocusMove(e.code.slice(5).toLowerCase()); return; }
     }
     if (App.optionsOpen) return;
-    if (e.code === 'KeyH' && !Controls.keyMap.KeyH) { if (!e.repeat) { App.hintsHidden = !App.hintsHidden; $('#controlsHint').style.display = App.hintsHidden ? 'none' : ''; } return; }
+    if (e.code === 'KeyH' && !Controls.keyMap.KeyH) { if (!e.repeat) toggleHint(); return; }
     if (e.code === 'KeyM' && !Controls.keyMap.KeyM) { if (!e.repeat) { App.audio.setMuted(!App.audio.muted); toast(App.audio.muted ? 'Muted' : 'Sound on', 1200); } return; }
     const b = Controls.keyMap[e.code]; if (!b) return;
     e.preventDefault();
@@ -749,6 +924,8 @@
   // what ESC (or the pad's START button) does, from the most specific context outward
   function pressEscape() {
     if (capture) { cancelCapture(); return; }
+    if (App.feedbackOpen) { closeFeedback(); return; }
+    if (tutorPromptOpen()) { closeTutorPrompt(); return; }
     if (!$('#more').classList.contains('hidden')) { screen('menu'); return; }
     // in the gym, ESC backs out of an open station screen before it reaches the options menu
     if (!App.optionsOpen && App.gym && App.gym.active && CareerUI.station && !$('#career').classList.contains('hidden')) { closeStation(); return; }
@@ -820,12 +997,13 @@
     }
     if (b) {
       if (App.optionsOpen) closeOptions();
-      else { const back = ['#btnCareerNewBack', '#btnMoreClose', '#btnBack', '#btnMenu'].map(s => $(s)).find(b => b && !b.closest('.hidden') && b.getBoundingClientRect().width > 0); if (back) back.click(); }
+      else { const back = ['#btnTutNo', '#btnCareerNewBack', '#btnMoreClose', '#btnBack', '#btnMenu'].map(s => $(s)).find(b => b && !b.closest('.hidden') && b.getBoundingClientRect().width > 0); if (back) back.click(); }
     }
   }
   const PAD_FOCUSABLE = 'button, a[href], input[type=range], input[type=checkbox], select, .card';
   function padFocusMove(dir) {
-    const els = Array.from(document.querySelectorAll(PAD_FOCUSABLE)).filter(e => { if (e.disabled || e.closest('.hidden') || e.classList.contains('letter')) return false; /* the title's G is an easter egg, not a menu item */ const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+    const modal = ['#tutorPrompt', '#feedback'].map(s => $(s)).find(m => m && !m.classList.contains('hidden')); // a dialog over the screen keeps the focus to itself
+    const els = Array.from((modal || document).querySelectorAll(PAD_FOCUSABLE)).filter(e => { if (e.disabled || e.closest('.hidden') || e.classList.contains('letter')) return false; /* the title's G is an easter egg, not a menu item */ const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
     if (!els.length) return;
     const cur = document.activeElement, from = cur && els.includes(cur) ? cur.getBoundingClientRect() : null;
     if (!from) { els[0].focus(); return; }
@@ -882,6 +1060,7 @@
       sim.step(dt);
       const evs = sim.drainEvents();
       if (evs.length) processEvents(evs, sim.state);
+      if (Tutor.active) tutorTick(sim.state, dt);
       if (App.mode === 'host' && App.net) {
         App.evQueue.push(...evs);
         if (now - App.lastSnap >= 50) {
@@ -912,7 +1091,7 @@
   // ============================================================
   //  Career mode (single player campaign) — model in js/career.js
   // ============================================================
-  const CareerUI = { C: null, tab: 'camp', pick: { base: 'striker', color: null, skin: null, look: null }, justFought: false, lastTrain: null, confirmDel: 0 };
+  const CareerUI = { C: null, tab: 'camp', pick: { base: 'striker', color: null, skin: null, look: null }, pickMode: 'career', backTo: 'menu', justFought: false, lastTrain: null, confirmDel: 0 };
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const hex = (c) => '#' + (c >>> 0).toString(16).padStart(6, '0');
   const pct100 = (v) => Math.round(v * 100);
@@ -950,8 +1129,41 @@
     }
     renderLookPicks();
     try { if (!$('#careerName').value) $('#careerName').value = localStorage.getItem('cr_name') || ''; } catch (_) {}
+    setPickMode('career');
     screen('careerNew');
     LookPreview.start();
+  }
+  // the same screen edits your fighter for practice / online: no base style or name, SAVE instead of START
+  function setPickMode(mode) {
+    CareerUI.pickMode = mode;
+    const prof = mode === 'profile';
+    $('#careerBases').classList.toggle('hidden', prof);
+    $('#careerNames').classList.toggle('hidden', prof);
+    $('#careerNewTitle').textContent = prof ? 'YOUR FIGHTER' : 'NEW CAREER';
+    $('#careerNewStatus').textContent = prof ? 'This is you in practice and online fights. The CPU always shows up as somebody new.' : 'From the regional circuit to the big league. Pick a base style \u2014 it only shapes where you start; training decides what you become.';
+    $('#btnCareerStart').textContent = prof ? 'SAVE' : 'START CAREER';
+    $('#btnLookClear').classList.toggle('hidden', !prof || !Profile.get());
+  }
+  // backTo: the screen to return to (the lobby keeps its room open while the look is edited)
+  function openProfile(backTo) {
+    const saved = Profile.get() || Profile.random();
+    CareerUI.pick = { base: 'striker', color: saved.color != null ? saved.color : Career.COLORS[0], skin: saved.skin, look: Career.normalizeLook(saved.look) };
+    CareerUI.backTo = backTo || 'menu';
+    renderLookPicks();
+    setPickMode('profile');
+    screen('careerNew');
+    LookPreview.start();
+  }
+  function closeProfile() {
+    LookPreview.stop();
+    screen(CareerUI.backTo);
+    if (CareerUI.backTo === 'lobby') { refreshLobby(); sendPick(); } // the host / guest hears about the new look
+  }
+  function saveProfile() {
+    const P = CareerUI.pick;
+    Profile.set({ look: P.look, skin: P.skin, color: P.color });
+    toast('Fighter saved.', 2000);
+    closeProfile();
   }
   // the pickers for everything the renderer can vary; every change rebuilds the preview model
   function renderLookPicks() {
@@ -1010,6 +1222,7 @@
     }
   };
   function startCareer() {
+    if (CareerUI.pickMode === 'profile') { saveProfile(); return; }
     const name = ($('#careerName').value || '').trim();
     if (!name) { toast('Give your fighter a name.'); $('#careerName').focus(); return; }
     const P = CareerUI.pick;
@@ -1279,7 +1492,10 @@
   }
   function leaveCareerFight() { settleCareerFight(); stopFight(); openCareer(); }
   $('#btnCareer').onclick = () => { App.audio.init(); if (careerLoad()) openCareer(); else openCareerNew(); };
-  $('#btnCareerNewBack').onclick = () => { LookPreview.stop(); screen('menu'); };
+  $('#btnCareerNewBack').onclick = () => { if (CareerUI.pickMode === 'profile') closeProfile(); else { LookPreview.stop(); screen('menu'); } };
+  $('#btnFighter').onclick = () => { App.audio.init(); openProfile('menu'); };
+  $('#btnLobbyLook').onclick = () => openProfile('lobby');
+  $('#btnLookClear').onclick = () => { Profile.set(null); toast('Look cleared \u2014 you get a random fighter each fight.', 2500); closeProfile(); };
   // NEW CAREER on the main menu: shown only when a save exists. Click twice to confirm; the old save is
   // kept until the new fighter is actually started, so backing out of the creation screen loses nothing.
   $('#btnCareerNew').onclick = () => {
@@ -1304,6 +1520,212 @@
   document.querySelectorAll('#cTabs .tab').forEach(b => b.onclick = () => { CareerUI.tab = b.dataset.tab; renderCareer(); });
 
   // ============================================================
+  //  Striking tutorial: a guided session against a sparring partner (markup: #tutor, #tutorPrompt)
+  //  Steps are drills checked against sim events and state; the partner's behaviour follows the step.
+  // ============================================================
+  const TUT_KEYS = { shown: 'cr_tut_shown', off: 'cr_tut_off', done: 'cr_tut_done' };
+  const TUT_PROMPT_TIMES = 3; // opens of the game that offer the tutorial before it stops asking
+  const TUT_SPAR_LEN = 90;    // seconds on the clock for the final round
+  // The sparring partner. 'idle': stands in his guard and lets you work. 'jab' / 'lowkick': throws that strike every
+  // couple of seconds so you can practise the answer. 'spar': the rookie CPU, fighting for real.
+  class TutorBrain {
+    constructor() { this.mode = 'idle'; this.t = 1.2; this.modHeld = 0; this.modT = 0; this.cpu = null; }
+    set(mode) { this.mode = mode; this.t = 1.0; if (mode === 'spar' && !this.cpu) this.cpu = new CpuBrain(1, 0.3); }
+    update(S, dt) {
+      if (this.mode === 'spar') return this.cpu.update(S, dt);
+      if (S.phase !== 'fight') return { held: 0, pressed: 0 };
+      const me = S.f[1], op = S.f[0];
+      let held = 0, pressed = 0;
+      if (me.act.type === 'kd') { if (me.act.name === 'down' && me.act.t > 0.6) pressed |= IN.FWD; return { held: 0, pressed }; }
+      const dist = Math.hypot(op.x - me.x, op.z - me.z);
+      // he keeps the range the drill needs: steps back out of the clinch (nothing lands from there), and when he is
+      // throwing he walks after you so the strikes you have to answer actually come
+      if (dist < 0.72) held |= IN.BACK;
+      else if (this.mode !== 'idle' && dist > 1.45) held |= IN.FWD;
+      if (this.mode === 'jab' || this.mode === 'lowkick') {
+        this.t -= dt;
+        if (this.t <= 0 && dist < 1.55 && me.act.type !== 'strike' && me.act.type !== 'hit' && me.rocked <= 0) {
+          const kind = this.mode === 'jab' ? 'straight' : 'lkick';
+          const limb = (this.mode === 'jab' ? ['lh', 'rh'] : ['ll', 'rl'])[Math.random() < 0.5 ? 0 : 1];
+          const mod = MODS.find(m => DEFAULT_MOVESET[m][limb] === kind) || 'none';
+          this.modHeld = MOD_BIT[mod]; this.modT = 0.35;
+          pressed |= LIMB_BIT[limb];
+          this.t = (this.mode === 'jab' ? 1.3 : 1.9) + Math.random() * 0.8;
+        }
+      }
+      if (this.modT > 0) { this.modT -= dt; held |= this.modHeld; }
+      return { held, pressed };
+    }
+  }
+  const K = (id) => '<b>' + esc(bindName(id)) + '</b>';
+  // how the player throws this strike with their own mapping: 'hold Q + U / I', or every way if it is mapped twice
+  function strikeHow(kind) {
+    const ms = Controls.moveset, ways = [];
+    for (const m of MODS) { const limbs = LIMBS.filter(l => ms[m][l] === kind); if (limbs.length) ways.push((m === 'none' ? 'no modifier, ' : 'hold ' + K(m) + ' + ') + limbs.map(K).join(' / ')); }
+    return ways.length ? ways.join(', or ') : '<i>not in your strike mapping: see OPTIONS, STRIKES</i>';
+  }
+  // goal: how many times the check must pass. hit(ev): a strike of yours that reached him (landed or into the guard).
+  // block(ev): a strike of his that you blocked. push: a push of yours that reached him. tick(): checked every frame, returns the progress to add.
+  // mode: what the partner does. Every step but the last keeps both fighters fresh and the clock still.
+  const TUT_STEPS = [
+    { id: 'close', title: 'CLOSE THE DISTANCE', goal: 1, mode: 'idle',
+      text: () => 'Movement is relative to your opponent: ' + K('fwd') + ' always walks toward him. Hold ' + K('fwd') + ' until you are in punching range.',
+      tick: (S, me, op, dist) => dist < 1.12 ? 1 : 0 },
+    { id: 'circle', title: 'CIRCLE', goal: 3, mode: 'idle', float: true,
+      text: () => 'Hold ' + K('left') + ' or ' + K('right') + ' to circle him. Three seconds of footwork.',
+      tick: (S, me, op, dist, dt) => (App.held & (IN.LEFT | IN.RIGHT)) && dist < 2.6 ? dt : 0 }, // circling drifts outward; only footwork far off him is not circling
+    { id: 'out', title: 'GET OUT OF RANGE', goal: 1, mode: 'idle',
+      text: () => 'Hold ' + K('back') + ' to step out, or tap ' + K('dodge') + ' to dash the way you are stepping (straight back when you stand still). Get out past kicking range.',
+      tick: (S, me, op, dist) => dist > Math.max(1.75, Tutor.d0 + 0.5) ? 1 : 0 }, // measured from where the step began, so it never completes on its own
+    { id: 'straight', title: 'STRAIGHT PUNCHES', goal: 3, mode: 'idle',
+      text: () => 'Your hands are ' + K('lh') + ' and ' + K('rh') + '; the modifier you hold decides the punch. Straights: ' + strikeHow('straight') + '. Step back in and hit him with three.',
+      hit: (ev) => ev.kind === 'straight' },
+    { id: 'hook', title: 'HOOKS', goal: 3, mode: 'idle',
+      text: () => 'Hooks come around the guard: ' + strikeHow('hook') + '. Land three.',
+      hit: (ev) => ev.kind === 'hook' },
+    { id: 'uppercut', title: 'UPPERCUTS', goal: 2, mode: 'idle',
+      text: () => 'Uppercuts come up the middle and are at their best in close: ' + strikeHow('uppercut') + '. Land two.',
+      hit: (ev) => ev.kind === 'uppercut' },
+    { id: 'overhand', title: 'OVERHANDS', goal: 2, mode: 'idle',
+      text: () => 'The overhand loops over the top: ' + strikeHow('overhand') + '. Land two.',
+      hit: (ev) => ev.kind === 'overhand' },
+    { id: 'lowkick', title: 'LOW KICKS', goal: 2, mode: 'idle',
+      text: () => 'Your legs are ' + K('ll') + ' and ' + K('rl') + '. Low kicks: ' + strikeHow('lkick') + '. Leg damage slows him down and takes the power out of his own kicks. Land two.',
+      hit: (ev) => ev.kind === 'lkick' },
+    { id: 'bkick', title: 'BODY KICKS', goal: 2, mode: 'idle',
+      text: () => 'Body kicks: ' + strikeHow('bkick') + '. Body damage shrinks his stamina tank for the rest of the fight. Land two.',
+      hit: (ev) => ev.kind === 'bkick' },
+    { id: 'hkick', title: 'HEAD KICKS', goal: 1, mode: 'idle',
+      text: () => 'Head kicks: ' + strikeHow('hkick') + '. Land one.',
+      hit: (ev) => ev.kind === 'hkick' },
+    { id: 'teep', title: 'TEEP AND KNEE', goal: 2, mode: 'idle',
+      text: () => 'Teep: ' + strikeHow('teep') + '. Knee: ' + strikeHow('knee') + '. The teep is a push kick that keeps him off you; the knee wants him close. Land two of either.',
+      hit: (ev) => ev.kind === 'teep' || ev.kind === 'knee' },
+    { id: 'power', title: 'PUT YOUR WEIGHT INTO IT', goal: 1, mode: 'idle',
+      text: () => 'Stepping in (' + K('fwd') + ') as you throw adds power; backing off takes it away. Land one heavy shot off a step in. Watch the feed: it tells you when a shot lands big.',
+      hit: (ev) => !!(ev.big || ev.momentum), landed: true },
+    { id: 'block', title: 'BLOCK', goal: 3, mode: 'jab',
+      text: () => 'He is going to jab. Hold ' + K('block') + ' to put your guard up and block three. Holding ' + K('mod3') + ' with it drops you into a shell that covers the body too.',
+      block: (ev) => !ev.passive && !ev.checked },
+    { id: 'push', title: 'PUSH', goal: 2, mode: 'idle',
+      text: () => 'Tap ' + K('block') + ' twice quickly to stiff-arm him off you. It only works at arm\'s length, and the closer he is the harder he stumbles. Push him off twice.',
+      push: true },
+    { id: 'check', title: 'CHECK THE LOW KICK', goal: 2, mode: 'lowkick',
+      text: () => 'Now he is kicking your lead leg. Hold ' + K('check') + ' to lift it and check the kick: his shin hits your knee and it hurts him instead of you. Check two.',
+      block: (ev) => !!ev.checked },
+    { id: 'stance', title: 'SWITCH STANCE', goal: 1, mode: 'idle',
+      text: () => 'Tap ' + K('stance') + ' to switch to southpaw (right foot forward). Your lead and rear limbs swap, so the same keys now throw mirrored strikes.',
+      stance: true },
+    { id: 'spar', title: 'SPAR', goal: 0, mode: 'spar',
+      text: () => 'That is the striking game. Now he fights back: one round of ' + TUT_SPAR_LEN + ' seconds, real damage both ways. Finish him or hear the bell. <b>ESC</b> pauses and opens the options; QUIT TUTORIAL leaves any time.' }
+  ];
+  const Tutor = { active: false, brain: null, i: 0, n: 0, dirty: true, shown: -1, d0: 2.6 }; // d0: the distance between the fighters when the step began
+  function tutorPromptOpen() { return !$('#tutorPrompt').classList.contains('hidden'); }
+  function startTutorial() {
+    App.audio.init();
+    hide($('#tutorPrompt'));
+    if (App.net) { App.net.destroy(); App.net = null; }
+    App.mode = 'tutorial'; App.myIdx = 0; App.lobby.ready = [false, false]; App.lobby.settings.diff = 0.3;
+    const players = [
+      { fighter: 'striker', name: myName() || 'You', moveset: Controls.moveset },
+      { fighter: 'balanced', name: 'Sparring Partner', moveset: DEFAULT_MOVESET }
+    ];
+    applyProfile(players[0], Profile.get()); applyProfile(players[1], null);
+    Tutor.brain = new TutorBrain(); Tutor.active = true;
+    tutorEnter(0);
+    beginFight({ t: 'start', seed: (Math.random() * 1e9) | 0, players, settings: { rounds: 1, len: 180, grappling: false } });
+  }
+  function tutorStop() {
+    if (!Tutor.active && !Tutor.brain) return;
+    Tutor.active = false; Tutor.brain = null; Tutor.shown = -1;
+    hide($('#tutor'));
+  }
+  function tutorEnter(i) {
+    Tutor.i = i; Tutor.n = 0; Tutor.dirty = true;
+    const S = App.sim && App.state; Tutor.d0 = S ? Math.hypot(S.f[1].x - S.f[0].x, S.f[1].z - S.f[0].z) : 2.6;
+    const st = TUT_STEPS[i];
+    if (Tutor.brain) Tutor.brain.set(st.mode);
+    if (st.id === 'spar') {
+      try { localStorage.setItem(TUT_KEYS.done, '1'); } catch (_) {} // every drill seen: the prompt stops asking
+      if (App.state) App.state.clock = TUT_SPAR_LEN;
+      centerMsg('SPAR<small>' + TUT_SPAR_LEN + ' seconds, for real</small>', 2200);
+    }
+  }
+  function tutorProgress(add) {
+    const st = TUT_STEPS[Tutor.i];
+    if (!st.goal) return;
+    Tutor.n = Math.min(st.goal, Tutor.n + add); Tutor.dirty = true;
+    if (Tutor.n >= st.goal - 1e-6) tutorAdvance();
+  }
+  function tutorAdvance() {
+    if (Tutor.i + 1 >= TUT_STEPS.length) return;
+    App.audio.roar(0.12);
+    const el = $('#tutor'); el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+    tutorEnter(Tutor.i + 1);
+  }
+  function tutorEvent(ev) {
+    if (!App.sim) return;
+    const st = TUT_STEPS[Tutor.i];
+    if (ev.k === 'end') { Tutor.active = false; hide($('#tutor')); return; } // the spar round is over: the end screen takes it from here
+    if (st.hit && ev.i === 0 && (ev.k === 'hit' || (ev.k === 'block' && !st.landed)) && st.hit(ev)) tutorProgress(1);
+    else if (st.block && ev.k === 'block' && ev.j === 0 && st.block(ev)) tutorProgress(1);
+    else if (st.push && ev.k === 'push' && ev.i === 0 && ev.ok) tutorProgress(1);
+    else if (st.stance && ev.k === 'stance' && ev.i === 0) tutorProgress(1);
+  }
+  function tutorFresh(f) { f.dmg.head = 0; f.dmg.body = 0; f.dmg.legs = 0; f.stamMax = 100; f.stam = 100; if (f.rocked > 0) f.rocked = 0; }
+  function tutorTick(S, dt) {
+    if (!App.sim) return;
+    const st = TUT_STEPS[Tutor.i], me = S.f[0], op = S.f[1];
+    if (st.id !== 'spar') {
+      S.clock = S.roundLen;      // the clock waits until the spar
+      tutorFresh(me); tutorFresh(op); // nobody gets hurt or tired during the drills
+      if (S.phase === 'fight' && st.tick) {
+        const add = st.tick(S, me, op, Math.hypot(op.x - me.x, op.z - me.z), dt);
+        if (add) tutorProgress(add);
+      }
+    }
+    if (Tutor.dirty) tutorRender();
+  }
+  function tutorRender() {
+    Tutor.dirty = false;
+    const el = $('#tutor'); if (!el || !Tutor.active) return;
+    show(el);
+    const st = TUT_STEPS[Tutor.i];
+    if (Tutor.shown !== Tutor.i) { // the words change with the step (and with the device the keys are named for)
+      Tutor.shown = Tutor.i;
+      $('#tutStep').textContent = 'STRIKING TUTORIAL · STEP ' + (Tutor.i + 1) + ' OF ' + TUT_STEPS.length;
+      $('#tutTitle').textContent = st.title;
+      $('#tutText').innerHTML = st.text();
+      $('#tutProg').classList.toggle('hidden', !st.goal);
+      $('#btnTutSkip').classList.toggle('hidden', st.id === 'spar');
+    }
+    if (st.goal) {
+      $('#tutCount').textContent = Math.min(st.goal, Math.floor(Tutor.n + 1e-6)) + ' / ' + st.goal;
+      $('#tutProg .fill').style.width = pct(Tutor.n / st.goal * 100);
+    }
+  }
+  // the first few times the game opens, offer the tutorial; the checkbox or finishing it stops the asking
+  function maybeTutorPrompt() {
+    let shown = 0, off = false, done = false;
+    try { shown = parseInt(localStorage.getItem(TUT_KEYS.shown) || '0', 10) || 0; off = localStorage.getItem(TUT_KEYS.off) === '1'; done = localStorage.getItem(TUT_KEYS.done) === '1'; } catch (_) {}
+    if (off || done || shown >= TUT_PROMPT_TIMES) return;
+    try { localStorage.setItem(TUT_KEYS.shown, String(shown + 1)); } catch (_) {}
+    $('#tutPromptNote').textContent = shown + 1 >= TUT_PROMPT_TIMES ? 'This is the last time we ask. The tutorial stays on the main menu.' : 'The tutorial is always on the main menu, under PRACTICE.';
+    $('#tutNever').checked = false;
+    show($('#tutorPrompt'));
+    $('#btnTutYes').focus();
+  }
+  function closeTutorPrompt() {
+    if ($('#tutNever').checked) { try { localStorage.setItem(TUT_KEYS.off, '1'); } catch (_) {} }
+    hide($('#tutorPrompt'));
+  }
+  $('#btnTutNo').onclick = () => closeTutorPrompt();
+  $('#btnTutYes').onclick = () => { closeTutorPrompt(); startTutorial(); };
+  $('#btnTutorial').onclick = () => startTutorial();
+  $('#btnTutSkip').onclick = (e) => { e.currentTarget.blur(); if (Tutor.active) tutorAdvance(); };
+  $('#btnTutQuit').onclick = (e) => { e.currentTarget.blur(); stopFight(); App.mode = null; screen('menu'); };
+
+  // ============================================================
   //  Wire up buttons
   // ============================================================
   $('#btnHost').onclick = () => { App.audio.init(); startHost(); };
@@ -1313,6 +1735,15 @@
   $('#btnPractice').onclick = () => { App.audio.init(); enterLobby('practice'); };
   $('#btnWatch').onclick = () => { App.audio.init(); enterLobby('watch'); };
   $('#btnOptions').onclick = () => openOptions();
+  $('#btnFeedback').onclick = () => openFeedback();
+  $('#fbTab').onclick = () => openFeedback();
+  $('#btnFbClose').onclick = () => closeFeedback();
+  $('#btnFbSend').onclick = () => sendFeedback();
+  $('#btnFbCopy').onclick = async () => { const ok = await copyText(fbText(fbReport(), $('#fbText').value.trim(), $('#fbContact').value.trim())); toast(ok ? 'Copied. Paste it anywhere.' : 'Copy failed. Select the text and copy it by hand.', 2500); };
+  document.querySelectorAll('#fbKind button').forEach(b => b.onclick = () => { FB.kind = b.dataset.kind; document.querySelectorAll('#fbKind button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', x === b ? 'true' : 'false'); }); });
+  try { $('#fbContact').value = localStorage.getItem('cr_fb_contact') || ''; } catch (_) {}
+  $('#ctlTab').onclick = () => toggleHint();
+  window.addEventListener('resize', syncHint);
   if (window.desktop) { // Electron build (desktop/preload.js)
     $('#btnQuit').classList.remove('hidden');
     $('#btnQuit').onclick = () => window.desktop.quit();
@@ -1342,79 +1773,6 @@
     syncMute();
     for (const box of boxes) box.addEventListener('change', () => { App.audio.setMusicMuted(box.checked); syncMute(); });
   })();
-  (function bindBackground() {
-    const bg = window.MMAMusicBg;
-    const box = $('#bgSwatches');
-    const preview = $('#bgPreview');
-    const menuBtn = $('#bgColorBtn');
-    const menuSub = $('#bgColorSub');
-    const menuName = $('#bgColorName');
-    const musicBox = $('#bgMusicFx');
-    const impactBox = $('#bgImpactFx');
-    if (!bg || !box) return;
-    box.innerHTML = bg.PRESETS.map(p =>
-      '<button type="button" class="bg-swatch" role="radio" data-id="' + p.id + '" style="--swatch:' + p.color + '" aria-checked="false"><i></i>' + p.name + '</button>'
-    ).join('');
-    const chip = (color, label) => '<span><i style="background:' + bg.cssColor(color) + '"></i>' + label + '</span>';
-    let currentId = bg.DEFAULT_PRESET;
-    function syncParticleControls() {
-      const legacy = currentId === 'legacy';
-      if (musicBox) {
-        musicBox.disabled = legacy;
-        musicBox.checked = legacy ? false : bg.loadParticles();
-      }
-      if (impactBox) {
-        impactBox.disabled = legacy;
-        impactBox.checked = legacy ? false : bg.loadImpact();
-      }
-    }
-    function applyBackground(id) {
-      const p = bg.PRESETS.find(x => x.id === id) || bg.PRESETS.find(x => x.id === bg.DEFAULT_PRESET) || bg.PRESETS[0];
-      currentId = p.id;
-      if (App.renderer) App.renderer.setBackdrop(p.id);
-      else {
-        bg.savePresetId(p.id);
-        document.documentElement.style.setProperty('--bg', p.id === 'legacy' ? bg.LEGACY_COLOR : p.color);
-      }
-      if (preview) {
-        if (p.id === 'legacy') preview.innerHTML = '<span>Original arena</span>';
-        else {
-          const pal = bg.paletteFrom(p.color);
-          preview.innerHTML = chip(pal.bg, 'Base') + chip(pal.neon, 'Bass') + chip(pal.gold, 'Mids') + chip(pal.silk, 'Highs');
-        }
-      }
-      if (menuName) menuName.textContent = p.name;
-      box.querySelectorAll('.bg-swatch').forEach(btn => {
-        const on = btn.dataset.id === p.id;
-        btn.classList.toggle('on', on);
-        btn.setAttribute('aria-checked', on ? 'true' : 'false');
-      });
-      syncParticleControls();
-    }
-    box.querySelectorAll('.bg-swatch').forEach(btn => { btn.onclick = () => applyBackground(btn.dataset.id); });
-    if (menuBtn && menuSub) {
-      menuBtn.onclick = () => {
-        const open = !menuSub.classList.toggle('hidden');
-        menuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
-      };
-    }
-    function applyMusicParticles(on) {
-      if (App.renderer && App.renderer.musicBg) App.renderer.musicBg.setMusicParticles(on);
-      else bg.saveParticles(on);
-      syncParticleControls();
-    }
-    function applyImpactParticles(on) {
-      if (App.renderer && App.renderer.musicBg) App.renderer.musicBg.setImpactParticles(on);
-      else bg.saveImpact(on);
-      syncParticleControls();
-    }
-    if (musicBox) musicBox.addEventListener('change', () => { if (!musicBox.disabled) applyMusicParticles(musicBox.checked); });
-    if (impactBox) impactBox.addEventListener('change', () => { if (!impactBox.disabled) applyImpactParticles(impactBox.checked); });
-    App.setBackground = applyBackground;
-    App.setMusicParticles = applyMusicParticles;
-    App.setImpactParticles = applyImpactParticles;
-    applyBackground(bg.loadPresetId());
-  })();
   updateHint();
   $('#btnBack').onclick = () => { if (App.net) { App.net.destroy(); App.net = null; } App.mode = null; screen('menu'); };
   $('#btnCopy').onclick = () => { navigator.clipboard && navigator.clipboard.writeText($('#codeLbl').textContent).then(() => toast('Room code copied', 1500)); };
@@ -1428,6 +1786,7 @@
   $('#btnOptQuit').onclick = () => { closeOptions(); if (App.mode === 'career') { leaveCareerFight(); return; } if (App.mode === 'gym') { careerSave(); screen('menu'); return; } stopFight(); if (App.net) { App.net.destroy(); App.net = null; } App.mode = null; screen('menu'); };
   $('#btnRematch').onclick = () => {
     if (App.mode === 'career') { leaveCareerFight(); return; }
+    if (App.mode === 'tutorial') { startTutorial(); return; }
     if (App.mode === 'guest') { App.net.send({ t: 'rematch' }); $('#btnRematch').textContent = 'WAITING FOR HOST…'; $('#btnRematch').disabled = true; return; }
     App.rematch[0] = true;
     if (App.mode === 'host' && !App.rematch[1]) { $('#btnRematch').textContent = 'WAITING FOR OPPONENT…'; $('#btnRematch').disabled = true; }
@@ -1514,8 +1873,10 @@
   App.talk = new CageTalk.Talk();
   App.talk.mount();
   App.talk.onLine = postLine;
+  maybeTutorPrompt();
 
   window.CageRules = App; // dev hook: window.CageRules.sim / .state / .renderer
+  App.tutor = Tutor; App.startTutorial = startTutorial; // dev hook: the striking tutorial's step state (tools / scratch tests)
   // dev hook: advance the career gym by n 60 Hz frames with these inputs (tools/gym-test.js)
   App.gymTick = (n, held, pressed) => { if (!App.gym || !App.gym.active) return; for (let k = 0; k < n; k++) { App.gym.update(1 / 60, held | 0, k === 0 ? (pressed | 0) : 0, IN_INTERACT, IN_LOCK); } };
   // dev hook: advance a practice fight by n sim ticks regardless of frame rate (used by tools/browser-test.js)

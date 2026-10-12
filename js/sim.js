@@ -215,50 +215,82 @@
   // top strike damage multiplier by position, and whether the bottom can strike up
   const POS_STRIKE = { guard: 0.6, half: 0.7, side: 0.85, mount: 1.1, back: 0.8 };
   const BOTTOM_CAN_STRIKE = { guard: true, half: true, side: false, mount: false, back: false };
-  // transition attempts: GRAPPLE pressed while holding a direction. Every attempt is timed and can be denied
-  // by the other fighter holding BLOCK (basing / framing). to = new position, flip = reversal (attacker ends
-  // on top in that position), stand = back to the feet, failTo = position the attacker gets punished into.
+  // Transitions are READS, not dice. GRAPPLE + a direction starts a move; for a short window the other fighter
+  // can deny it by holding BLOCK + the same direction (the HUD shows the direction, the window shrinks with
+  // momentum and advantage). No input or the wrong direction: the move lands. The right direction: the move is
+  // denied, the attacker is exposed and the denier gets momentum. `read` = what happens to a risky move that
+  // gets denied (to = attacker ends in that position, flip = attacker gets reversed). to / flip / stand as before.
+  // winMul > 1 = a bigger, slower move that is easier to read.
   const MOVES = {
     top: {
-      guard: { FWD: { name: 'pass the guard', to: 'half', base: 0.42, dur: 0.9, stam: 6 } },
-      half:  { FWD: { name: 'pass to side control', to: 'side', base: 0.42, dur: 0.8, stam: 6 } },
-      side:  { FWD: { name: 'take mount', to: 'mount', base: 0.4, dur: 0.8, stam: 6 } },
-      mount: {},
+      guard: { FWD:   { name: 'pass the guard', to: 'half', stam: 5 },
+               LEFT:  { name: 'stack pass', to: 'side', stam: 7, winMul: 1.3, read: { flip: 'half' } },
+               RIGHT: { name: 'stack pass', to: 'side', stam: 7, winMul: 1.3, read: { flip: 'half' } } },
+      half:  { FWD:   { name: 'pass to side control', to: 'side', stam: 5 },
+               LEFT:  { name: 'knee slide to mount', to: 'mount', stam: 7, winMul: 1.3, read: { to: 'guard' } },
+               RIGHT: { name: 'knee slide to mount', to: 'mount', stam: 7, winMul: 1.3, read: { to: 'guard' } } },
+      side:  { FWD:   { name: 'take mount', to: 'mount', stam: 5 },
+               LEFT:  { name: 'spin to the back', to: 'back', stam: 7, winMul: 1.3, read: { to: 'half' } },
+               RIGHT: { name: 'spin to the back', to: 'back', stam: 7, winMul: 1.3, read: { to: 'half' } } },
+      mount: { FWD:   { name: 'take the back', to: 'back', stam: 6, winMul: 1.15, read: { to: 'half' } } },
       back:  {}
     },
     bottom: {
-      guard: { FWD: { name: 'stand up', stand: true, base: 0.52, dur: 1.0, stam: 7, failTo: 'half' },
-               LEFT: { name: 'sweep', flip: 'half', base: 0.44, dur: 0.9, stam: 8 }, RIGHT: { name: 'sweep', flip: 'half', base: 0.44, dur: 0.9, stam: 8 } },
-      half:  { BACK: { name: 'recover guard', to: 'guard', base: 0.62, dur: 0.7, stam: 4 },
-               FWD: { name: 'stand up', stand: true, base: 0.44, dur: 1.0, stam: 8, failTo: 'side' },
-               LEFT: { name: 'sweep', flip: 'half', base: 0.40, dur: 0.9, stam: 8 }, RIGHT: { name: 'sweep', flip: 'half', base: 0.40, dur: 0.9, stam: 8 } },
-      side:  { BACK: { name: 'shrimp to half guard', to: 'half', base: 0.58, dur: 0.8, stam: 6 },
-               FWD: { name: 'turn and stand', stand: true, base: 0.38, dur: 1.1, stam: 9, failTo: 'back' } },
-      mount: { BACK: { name: 'elbow escape to half guard', to: 'half', base: 0.52, dur: 0.9, stam: 7 },
-               LEFT: { name: 'bridge and roll', flip: 'guard', base: 0.40, dur: 0.9, stam: 9 }, RIGHT: { name: 'bridge and roll', flip: 'guard', base: 0.40, dur: 0.9, stam: 9 } },
-      back:  { BACK: { name: 'turn in to half guard', to: 'half', base: 0.50, dur: 1.0, stam: 7 },
-               FWD: { name: 'stand up', stand: true, base: 0.35, dur: 1.2, stam: 9 } }
+      guard: { FWD:   { name: 'stand up', stand: true, stam: 6, winMul: 1.15, read: { to: 'half' } },
+               LEFT:  { name: 'sweep', flip: 'half', stam: 7, winMul: 1.15, read: { to: 'half' } },
+               RIGHT: { name: 'sweep', flip: 'half', stam: 7, winMul: 1.15, read: { to: 'half' } } },
+      half:  { BACK:  { name: 'recover guard', to: 'guard', stam: 4 },
+               FWD:   { name: 'stand up', stand: true, stam: 7, winMul: 1.15, read: { to: 'side' } },
+               LEFT:  { name: 'sweep', flip: 'half', stam: 7, winMul: 1.15, read: { to: 'side' } },
+               RIGHT: { name: 'sweep', flip: 'half', stam: 7, winMul: 1.15, read: { to: 'side' } } },
+      side:  { BACK:  { name: 'shrimp to half guard', to: 'half', stam: 5 },
+               FWD:   { name: 'turn and stand', stand: true, stam: 8, winMul: 1.2, read: { to: 'back' } },
+               LEFT:  { name: 'bridge and roll', flip: 'guard', stam: 8, winMul: 1.2, read: { to: 'mount' } },
+               RIGHT: { name: 'bridge and roll', flip: 'guard', stam: 8, winMul: 1.2, read: { to: 'mount' } } },
+      mount: { BACK:  { name: 'elbow escape to half guard', to: 'half', stam: 6 },
+               LEFT:  { name: 'bridge and roll', flip: 'guard', stam: 8, winMul: 1.15 },
+               RIGHT: { name: 'bridge and roll', flip: 'guard', stam: 8, winMul: 1.15 } },
+      back:  { BACK:  { name: 'turn in to half guard', to: 'half', stam: 6 },
+               FWD:   { name: 'stand up', stand: true, stam: 8, winMul: 1.2 },
+               LEFT:  { name: 'shake off the hooks', to: 'side', stam: 7, winMul: 1.2 },
+               RIGHT: { name: 'shake off the hooks', to: 'side', stam: 7, winMul: 1.2 } }
     }
   };
-  // submissions available by role and position (GRAPPLE with no direction)
+  // submissions available by role and position (GRAPPLE with no direction). The entry is a read like any other
+  // move: the defender denies it with GRAPPLE + BACK (pull the limb out / posture up).
   const SUBS_BY = {
     top:    { guard: ['guillotine'], half: ['kimura'], side: ['kimura', 'americana'], mount: ['armbar', 'arm triangle'], back: ['rear-naked choke'] },
     bottom: { guard: ['triangle choke', 'armbar', 'guillotine'], half: ['kimura'], side: [], mount: [], back: [] }
   };
+  const SUB_DENY_DIR = 'BACK';
   // where the defender ends up after escaping a submission
   function subEscapePos(attRole, pos) {
-    if (attRole === 'bottom') return pos === 'guard' ? 'side' : 'side'; // scrambled out of the guard
+    if (attRole === 'bottom') return 'side'; // scrambled out of the guard
     return { mount: 'half', side: 'half', half: 'guard', back: 'half', guard: 'guard' }[pos];
   }
   const DIR_KEYS = { FWD: IN.FWD, BACK: IN.BACK, LEFT: IN.LEFT, RIGHT: IN.RIGHT };
   // ground tuning
-  const DENY_PENALTY = 0.08;    // odds lost when the other fighter is basing / framing during your attempt
-  const PUNISH_CHANCE = 0.35;   // a denied failure gets pushed into mv.failTo this often
-  const SUB_ATTEMPT_STAM = 5;   // stamina cost of a submission attempt
-  const SUB_FAIL_CD = 2.0;      // attacker's cooldown (s) after a stuffed, lost or escaped submission
-  const TD_FAIL_STUN = 0.25;     // multiplier on a failed takedown's stumble duration
+  const MOVE_DUR = 0.55;        // seconds a transition takes to play out (the position changes at the end)
+  const MOVE_WIN = 0.5;         // base deny window (s) at the start of a move; stats, momentum and advantage shape it
+  const MOVE_WIN_MIN = 0.2, MOVE_WIN_MAX = 1.1;
+  const MOVE_CD = 0.25;         // seconds before the same fighter may attempt again
+  const DENY_STAM = 3;          // what a guess costs the defender (right or wrong)
+  const MOMENTUM_T = 1.5;       // seconds of momentum after landing a move / a correct deny: the next move is harder to deny
+  const MOMENTUM_WIN = 0.55;    // deny window multiplier while the attacker has momentum
+  const ADV_MAX = 100;          // grapple advantage: built by landed strikes, denials and transitions, spent on shorter windows
+  const ADV_DECAY = 6;          // advantage lost per second
+  const ADV_WIN = 180;          // window *= 1 - adv / ADV_WIN
+  const SUB_ATTEMPT_STAM = 7;   // stamina cost of a submission entry
+  const SUB_FAIL_CD = 1.2;      // attacker's cooldown (s) after a denied, lost or escaped submission
+  const SUB_DECAY = 14;         // hold progress lost per second while not squeezing
+  const SUB_CRANK_WIN = 0.52;   // base window to read a crank
+  const SUB_CRANK_CD = 0.9;     // seconds between cranks
+  const SUB_CRANK_GAIN = 14;    // progress a crank adds when it is not read
+  const SUB_CRANK_LOSS = 16;    // progress a read crank costs the attacker
+  const TD_FAIL_STUN = 0.25;    // multiplier on a failed takedown's stumble duration
   const TD_FAIL_CD = 3.0;       // seconds before the shooter may shoot again after a failed takedown
-  const SUB_DECAY = 8;          // hold progress lost per second while not squeezing
+  const REF_WARN_T = 5;         // seconds of nobody working before the referee warns them
+  const REF_STAND_T = 8;        // ... and stands them up
   function dirOf(held) { for (const k in DIR_KEYS) if (held & DIR_KEYS[k]) return k; return null; }
 
   const CAGE_R = 3.9;      // max fighter radius from centre
@@ -311,6 +343,8 @@
       wobble: 0,          // visual wobble intensity
       kdCount: 0,
       ground: null,       // null | 'top' | 'bottom'
+      cover: false,       // on the mat: BLOCK held (covers strikes / hand-fights); GRAPPLE + direction is a read
+      posture: false,     // drawn postured up / framing
       // round stats (reset per round)
       rs: { thrown: 0, landed: 0, blocked: 0, sig: 0, td: 0, tdAtt: 0, ctrl: 0, subs: 0, kd: 0 },
       // total stats
@@ -1053,7 +1087,8 @@
       if (o.rocked > 0) dmg *= 1.25;
       if (f.rocked > 0) dmg *= 0.7;
       let blocked = false;
-      if (this.inputs[o.idx].held & IN.BLOCK) { blocked = true; dmg *= 0.3; o.stam = Math.min(o.stamMax, o.stam + GROUND_BLOCK_REWARD); }
+      if (o.cover) { blocked = true; dmg *= 0.3; o.stam = Math.min(o.stamMax, o.stam + GROUND_BLOCK_REWARD); }
+      S.ground.adv[f.idx] = Math.min(ADV_MAX, S.ground.adv[f.idx] + (blocked ? 1.5 : dmg * 5)); // strikes feed the positional battle
       o.dmg[st.part] = clamp(o.dmg[st.part] + dmg * (PART_TOUGHNESS[st.part] || 1), 0, 100);
       f.rs.landed++; f.rs.sig += dmg;
       if (blocked) { this._emit({ k: 'block', i: f.idx, j: o.idx, name: st.name, part: st.part }); return; }
@@ -1061,7 +1096,7 @@
       const pm = f.act.powMul || 1, sm = f.act.stunMul != null ? f.act.stunMul : 1;
       const stun = (0.2 + dmg / pm * 0.025) * 0.5 * sm;
       if (sm > 0) o.act = { type: 'hit', name: st.part, t: 0, dur: stun, hit: false };
-      S.ground.idleT = 0;
+      this._work();
       const ev = this._emit({ k: 'hit', i: f.idx, j: o.idx, name: st.name, kind: st.kind, part: st.part, intended: st.part, dmg: Math.round(dmg * 10) / 10, counter: false, big: dmg >= 3.6, ground: true });
       this._afterHit(f, o, st.part, dmg, ev, true);
     }
@@ -1135,7 +1170,8 @@
       top.blocking = false; bottom.blocking = false; top.buf = null; bottom.buf = null;
       top.act = idleAct();
       bottom.act = { type: 'hit', name: 'head', t: 0, dur: how === 'kd' ? 0.8 : 0.5, hit: false };
-      S.ground = { top: top.idx, bottom: bottom.idx, pos: pos || 'guard', trans: null, sub: null, ctrlT: 0, idleT: 0, cd: [0, 0] };
+      S.ground = { top: top.idx, bottom: bottom.idx, pos: pos || 'guard', trans: null, sub: null, ctrlT: 0, idleT: 0, refWarn: false, cd: [0, 0], mom: [0, 0], adv: [0, 0], n: 0 };
+      S.ground.adv[top.idx] = how === 'kd' ? 30 : 15; // landing on top is a head start
       if (this.phys) { this.phys.setActive(false); top.pose = null; bottom.pose = null; }
     }
 
@@ -1145,7 +1181,7 @@
       top.ground = null; bot.ground = null;
       top.act = idleAct();
       bot.act = idleAct();
-      top.posture = false;
+      top.posture = false; bot.posture = false; top.cover = false; bot.cover = false;
       // separate
       const ang = this.rand() * Math.PI * 2;
       bot.x = clamp(bot.x + Math.cos(ang) * 0.9, -CAGE_R, CAGE_R); bot.z = clamp(bot.z + Math.sin(ang) * 0.9, -CAGE_R, CAGE_R);
@@ -1157,7 +1193,7 @@
 
     _setPos(pos) {
       const S = this.state, G = S.ground;
-      G.pos = pos; G.idleT = 0;
+      G.pos = pos; this._work();
     }
     // reversal: the bottom fighter becomes the top fighter
     _flip(pos) {
@@ -1171,11 +1207,18 @@
 
     // ---------------------------------------------------------
     //  GROUND
-    //  - GRAPPLE + direction: a timed transition attempt (pass / escape / sweep / stand). The other fighter
-    //    holds BLOCK to base and deny it. Attempts have a per-fighter cooldown (G.cd).
-    //  - GRAPPLE alone: submission (if one is available from this position). Hold to squeeze.
-    //  - Limb keys: strikes (power depends on position; bottom can only strike from guard / half guard).
-    //  - BLOCK: top postures / bases, bottom covers and frames.
+    //  - GRAPPLE + direction: a transition. The other fighter has a short window (G.trans.win) to deny it with
+    //    GRAPPLE + the same direction; his first GRAPPLE + direction is his one guess for that move. Right: the
+    //    move is denied, the attacker is exposed, the denier gets momentum (and a risky move's `read` punishment).
+    //    Wrong or nothing: it lands, and a wrong guess leaves the defender open too. One key does both: when you
+    //    are free GRAPPLE + direction is your move, while their move is up it is your read.
+    //  - GRAPPLE alone: submission entry, a read like any other move (deny with GRAPPLE + BACK). Once locked: hold
+    //    GRAPPLE to squeeze, tap a direction to crank (a read the defender matches with GRAPPLE + that direction).
+    //    Progress 100 = tap, 0 = escape. The defender hand-fights with BLOCK to slow the squeeze.
+    //  - Limb keys: strikes (power depends on position; bottom can only strike from guard / half guard). Landed
+    //    strikes build grapple advantage, which shortens the opponent's deny windows.
+    //  - BLOCK: top postures, bottom covers (strikes do 30 %). It never reads.
+    //  - Momentum: landing a move or a correct deny makes your next move harder to deny for MOMENTUM_T seconds.
     // ---------------------------------------------------------
     _groundTick(dt) {
       const S = this.state, G = S.ground;
@@ -1183,7 +1226,17 @@
       const ti = this.inputs[top.idx], bi = this.inputs[bot.idx];
       top.rs.ctrl += dt; G.ctrlT += dt; G.idleT += dt;
       top.blocking = false; bot.blocking = false;
-      G.cd[0] = Math.max(0, G.cd[0] - dt); G.cd[1] = Math.max(0, G.cd[1] - dt);
+      for (let i = 0; i < 2; i++) {
+        G.cd[i] = Math.max(0, G.cd[i] - dt);
+        G.mom[i] = Math.max(0, G.mom[i] - dt);
+        G.adv[i] = Math.max(0, G.adv[i] - ADV_DECAY * dt);
+      }
+      // covering / posturing is BLOCK; reading is GRAPPLE + a direction, and you cannot do both at once
+      for (const [f, inp] of [[top, ti], [bot, bi]]) {
+        f.cover = !!(inp.held & IN.BLOCK) && !(inp.held & IN.GRAPPLE);
+        f.posture = f.cover && f.act.type === 'idle';   // what the renderer draws
+        if (inp.held & IN.BLOCK) f.stam = Math.max(0, f.stam - dt * (f === top ? 2.0 : 3.0)); // basing / framing is work
+      }
 
       if (G.sub) { this._subTick(dt); return; }
       if (G.trans) { this._transTick(dt); if (!S.ground || G.trans) return; }
@@ -1191,94 +1244,105 @@
       const roles = [[top, ti, 'top'], [bot, bi, 'bottom']];
       for (const [f, inp, role] of roles) {
         const o = role === 'top' ? bot : top;
-        const busy = f.act.type !== 'idle'; // no recovery-cancels on the mat: ground strikes are deliberate
-        f.posture = !!(inp.held & IN.BLOCK) && !busy;
-        if (inp.held & IN.BLOCK) f.stam = Math.max(0, f.stam - dt * (role === 'top' ? 2.5 : 3.5)); // basing / framing is work
-        if (busy) continue;
+        if (f.act.type !== 'idle') continue; // no recovery-cancels on the mat: ground strikes are deliberate
         if (role === 'top' && (inp.pressed & IN.DODGE)) { this._standUp('letup'); return; }
-        if (inp.pressed & IN.GRAPPLE && f.rocked <= 0) {
+        if (inp.pressed & IN.GRAPPLE && f.rocked <= 0 && G.cd[f.idx] <= 0) {
           const dir = dirOf(inp.held);
           const mv = dir && MOVES[role][G.pos][dir];
-          if (mv) { if (G.cd[f.idx] <= 0 && f.stam >= mv.stam) this._startTrans(f, o, role, mv); return; }
+          if (mv) { if (f.stam >= mv.stam) this._startTrans(f, o, role, mv, dir); return; }
+          if (dir) continue; // no move that way from here
           const subs = SUBS_BY[role][G.pos];
-          if (subs.length && f.stam > 15 && G.cd[f.idx] <= 0) { this._trySub(f, o, role, subs[Math.floor(this.rand() * subs.length)]); return; }
+          if (subs.length && f.stam > 12) {
+            const name = subs[Math.floor(this.rand() * subs.length)];
+            this._startTrans(f, o, role, { name, sub: true, stam: SUB_ATTEMPT_STAM, winMul: role === 'bottom' ? 2.8 : 1.4 }, SUB_DENY_DIR); // a sub off your back is slow to set up: twice the window
+            return;
+          }
         } else if ((inp.pressed & LIMB_BITS) && !(inp.held & IN.BLOCK)) {
           if (role === 'top' || BOTTOM_CAN_STRIKE[G.pos]) {
             const key = this._pickStrikeKey(f, inp.pressed, inp.held, true);
-            if (key) { this._startStrike(f, key, false); G.idleT = 0; }
+            if (key) { this._startStrike(f, key, false); this._work(); }
           }
         }
       }
-      if (G.idleT > 12) { this._standUp('ref'); return; }
+      if (G.idleT > REF_WARN_T && !G.refWarn) { G.refWarn = true; this._emit({ k: 'refwarn' }); }
+      if (G.idleT > REF_STAND_T) { this._standUp('ref'); return; }
     }
 
-    _startTrans(f, o, role, mv) {
+    // somebody did something: the referee's stand-up clock restarts
+    _work() { const G = this.state.ground; if (G) { G.idleT = 0; G.refWarn = false; } }
+
+    // how long the defender gets to read a move
+    _denyWindow(att, def, mv, role) {
+      const G = this.state.ground;
+      let w = MOVE_WIN * (mv.winMul || 1);
+      if (role === 'top') w *= 1 + (def.stats.bjj - att.stats.wre) * 0.35;
+      else w *= 1 + (def.stats.wre - att.stats.bjj) * 0.35;
+      w *= 1 + (def.stam - att.stam) / 400;              // the fresher man reacts
+      if (def.rocked > 0) w *= 0.5;
+      if (G.mom[att.idx] > 0) w *= MOMENTUM_WIN;
+      w *= 1 - G.adv[att.idx] / ADV_WIN;
+      return clamp(w, MOVE_WIN_MIN, MOVE_WIN_MAX);
+    }
+
+    _startTrans(f, o, role, mv, dir) {
       const G = this.state.ground;
       f.stam = Math.max(0, f.stam - mv.stam);
-      G.trans = { by: f.idx, role, name: mv.name, mv, t: 0, dur: mv.dur };
-      G.idleT = 0;
-      f.act = { type: 'trans', name: mv.name, t: 0, dur: mv.dur, hit: false };
-      this._emit({ k: 'gattempt', i: f.idx, j: o.idx, name: mv.name });
+      const win = this._denyWindow(f, o, mv, role);
+      const dur = Math.max(win + 0.12, MOVE_DUR * (G.mom[f.idx] > 0 ? 0.8 : 1));
+      G.trans = { id: ++G.n, by: f.idx, role, name: mv.name, mv, dir, t: 0, dur, win, guess: null, res: null, sub: !!mv.sub };
+      this._work();
+      f.act = { type: 'trans', name: mv.name, t: 0, dur, hit: false, dir };
+      this._emit({ k: 'gattempt', i: f.idx, j: o.idx, name: mv.name, dir, sub: !!mv.sub });
     }
 
     _transTick(dt) {
       const S = this.state, G = S.ground, T = G.trans;
       const f = S.f[T.by], o = S.f[1 - T.by];
       T.t += dt;
-      if (T.t < T.dur) return;
-      // resolve
-      const mv = T.mv, att = f.stats, def = o.stats;
-      let p = mv.base;
-      if (T.role === 'top') p += att.wre * 0.3 + att.bjj * 0.25 - def.bjj * 0.3 - def.wre * 0.15;
-      else p += att.bjj * 0.3 + att.wre * 0.25 - def.wre * 0.18 - def.bjj * 0.10;
-      p += (f.stam - o.stam) / 300;
-      const denied = !!(this.inputs[o.idx].held & IN.BLOCK) && o.stam > 5;
-      if (denied) p -= DENY_PENALTY;                                  // based / framed
-      if (o.act.type === 'strike') p += 0.2;                            // caught swinging
-      if (o.rocked > 0) p += 0.3;
-      if (f.rocked > 0) p -= 0.3;
-      if (T.role === 'bottom') p -= f.dmg.head / 400;
-      p = clamp(p, 0.05, 0.95);
-      G.trans = null; G.cd[f.idx] = 0.6; G.idleT = 0;
-      f.act = idleAct();
-      if (this.rand() < p) {
-        if (mv.stand) { this._emit({ k: 'gresult', i: f.idx, j: o.idx, ok: true, name: mv.name, stand: true }); this._standUp('escape'); return; }
-        if (mv.flip) { f.rs.td++; this._flip(mv.flip); this._emit({ k: 'gresult', i: f.idx, j: o.idx, ok: true, name: mv.name, flip: true, pos: mv.flip }); return; }
-        this._setPos(mv.to);
-        this._emit({ k: 'gresult', i: f.idx, j: o.idx, ok: true, name: mv.name, pos: mv.to });
-      } else {
-        f.stam = Math.max(0, f.stam - 4);
-        f.act = { type: 'hit', name: 'body', t: 0, dur: 0.45, hit: false }; // exposed for a moment
-        // a read attempt (denied while they were basing) can be punished with a worse position
-        const punished = mv.failTo && denied && this.rand() < PUNISH_CHANCE;
-        if (punished) this._setPos(mv.failTo);
-        this._emit({ k: 'gresult', i: f.idx, j: o.idx, ok: false, name: mv.name, pos: punished ? mv.failTo : null, denied });
+      // the deny window: the defender's first GRAPPLE + direction is his guess (one per move). A fighter who is
+      // busy (swinging, stunned, exposed) has no guess: he was caught.
+      if (T.res === null) {
+        const inp = this.inputs[o.idx];
+        if (T.guess === null && o.act.type === 'idle' && (inp.held & IN.GRAPPLE)) {
+          const d = dirOf(inp.held);
+          if (d) { T.guess = d; o.stam = Math.max(0, o.stam - DENY_STAM); }
+        }
+        if (T.t >= T.win) {
+          T.res = T.guess === T.dir ? 'denied' : T.guess ? 'wrong' : 'land';
+          this._emit({ k: 'gread', i: o.idx, j: f.idx, name: T.name, res: T.res, sub: T.sub });
+        }
       }
-    }
-
-    // submission entry is a roll; odds favour attacking a fighter who is exposed, rocked or gassed
-    _trySub(f, o, role, name) {
-      const G = this.state.ground;
-      f.stam = Math.max(0, f.stam - SUB_ATTEMPT_STAM);
-      G.idleT = 0;
-      let p = 0.45 + f.stats.bjj * 0.35 - o.stats.bjj * 0.25;
-      if (o.act.type === 'hit' || o.act.type === 'stumble') p += 0.25;      // they just failed something / got hit: exposed
-      if (o.act.type === 'strike') p += 0.15;                                // swinging: arm is out there
-      if (o.rocked > 0) p += 0.25;
-      if (o.stam < 25) p += 0.1;
-      if (G.pos === 'mount' || G.pos === 'back') p += 0.15;
-      if (f.stam < 25) p -= 0.1;
-      p = clamp(p, 0.1, 0.95);
-      if (this.rand() < p) { this._startSub(f, o, role, name); return; }
-      G.cd[f.idx] = SUB_FAIL_CD;
-      f.act = { type: 'hit', name: 'body', t: 0, dur: 0.5, hit: false }; // reached and got nothing
-      this._emit({ k: 'subfail', i: f.idx, j: o.idx, name, stuffed: true });
+      if (T.t < T.dur) return;
+      const mv = T.mv, res = T.res;
+      G.trans = null; G.cd[f.idx] = MOVE_CD; this._work();
+      f.act = idleAct();
+      if (res === 'denied') {
+        f.act = { type: 'hit', name: 'body', t: 0, dur: 0.45, hit: false }; // exposed: the denier gets a free move
+        f.stam = Math.max(0, f.stam - 3);
+        G.mom[o.idx] = MOMENTUM_T; G.mom[f.idx] = 0;
+        G.adv[o.idx] = Math.min(ADV_MAX, G.adv[o.idx] + 10);
+        if (T.sub) { G.cd[f.idx] = SUB_FAIL_CD; this._emit({ k: 'subfail', i: f.idx, j: o.idx, name: T.name, stuffed: true }); return; }
+        const rd = mv.read;
+        if (rd && rd.flip) { o.rs.td++; this._flip(rd.flip); }
+        else if (rd && rd.to) this._setPos(rd.to);
+        this._emit({ k: 'gresult', i: f.idx, j: o.idx, ok: false, name: mv.name, denied: true, pos: rd ? (rd.flip || rd.to) : null, flip: !!(rd && rd.flip) });
+        return;
+      }
+      // it lands (no read, or the wrong one: a wrong guess also leaves the defender open)
+      G.mom[f.idx] = MOMENTUM_T; G.mom[o.idx] = 0;
+      G.adv[f.idx] = Math.min(ADV_MAX, G.adv[f.idx] + (res === 'wrong' ? 18 : 12));
+      if (res === 'wrong') o.act = { type: 'hit', name: 'body', t: 0, dur: 0.35, hit: false };
+      if (T.sub) { this._startSub(f, o, T.role, T.name); return; }
+      if (mv.stand) { this._emit({ k: 'gresult', i: f.idx, j: o.idx, ok: true, name: mv.name, stand: true, wrong: res === 'wrong' }); this._standUp('escape'); return; }
+      if (mv.flip) { f.rs.td++; this._flip(mv.flip); this._emit({ k: 'gresult', i: f.idx, j: o.idx, ok: true, name: mv.name, flip: true, pos: mv.flip, wrong: res === 'wrong' }); return; }
+      this._setPos(mv.to);
+      this._emit({ k: 'gresult', i: f.idx, j: o.idx, ok: true, name: mv.name, pos: mv.to, wrong: res === 'wrong' });
     }
 
     _startSub(f, o, role, name) {
       const G = this.state.ground;
-      G.sub = { name, att: f.idx, def: o.idx, role, prog: 12 + f.stats.bjj * 12, t: 0, squeezing: false, escCd: 0.4 };
-      G.idleT = 0;
+      G.sub = { name, att: f.idx, def: o.idx, role, prog: 15 + f.stats.bjj * 10, t: 0, squeezing: false, defending: false, crank: null, crankCd: 0.5, n: 0 };
+      this._work();
       f.act = { type: 'sub', name, t: 0, dur: 99, hit: false };
       o.act = { type: 'caught', name, t: 0, dur: 99, hit: false };
       f.rs.subs++;
@@ -1290,33 +1354,31 @@
       const att = S.f[sub.att], def = S.f[sub.def];
       const ai = this.inputs[att.idx], di = this.inputs[def.idx];
       sub.t += dt;
-      sub.escCd = Math.max(0, sub.escCd - dt);
+      sub.crankCd = Math.max(0, sub.crankCd - dt);
       sub.squeezing = !!(ai.held & IN.GRAPPLE);
-      sub.defending = !!(di.held & IN.BLOCK);
+      sub.defending = !!(di.held & IN.BLOCK) && !(di.held & IN.GRAPPLE); // hand fighting; GRAPPLE + direction is a read instead
       if (sub.squeezing) {
-        let rate = (5 + att.stats.bjj * 7) * (1 + (100 - def.stam) / 200) * (def.rocked > 0 ? 1.5 : 1);
-        if (sub.defending) rate *= 0.4;
+        let rate = (4 + att.stats.bjj * 5) * (1 + (100 - def.stam) / 200) * (def.rocked > 0 ? 1.5 : 1);
+        if (sub.defending) rate *= 0.5;
         sub.prog += rate * dt;
         att.stam = Math.max(0, att.stam - dt * 6);
       } else sub.prog -= SUB_DECAY * dt;
-      if (sub.defending) def.stam = Math.max(0, def.stam - dt * 3);
-      // escape attempt
-      if ((di.pressed & IN.GRAPPLE) && sub.escCd <= 0) {
-        sub.escCd = 1.2;
-        let p = 0.2 + def.stats.bjj * 0.35 - att.stats.bjj * 0.2 + (1 - sub.prog / 100) * 0.25 + (sub.squeezing ? 0 : 0.3) + (att.stam < 30 ? 0.15 : 0) - (def.rocked > 0 ? 0.2 : 0);
-        p = clamp(p, 0.05, 0.9);
-        def.stam = Math.max(0, def.stam - 5);
-        if (this.rand() < p) {
-          const pos = subEscapePos(sub.role, G.pos);
-          G.sub = null; att.act = { type: 'hit', name: 'body', t: 0, dur: 0.5, hit: false }; def.act = idleAct();
-          G.cd[att.idx] = SUB_FAIL_CD;
-          this._emit({ k: 'subescape', i: def.idx, j: att.idx, name: sub.name });
-          if (sub.role === 'bottom') { /* the top scrambles out of the guard */ }
-          this._setPos(pos);
-          return;
+      if (di.held & IN.BLOCK) def.stam = Math.max(0, def.stam - dt * 3);
+      // cranks: the attacker taps a direction; the defender reads it with GRAPPLE + the same direction
+      const C = sub.crank;
+      if (C) {
+        C.t += dt;
+        if (C.guess === null && (di.held & IN.GRAPPLE)) { const d = dirOf(di.held); if (d) { C.guess = d; def.stam = Math.max(0, def.stam - DENY_STAM); } }
+        if (C.t >= C.win) {
+          sub.crank = null; sub.crankCd = SUB_CRANK_CD;
+          if (C.guess === C.dir) { sub.prog -= SUB_CRANK_LOSS; att.stam = Math.max(0, att.stam - 4); this._emit({ k: 'subcrank', i: att.idx, j: def.idx, name: sub.name, ok: false }); }
+          else { sub.prog += SUB_CRANK_GAIN * (def.rocked > 0 ? 1.4 : 1); this._emit({ k: 'subcrank', i: att.idx, j: def.idx, name: sub.name, ok: true, wrong: !!C.guess }); }
         }
-        sub.prog += 6;
-        this._emit({ k: 'subhold', i: att.idx, j: def.idx, name: sub.name });
+      } else if (sub.crankCd <= 0 && att.stam >= 4 && (ai.pressed & DIR_BITS)) {
+        const d = dirOf(ai.pressed);
+        att.stam = Math.max(0, att.stam - 4);
+        const win = SUB_CRANK_WIN * (1 + (def.stats.bjj - att.stats.bjj) * 0.4) * (1 + (def.stam - att.stam) / 400) * (def.rocked > 0 ? 0.6 : 1);
+        sub.crank = { id: ++sub.n, dir: d, t: 0, win: clamp(win, MOVE_WIN_MIN, MOVE_WIN_MAX), guess: null };
       }
       sub.prog = clamp(sub.prog, 0, 100);
       if (sub.prog >= 100) {
@@ -1329,11 +1391,14 @@
         return;
       }
       if (sub.prog <= 0 || att.stam <= 1) {
+        const pos = subEscapePos(sub.role, G.pos);
         G.sub = null; G.cd[att.idx] = SUB_FAIL_CD;
-        att.stam = Math.max(0, att.stam - 6);
-        att.act = { type: 'hit', name: 'body', t: 0, dur: 0.6, hit: false };
+        att.stam = Math.max(0, att.stam - 4);
+        att.act = { type: 'hit', name: 'body', t: 0, dur: 0.5, hit: false };
         def.act = idleAct();
-        this._emit({ k: 'subfail', i: att.idx, j: def.idx, name: sub.name });
+        G.mom[def.idx] = MOMENTUM_T;
+        this._emit({ k: 'subescape', i: def.idx, j: att.idx, name: sub.name });
+        this._setPos(pos);
       }
     }
 
@@ -1371,20 +1436,24 @@
       case 'shoot': return n(ev.i) + ' shoots for the takedown...';
       case 'td': return 'Takedown complete — ' + n(ev.i) + ' is on top.';
       case 'tdfail': return ev.sprawl ? n(ev.j) + ' sprawls and stuffs it!' : ev.air ? n(ev.i) + ' shoots at air.' : n(ev.j) + ' defends the takedown.';
-      case 'gattempt': return n(ev.i) + (ev.name.indexOf('stand') >= 0 ? ' tries to ' : ' works to ') + ev.name + '...';
+      case 'gattempt': return ev.sub ? n(ev.i) + ' is hunting for a ' + ev.name + '!' : n(ev.i) + (ev.name.indexOf('stand') >= 0 ? ' tries to ' : ' goes for the ') + ev.name + '...';
+      case 'gread': return null;
+      case 'refwarn': return 'The referee wants some action.';
+      case 'subcrank': return ev.ok ? n(ev.i) + ' cranks the ' + ev.name + ' tighter!' : n(ev.j) + ' reads the crank and loosens the ' + ev.name + '.';
       case 'gresult': {
         if (ev.ok) {
           if (ev.stand) return n(ev.i) + ' gets back to his feet!';
-          if (ev.flip) return 'REVERSAL! ' + n(ev.i) + ' sweeps into ' + POS_NAME[ev.pos] + '!';
+          if (ev.flip) return 'REVERSAL! ' + n(ev.i) + ' sweeps into ' + POS_NAME[ev.pos] + (ev.wrong ? ' as ' + n(ev.j) + ' guesses wrong!' : '!');
           return n(ev.i) + ' ' + (ev.name.indexOf('pass') >= 0 ? 'passes to ' : ev.name.indexOf('mount') >= 0 ? 'takes the ' : 'gets to ') + POS_NAME[ev.pos] + '.';
         }
-        if (ev.pos) return n(ev.j) + ' punishes the attempt — ' + POS_NAME[ev.pos] + '!';
-        return ev.denied ? n(ev.j) + ' shuts down the ' + ev.name + '.' : n(ev.i) + ' can\'t ' + ev.name + '.';
+        if (ev.flip) return 'REVERSAL! ' + n(ev.j) + ' reads the ' + ev.name + ' and sweeps into ' + POS_NAME[ev.pos] + '!';
+        if (ev.pos) return n(ev.j) + ' reads the ' + ev.name + ' and punishes it: ' + POS_NAME[ev.pos] + '!';
+        return n(ev.j) + ' reads the ' + ev.name + ' and shuts it down.';
       }
       case 'subescape': return n(ev.i) + ' slips out of the ' + ev.name + '!';
       case 'subhold': return n(ev.i) + ' keeps the ' + ev.name + ' locked in.';
-      case 'standup': return ev.reason === 'ref' ? 'The referee stands them up.' : ev.reason === 'letup' ? n(ev.i) + ' is let back to his feet.' : n(ev.i) + ' scrambles back to his feet!';
-      case 'sub': return n(ev.i) + ' is hunting for a ' + ev.name + '!';
+      case 'standup': return ev.reason === 'ref' ? 'The referee stands them up.' : ev.reason === 'letup' ? n(ev.i) + ' is let back to his feet.' : null;
+      case 'sub': return n(ev.i) + ' LOCKS UP the ' + ev.name + '!';
       case 'subfail': return ev.stuffed ? n(ev.j) + ' sees the ' + ev.name + ' coming and shuts it down.' : n(ev.j) + ' works free of the ' + ev.name + '.';
       case 'tap': return "IT'S OVER! " + n(ev.j) + ' taps to the ' + ev.name + '!';
       case 'ko': return "IT'S ALL OVER! " + n(ev.i) + ' wins by ' + ev.method + '!';
@@ -1393,7 +1462,7 @@
     return null;
   }
 
-  const API = { IN, STRIKES, ROSTER, SUBS, POS_NAME, MOVES, SUBS_BY, BOTTOM_CAN_STRIKE, Sim, describe, CAGE_R, DT, BREAK_T,
+  const API = { IN, STRIKES, ROSTER, SUBS, POS_NAME, MOVES, SUBS_BY, SUB_DENY_DIR, BOTTOM_CAN_STRIKE, GROUND: { MOVE_WIN, MOVE_DUR, MOMENTUM_T, ADV_MAX, REF_WARN_T, REF_STAND_T, SUB_CRANK_CD }, Sim, describe, CAGE_R, DT, BREAK_T,
     KD: { FALL: KD_FALL, STAY: KD_STAY, RISE: KD_RISE, FOLLOW_DIST: KD_FOLLOW_DIST },
     LIMBS, LIMB_BIT, LIMB_NAME, MODS, MOD_BIT, HAND_KINDS, LEG_KINDS, KIND_LABEL, KIND_STATS, DEFAULT_MOVESET, normalizeMoveset, modOf, isSouthpaw, strikeTip, TIP_R, recovering, mulberry32 };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;

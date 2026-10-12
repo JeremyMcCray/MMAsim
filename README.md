@@ -50,6 +50,18 @@ If Electron prints a Node version or says `app` is undefined, the shell has
 Matchmaking uses the free public PeerJS signaling server (`0.peerjs.com`).
 Once connected, traffic is direct WebRTC between the two browsers.
 
+## Striking tutorial
+
+The first three times the game opens it offers a guided striking session (a
+"don't show this again" box stops the asking; finishing it does too). It is
+always on the main menu under PRACTICE. Eighteen steps against a sparring
+partner who stands in his guard, jabs or low-kicks on cue, and only fights back
+in the final 90-second round: footwork, every punch and kick, power, combos,
+blocking, slipping, checking kicks and the stance switch. Each step names the
+keys from your own bindings and strike mapping. The code is the
+"Striking tutorial" block in `js/main.js`; `tools/tutorial-test.js` drives
+every step in a headless browser.
+
 ## Controls (keyboard)
 
 Every key can be rebound and every strike remapped from **OPTIONS** (main menu,
@@ -68,8 +80,8 @@ browser. Defaults:
 | **E** (hold) | hands → straights, legs → head kicks | hands → hammer fists | — |
 | **R** (hold) | hands → overhands, legs → low kicks | hands → body shots | — |
 | *(no modifier)* | hands → uppercuts, lead leg → teep, rear leg → knee | | |
-| **L** (hold) | high guard / sprawl vs takedowns; **L + R** drops into a Philly shell — lead arm across the body, rear glove at the cheek — that covers the body (kicks, knees, teeps) and the rear-hand side, but is open to lead hooks; double‑tap to shove a crowding opponent off you | posture up (kills escape progress) | cover up vs strikes |
-| **Space** | takedown / dive on a knocked‑down opponent | submission attempt | sweep / reversal |
+| **L** (hold) | high guard / sprawl vs takedowns; **L + R** drops into a Philly shell — lead arm across the body, rear glove at the cheek — that covers the body (kicks, knees, teeps) and the rear-hand side, but is open to lead hooks; double‑tap to shove a crowding opponent off you | posture up / fight the hands in a hold | cover up vs strikes / fight the hands in a hold |
+| **Space** | takedown / dive on a knocked‑down opponent | **+ direction**: pass / advance (see the compass), or, while their move is up, the read that denies it; alone: submission; locked: hold to squeeze, tap a direction to crank | **+ direction**: sweep / escape / stand (see the compass), or, while their move is up, the read that denies it; alone: submission from guard; caught: direction + Space reads a crank |
 | **Shift** | slip (dodge) / get up when knocked down (any direction works too) | stand up and let them up | — |
 | **Esc** / **H** / **M** | options / hide controls / mute | | |
 
@@ -144,28 +156,40 @@ works from any camera angle.
   go to the mat. He waves off a stoppage. When the fight is over he stands in the centre with a fighter on each
   side and raises the winner's hand (both on a draw) before the result screen.
 * **Ground positions** — closed guard → half guard → side control → mount,
-  plus back control. The top fighter advances with **takedown key + W**
-  (pass / take mount); the bottom fighter works with **takedown key + a
-  direction**: S recovers guard or shrimps out, W stands up (a wall‑walk
-  from guard, a riskier turn‑and‑stand from side control), A/D sweeps or
-  bridges for a reversal. Every attempt is a timed move the other fighter
-  can see coming and deny by holding block (basing / framing), which costs
-  them stamina; a failed attempt leaves you exposed, and some failures are
-  punished with a worse position (a failed stand‑up from side control gives
-  up your back). Attempts have a short cooldown. Strikes hit
-  hardest from mount; the bottom fighter can only strike from guard.
+  plus back control. Everything on the mat is a **read**, not a dice roll.
+  **Takedown key + a direction** starts a move (the on‑screen compass lists
+  yours: the top fighter passes forward or takes a bigger, riskier step
+  sideways — stack pass, knee slide to mount, spin to the back; the bottom
+  fighter recovers guard or shrimps out with S, stands up with W, sweeps or
+  bridges with A/D). The move shows its direction for a short window and
+  the other fighter can deny it with **the same direction + the takedown
+  key** (one key for everything: your move when you are free, your read
+  while theirs is up); his first direction + takedown key is his one guess
+  for that move. Read it and the
+  attacker is left exposed for a free move, and a risky move is punished
+  (a read stack pass gets swept, a read turn‑and‑stand from side control
+  gives up the back). Guess wrong or do nothing and it lands, and a wrong
+  guess leaves you open too. Landing a move or denying one gives
+  **momentum**: your next move's window is almost halved for a second and a
+  half, so passes and escapes chain. Landed ground strikes build
+  **advantage**, which also shrinks the other fighter's windows, so ground
+  and pound sets up the pass; covering (block) soaks strikes but cannot
+  read a move, which is the bottom fighter's dilemma.
+  Stats and stamina stretch or shrink the windows (a fresh, high‑BJJ
+  bottom reads a tired wrestler's passes easily). Strikes hit hardest from
+  mount; the bottom fighter can only strike from guard.
 * **Submissions** — available from the right positions for both fighters
   (bottom: triangle, armbar, guillotine from guard, kimura from half guard;
   top: guillotine, kimura, americana, armbar, arm triangle, rear‑naked
-  choke). Press the takedown key with no direction to attack — it costs
-  stamina and is a roll (BJJ vs BJJ, much better odds against someone who
-  is exposed after a failed move, rocked or gassed); a stuffed attempt
-  leaves you open and on a cooldown. Once it's locked, **hold it to
-  squeeze**: the hold tightens while you burn stamina. The defender holds
-  block to fight the hands (slows it, costs stamina) and taps the takedown
-  key to attempt an escape — timing it when the attacker lets go to breathe
-  gives the best odds. Escapes improve the defender's position; running out
-  of gas on a hold loses it. The referee stands up a stalled fight.
+  choke). The takedown key with no direction goes for one; the entry is a
+  read like any other move, denied with **S + the takedown key** (pull out /
+  posture up). Once it's locked, **hold the takedown key to squeeze** (burns
+  stamina, slow and steady) and **tap a direction to crank**: unread, a
+  crank tightens the hold a lot; read with that direction + the takedown
+  key, it loosens it and costs the attacker gas. The defender holds block to fight
+  the hands (slows the squeeze). 100 taps; 0 escapes into a better
+  position; an attacker who runs out of gas loses the hold. The referee
+  warns a stalled fight after five seconds and stands it up after eight.
 * **Striking only** — the lobby's *Grappling* setting (host decides) turns
   takedowns and the ground game off (and following a knocked‑down opponent
   to the mat); the fight can only end by KO, TKO or decision.
