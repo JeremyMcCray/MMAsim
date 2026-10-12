@@ -6,7 +6,7 @@
 <title>Cage Rules — 1v1 MMA</title>
 <meta name="description" content="Cage Rules: a 3D one-on-one mixed martial arts simulation you can play online against a friend, right in the browser.">
 <link href="lib/fonts/fonts.css" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=30">
+<link rel="stylesheet" href="css/style.css?v=31">
 </head>
 <body>
 <canvas id="gl"></canvas>
@@ -269,6 +269,10 @@
         <div class="opt-col">
           <div class="opt-audio">
             <h3>AUDIO</h3>
+            <label class="vol-row">Sound volume
+              <input type="range" id="sfxVol" min="0" max="100" step="1" value="40" aria-label="Sound effects volume">
+              <span id="sfxVolLbl">40</span>
+            </label>
             <label class="vol-row">Music volume
               <input type="range" id="musicVol" min="0" max="100" step="1" value="10" aria-label="Music volume">
               <span id="musicVolLbl">10</span>
@@ -363,7 +367,7 @@
   <div class="panel tut-prompt">
     <div class="end-method">NEW HERE?</div>
     <div class="lobby-title" id="tutPromptTitle">LEARN THE STRIKING GAME</div>
-    <p class="tut-blurb">A five-minute guided session with a sparring partner: footwork, every punch and kick, power, combinations, blocking, slipping and checking kicks. Then one round for real.</p>
+    <p class="tut-blurb">A five-minute guided session with a sparring partner: footwork, every punch and kick, power, blocking, and checking kicks.</p>
     <p class="fine" id="tutPromptNote"></p>
     <label class="mute-music tut-never"><input type="checkbox" id="tutNever"> Don't show this again</label>
     <div class="lobby-btns">
@@ -386,10 +390,10 @@
 <script src="js/render.js?v=30"></script>
 <script src="js/gym.js?v=21"></script>
 <script src="js/net.js?v=12"></script>
-<script src="js/audio.js?v=19"></script>
+<script src="js/audio.js?v=20"></script>
 <script src="js/chat.js?v=1"></script>
 <script src="js/analytics.js?v=1"></script>
-<script src="js/main.js?v=37"></script>
+<script src="js/main.js?v=38"></script>
 <script src="lib/rapier3d-compat.js?v=12"></script>
 <script>
   // Rapier physics engine (vendored, WASM inlined, plain script so the game also runs from file://).

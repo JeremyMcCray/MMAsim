@@ -3,22 +3,27 @@
   'use strict';
   const MUSIC_DEFAULT = 0.1; // quiet bed so the tracks sit well under hits
   const MUSIC_SCALE = 0.7; // tracks are mastered hot; trim 30% below the slider value
+  const SFX_DEFAULT = 0.4;
+  const SFX_SCALE = 0.8 / 0.9; // the old fixed master gain (0.8) now sits at 90 on the slider
   class Audio {
     constructor() {
       this.ctx = null; this.master = null; this.muted = false; this.crowdGain = null; this.crowdBase = 0;
+      this.sfxVol = SFX_DEFAULT;
       this.musicVol = MUSIC_DEFAULT; this.musicMuted = false; this.tracks = null; this.current = null; this.wanted = null; this._musicWarned = false;
       this.analyser = null; this._specSrc = null; this._specEl = null; this._freq = null; this._specListen = null;
       try {
         const v = parseFloat(localStorage.getItem('cr_music'));
         if (Number.isFinite(v)) this.musicVol = Math.min(1, Math.max(0, v));
         this.musicMuted = localStorage.getItem('cr_music_mute') === '1';
+        const sv = parseFloat(localStorage.getItem('cr_sfx'));
+        if (Number.isFinite(sv)) this.sfxVol = Math.min(1, Math.max(0, sv));
       } catch (_) {}
     }
     init() {
       if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
       const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
       this.ctx = new AC();
-      this.master = this.ctx.createGain(); this.master.gain.value = this.muted ? 0 : 0.8; this.master.connect(this.ctx.destination);
+      this.master = this.ctx.createGain(); this.master.gain.value = this._masterGain(); this.master.connect(this.ctx.destination);
       // 2 s of white noise, shared by the crowd bed and the SFX bursts
       const len = this.ctx.sampleRate * 2; const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
       const d = buf.getChannelData(0); for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
@@ -54,9 +59,15 @@
       this.tracks.menu.volume = v;
       this.tracks.fight.volume = v;
     }
+    _masterGain() { return this.muted ? 0 : this.sfxVol * SFX_SCALE; }
+    setSfxVolume(v) {
+      this.sfxVol = Math.min(1, Math.max(0, v));
+      if (this.master) this.master.gain.value = this._masterGain();
+      try { localStorage.setItem('cr_sfx', String(this.sfxVol)); } catch (_) {}
+    }
     setMuted(m) {
       this.muted = m;
-      if (this.master) this.master.gain.value = m ? 0 : 0.8;
+      if (this.master) this.master.gain.value = this._masterGain();
       this._applyMusicVolume();
     }
     setMusicMuted(m) {

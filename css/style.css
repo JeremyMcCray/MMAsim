@@ -116,15 +116,16 @@ button.letter:hover { transform: none; filter: none; color: var(--gold); }
 .opt-tab.on { color: var(--gold); border-bottom-color: var(--gold); }
 .opt-tab:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
 .opt-page { min-height: 440px; }
+.opt-page[data-page="game"] { min-height: 0; }
 .opt-cols { display: grid; grid-template-columns: 1fr 1.25fr; gap: 28px; margin-top: 10px; }
-.opt-cols.game { grid-template-columns: 1fr 1fr; }
+.opt-cols.game { grid-template-columns: minmax(0, 480px) minmax(0, 320px); justify-content: start; gap: 60px; margin-bottom: 6px; }
 .opt-cols.keys { grid-template-columns: minmax(360px, 1fr) minmax(0, 1.6fr); }
 .opt-strikes { max-width: 1100px; }
 .opt-audio { margin-top: 4px; }
 .opt-audio h3, .opt-look h3, .opt-col h3, .opt-kb h3, .opt-strikes h3 { font-family: var(--font-head); font-weight: 700; font-size: 18px; letter-spacing: .15em; color: var(--gold); margin: 10px 0 6px; }
 .opt-look { margin-top: 0; }
-.opt-look .mute-music { margin-top: 0; }
-.vol-row { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .08em; max-width: 420px; }
+.opt-look .mute-music { display: flex; margin: 0 0 10px; }
+.vol-row { display: flex; align-items: center; gap: 12px; margin-top: 8px; color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .08em; max-width: 420px; }
 .vol-row input[type="range"] { flex: 1; accent-color: var(--gold); cursor: pointer; }
 .vol-row span { min-width: 2.2em; color: #fff; font-family: var(--font-head); font-size: 18px; letter-spacing: .04em; }
 .opt-help { color: var(--muted); font-size: 13px; margin: 0 0 10px; line-height: 1.4; }
