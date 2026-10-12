@@ -604,10 +604,12 @@
         const p = live ? pressed & SIM_BITS : 0;
         rag.faceOpponent = locked;
         if (!locked && (h & DIRS)) {
-          // free: W/A/S/D are screen directions (the camera does not swing round while you walk); he turns to the
-          // way he is going and steps forward, at the fight's own footwork speed
+          // free: the move keys are screen directions (the camera does not swing round while you walk), laid out as
+          // they are in the fight, where you stand on the left facing right: 'circle left' (W) walks away from the
+          // camera, 'circle right' (S) toward it, 'move in' (D) screen-right and 'back off' (A) screen-left. He turns
+          // to the way he is going and steps forward, at the fight's own footwork speed
           let mx = 0, mz = 0;
-          if (h & IN.FWD) mz += 1; if (h & IN.BACK) mz -= 1; if (h & IN.LEFT) mx -= 1; if (h & IN.RIGHT) mx += 1;
+          if (h & IN.LEFT) mz += 1; if (h & IN.RIGHT) mz -= 1; if (h & IN.BACK) mx -= 1; if (h & IN.FWD) mx += 1;
           h &= ~DIRS;
           if (mx || mz) {
             const cy = this.cam.yaw; // forward = (sin cy, cos cy); screen right = forward x up = (-cos cy, sin cy)
@@ -662,7 +664,7 @@
       // ----- camera: third person, behind the fighter -----
       const cam = this.cam;
       if (!cam.init) { cam.yaw = P.yaw; cam.init = true; cam.pos.set(clamp(P.x - Math.sin(P.yaw) * 4.2, -ROOM.hw + 0.35, ROOM.hw - 0.35), 2.5, clamp(P.z - Math.cos(P.yaw) * 4.2, -ROOM.hd + 0.35, ROOM.hd - 0.35)); cam.tgt.set(P.x, 1.0, P.z); }
-      // cam.yaw (the free-walk heading W/A/S/D read) follows the bag while locked, so unlocking leaves the camera behind you
+      // cam.yaw (the free-walk heading the move keys read) follows the bag while locked, so unlocking leaves the camera behind you
       if (locked) { let d = lockYaw - cam.yaw; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; cam.yaw += d * expo(dt, 7); }
       // free: the mouse swings the camera round (mouse right turns the view right, i.e. lowers cam.yaw)
       else if (live) cam.yaw -= this.lookDX * LOOK_SENS;

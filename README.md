@@ -224,7 +224,7 @@ the browser (`localStorage`) after every action.
   (the game's `car / chin / spd / pow / bjj / wre` stats), or **rest**. Gains
   are bigger on low stats and grind past ~85.
 * **The gym is a place.** The career hub is a 3D room you walk around
-  (`js/gym.js`): **WASD** walks (relative to the camera), the strike keys and
+  (`js/gym.js`): **WASD** walks (relative to the camera; in the fight D steps in, A backs off, W/S circle), the strike keys and
   modifiers work exactly as in a fight, **L** raises your guard, **Enter** (or
   **F**) uses whatever you are standing at. A **heavy bag** hangs in the middle
   of the room — step up to it and throw anything: it swings on its chain, and

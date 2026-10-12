@@ -18,10 +18,12 @@
 
   // ---------- controls (rebindable, saved in localStorage) ----------
   const ACTIONS = [
-    { id: 'fwd', label: 'Move in', bit: IN.FWD, def: ['KeyW', 'ArrowUp'] },
-    { id: 'back', label: 'Back off', bit: IN.BACK, def: ['KeyS', 'ArrowDown'] },
-    { id: 'left', label: 'Circle left', bit: IN.LEFT, def: ['KeyA', 'ArrowLeft'] },
-    { id: 'right', label: 'Circle right', bit: IN.RIGHT, def: ['KeyD', 'ArrowRight'] },
+    // the fight camera is side-on with you on the left facing right, so by default D/→ steps in, A/← backs off,
+    // and W/↑ (away from the camera) / S/↓ (toward it) circle: the keys match what you see on screen at the bell
+    { id: 'fwd', label: 'Move in', bit: IN.FWD, def: ['KeyD', 'ArrowRight'] },
+    { id: 'back', label: 'Back off', bit: IN.BACK, def: ['KeyA', 'ArrowLeft'] },
+    { id: 'left', label: 'Circle left', bit: IN.LEFT, def: ['KeyW', 'ArrowUp'] },
+    { id: 'right', label: 'Circle right', bit: IN.RIGHT, def: ['KeyS', 'ArrowDown'] },
     { id: 'lh', label: 'Left hand', bit: IN.LHAND, def: ['KeyU', ''] },
     { id: 'rh', label: 'Right hand', bit: IN.RHAND, def: ['KeyI', ''] },
     { id: 'll', label: 'Left leg', bit: IN.LLEG, def: ['KeyJ', ''] },
@@ -41,7 +43,7 @@
   const Controls = { binds: {}, moveset: null, keyMap: {}, pad: {} };
   // ---------- gamepad (standard layout: Xbox / PlayStation / Steam Input) ----------
   // pad codes: 'B<n>' = button n, 'A<axis><+|->' = a stick axis pushed past the deadzone
-  const PAD_DEFAULT = { fwd: 'A1-', back: 'A1+', left: 'A0-', right: 'A0+', lh: 'B2', rh: 'B3', ll: 'B0', rl: 'B1', mod1: 'B4', mod2: 'B5', mod3: 'B6', block: 'B7', grapple: 'B10', dodge: 'B11', stance: 'B14', check: 'B13', interact: 'B12', lock: 'B15' };
+  const PAD_DEFAULT = { fwd: 'A0+', back: 'A0-', left: 'A1-', right: 'A1+', lh: 'B2', rh: 'B3', ll: 'B0', rl: 'B1', mod1: 'B4', mod2: 'B5', mod3: 'B6', block: 'B7', grapple: 'B10', dodge: 'B11', stance: 'B14', check: 'B13', interact: 'B12', lock: 'B15' };
   const PAD_NAMES = { B0: 'A', B1: 'B', B2: 'X', B3: 'Y', B4: 'LB', B5: 'RB', B6: 'LT', B7: 'RT', B8: 'BACK', B9: 'START', B10: 'LS', B11: 'RS', B12: 'D-UP', B13: 'D-DOWN', B14: 'D-LEFT', B15: 'D-RIGHT', B16: 'GUIDE', 'A0-': 'LS\u2190', 'A0+': 'LS\u2192', 'A1-': 'LS\u2191', 'A1+': 'LS\u2193', 'A2-': 'RS\u2190', 'A2+': 'RS\u2192', 'A3-': 'RS\u2191', 'A3+': 'RS\u2193' };
   const PAD_DEAD = 0.35;   // stick deflection that counts as a press
   const PAD_LOOK = 12;     // gym camera: right-stick deflection (squared) -> mouse pixels per frame
@@ -870,6 +872,34 @@
     saveControls();
     buildOptions(); updateHint(); toast('Options reset to defaults', 1500);
   }
+  // the two ways to lay the four movement keys out (the tutorial's movement step offers the switch):
+  // 'side' matches the side-on camera (D steps in, A backs off, W/S circle); 'facing' is the old way (W in, S out, A/D circle)
+  const MOVE_IDS = ['fwd', 'back', 'left', 'right'];
+  const MOVE_LAYOUTS = {
+    side: { label: 'D IN · A OUT · W/S CIRCLE', keys: { fwd: ['KeyD', 'ArrowRight'], back: ['KeyA', 'ArrowLeft'], left: ['KeyW', 'ArrowUp'], right: ['KeyS', 'ArrowDown'] }, pad: { fwd: 'A0+', back: 'A0-', left: 'A1-', right: 'A1+' } },
+    facing: { label: 'W IN · S OUT · A/D CIRCLE', keys: { fwd: ['KeyW', 'ArrowUp'], back: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'] }, pad: { fwd: 'A1-', back: 'A1+', left: 'A0-', right: 'A0+' } }
+  };
+  function moveLayout() { // which layout the current binds are, or null for a custom mapping
+    for (const name of Object.keys(MOVE_LAYOUTS)) { const L = MOVE_LAYOUTS[name]; if (MOVE_IDS.every(id => Controls.binds[id][0] === L.keys[id][0])) return name; }
+    return null;
+  }
+  function setMoveLayout(name) {
+    const L = MOVE_LAYOUTS[name]; if (!L || moveLayout() === name) return;
+    const keys = new Set(MOVE_IDS.flatMap(id => L.keys[id])), pads = new Set(MOVE_IDS.map(id => L.pad[id]));
+    for (const a of ACTIONS) { // one action per key: free the keys and stick directions the layout needs
+      for (let i = 0; i < 2; i++) if (keys.has(Controls.binds[a.id][i])) Controls.binds[a.id][i] = '';
+      if (pads.has(Controls.pad[a.id])) Controls.pad[a.id] = '';
+    }
+    for (const id of MOVE_IDS) { Controls.binds[id] = L.keys[id].slice(); Controls.pad[id] = L.pad[id]; }
+    saveControls(); buildOptions(); updateHint();
+    Analytics.track('move_layout', { layout: name });
+    toast('Movement keys: ' + L.label, 1800);
+  }
+  // the switch shown on the tutorial's movement step: two buttons, the current layout lit
+  function moveLayoutToggle() {
+    const cur = moveLayout();
+    return '<div class="tut-toggle"><span>Movement keys:</span>' + Object.keys(MOVE_LAYOUTS).map(n => '<button type="button" class="ghost small' + (cur === n ? ' on' : '') + '" data-ml="' + n + '">' + MOVE_LAYOUTS[n].label + '</button>').join('') + '</div>';
+  }
   function menuHint() {
     const h = $('#menuHint'); if (!h) return;
     h.innerHTML = Pad.active
@@ -884,7 +914,7 @@
     const kind = k => KIND_LABEL[k].toLowerCase();
     const row = m => (m === 'none' ? 'no modifier' : 'hold ' + B(m)) + ': ' + LIMBS.map(l => kind(ms[m][l])).join(' / ');
     $('#controlsHint').innerHTML =
-      '<div class="ctl-row">' + [B('fwd'), B('left'), B('back'), B('right')].join(' ') + ' move / circle (stepping into a shot adds power, backing off takes it away) · ' + B('dodge') + ' dash the way you are stepping (straight back if standing still) · ' + B('lh') + ' left hand · ' + B('rh') + ' right hand · ' + B('ll') + ' left leg · ' + B('rl') + ' right leg</div>' +
+      '<div class="ctl-row">' + [B('left'), B('back'), B('right'), B('fwd')].join(' ') + ' move / circle (stepping into a shot adds power, backing off takes it away) · ' + B('dodge') + ' dash the way you are stepping (straight back if standing still) · ' + B('lh') + ' left hand · ' + B('rh') + ' right hand · ' + B('ll') + ' left leg · ' + B('rl') + ' right leg</div>' +
       '<div class="ctl-row">' + MODS.map(row).join(' · ') + '</div>' +
       '<div class="ctl-row">' + B('block') + ' hold: block / sprawl (+ ' + B('mod3') + ' drops into a shell that covers the body), press as a strike comes in: block and slip it, tap twice: push them off · ' + B('grapple') + ' takedown / dive on a downed opponent · ' + B('stance') + ' switch stance · knocked down: a direction or ' + B('dodge') + ' gets up, or stay down to recover · ground: hands & legs strike, direction + ' + B('grapple') + ' move (see the compass), ' + B('grapple') + ' alone submission, their direction + ' + B('grapple') + ' denies, ' + B('block') + ' covers, ' + B('dodge') + ' let up · <b>Enter</b> chat · <b>ESC</b>' + (Pad.active ? ' / <b>START</b>' : '') + ' options · <b>H</b> hide this · <b>M</b> mute</div>';
     syncHint();
@@ -1286,7 +1316,7 @@
     App.gym.enter(C, Controls.moveset);
     App.audio.play('menu'); App.audio.setCrowd(0);
     refreshGymHUD(); show($('#gymHud'));
-    if (first && !C.history.length && !C._gymHint) { C._gymHint = true; toast('Walk with ' + keyName(Controls.binds.fwd[0]) + keyName(Controls.binds.left[0]) + keyName(Controls.binds.back[0]) + keyName(Controls.binds.right[0]) + '. Hit the bag with your strike keys. The computer has your fight offers.', 7000); }
+    if (first && !C.history.length && !C._gymHint) { C._gymHint = true; toast('Walk with ' + keyName(Controls.binds.left[0]) + keyName(Controls.binds.back[0]) + keyName(Controls.binds.right[0]) + keyName(Controls.binds.fwd[0]) + '. Hit the bag with your strike keys. The computer has your fight offers.', 7000); }
   }
   // keepScene: a fight is about to take the scene over; otherwise put the menu's demo arena back
   function exitGym(keepScene) {
@@ -1607,7 +1637,7 @@
   // mode: what the partner does. Every step but the last keeps both fighters fresh and the clock still.
   const TUT_STEPS = [
     { id: 'close', title: 'CLOSE THE DISTANCE', goal: 1, mode: 'idle',
-      text: () => 'Movement is relative to your opponent: ' + K('fwd') + ' always walks toward him. Hold ' + K('fwd') + ' until you are in punching range.',
+      text: () => 'Movement is relative to your opponent: ' + K('fwd') + ' always walks toward him. Hold ' + K('fwd') + ' until you are in punching range.' + moveLayoutToggle(),
       tick: (S, me, op, dist) => dist < 1.12 ? 1 : 0 },
     { id: 'circle', title: 'CIRCLE', goal: 3, mode: 'idle', float: true,
       text: () => 'Hold ' + K('left') + ' or ' + K('right') + ' to circle him. Three seconds of footwork.',
@@ -1762,6 +1792,7 @@
   $('#btnTutNo').onclick = () => { Analytics.track('tutorial_prompt', { accepted: false, never: $('#tutNever').checked }); closeTutorPrompt(); };
   $('#btnTutYes').onclick = () => { Analytics.track('tutorial_prompt', { accepted: true }); closeTutorPrompt(); startTutorial(); };
   $('#btnTutorial').onclick = () => startTutorial();
+  $('#tutText').addEventListener('click', (e) => { const b = e.target.closest('button[data-ml]'); if (b) { b.blur(); setMoveLayout(b.dataset.ml); } });
   $('#btnTutSkip').onclick = (e) => { e.currentTarget.blur(); if (Tutor.active) { Analytics.track('tutorial_skip', { step: Tutor.i + 1, step_id: TUT_STEPS[Tutor.i].id }); tutorAdvance(); } };
   $('#btnTutQuit').onclick = (e) => { e.currentTarget.blur(); Analytics.track('tutorial_quit', { step: Tutor.i + 1, step_id: TUT_STEPS[Tutor.i] && TUT_STEPS[Tutor.i].id }); stopFight(); App.mode = null; screen('menu'); };
 
