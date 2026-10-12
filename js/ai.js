@@ -19,6 +19,8 @@
       this.rangeMode = 'kick'; // 'punch' = get in the pocket, 'kick' = fight at leg range
       this.rangeT = 0;
       this.pushT = 0;          // > 0: second BLOCK tap of a push is pending
+      this.readKey = null; this.readDir = null; this.readT = 0; this.readAt = 0; // the ground read being answered (see _ground)
+      this.holdPlan = 0;       // ground: input to keep holding between decisions (cover, or a pre-read)
     }
 
     update(S, dt) {
@@ -175,71 +177,96 @@
     }
 
     // ---------- ground ----------
+    // Everything on the mat is a read: the opponent's move (or crank) shows its direction for a short window and
+    // we answer with GRAPPLE + that direction. The brain decides once per read (right / wrong / freeze, by difficulty
+    // and grappling stats) and answers after a human-ish reaction delay.
     _ground(S, me, op, dt, role) {
       const r = this.rng, d = this.diff, G = S.ground;
       const { MOVES, SUBS_BY, BOTTOM_CAN_STRIKE } = root.MMASim;
+      const DIRS = ['FWD', 'BACK', 'LEFT', 'RIGHT'];
       let held = 0;
+      const skill = role === 'top' ? me.stats.wre * 0.6 + me.stats.bjj * 0.4 : me.stats.bjj * 0.6 + me.stats.wre * 0.4;
+
+      // --- a read is up: the opponent's move, or a crank on the hold I'm caught in ---
+      const read = G.sub ? (G.sub.crank && G.sub.att !== this.idx ? G.sub.crank : null) : (G.trans && G.trans.by !== this.idx ? G.trans : null);
+      if (read) {
+        const key = (G.sub ? 'c' : 't') + read.id;
+        if (this.readKey !== key) {
+          this.readKey = key;
+          const big = read.mv && read.mv.winMul > 1 ? 0.12 : 0;                  // big moves are easier to see coming
+          const pRead = 0.22 + d * 0.42 + skill * 0.2 + big + (G.sub ? 0.08 : 0);
+          const k = r();
+          this.readDir = k < pRead ? read.dir : k < pRead + 0.25 ? DIRS[Math.floor(r() * 4)] : null; // right / wrong guess / freeze
+          this.readAt = 0.07 + (1 - d) * 0.18 + r() * 0.1;
+          this.readT = 0;
+        }
+        this.readT += dt;
+        if (this.readDir && this.readT >= this.readAt && me.stam > 4) held |= IN.GRAPPLE | IN[this.readDir];
+        else if (G.sub ? r() < 0.8 : r() < 0.5) held |= IN.BLOCK;                // meanwhile: hand-fight / cover
+        this.held = held; return;
+      }
+
       // --- submission in progress ---
       if (G.sub) {
         const sub = G.sub;
         if (sub.att === this.idx) {
-          // squeeze while there's gas, let it breathe when running low (and bait the escape)
-          const squeeze = me.stam > 18 && (sub.prog > 35 || r() < 0.85);
-          if (squeeze) held |= IN.GRAPPLE;
-        } else {
-          // defend: hand-fight (block) most of the time, attempt an escape when the squeeze lets up or on a timer
-          if (r() < 0.75 + d * 0.2) held |= IN.BLOCK;
+          // squeeze while there's gas; crank now and then (more often when they are hurt or gassed)
+          if (me.stam > 12 && (sub.prog > 30 || r() < 0.85)) held |= IN.GRAPPLE;
           this.timer -= dt;
-          if (this.timer <= 0 || (!sub.squeezing && r() < 0.3)) { this.pressed |= IN.GRAPPLE; this.timer = 1.6 + (1 - d) * 1.5 + r() * 1.0; }
-        }
+          if (this.timer <= 0) {
+            this.timer = 0.35 + (1 - d) * 0.7 + r() * 0.6;
+            const want = 0.35 + d * 0.4 + (op.rocked > 0 ? 0.3 : 0) + (op.stam < 30 ? 0.2 : 0);
+            if (sub.crankCd <= 0 && me.stam > 10 && r() < want) this.pressed |= IN[DIRS[Math.floor(r() * 4)]];
+          }
+        } else if (r() < 0.75 + d * 0.2) held |= IN.BLOCK;                        // fight the hands
         this.held = held; return;
       }
-      // --- someone is attempting a transition: deny it by basing / framing ---
-      if (G.trans) {
-        if (G.trans.by !== this.idx && me.stam > 20 && r() < 0.3 + d * 0.45) held |= IN.BLOCK;
-        this.held = held; return;
-      }
-      const free = me.act.type === 'idle';
-      if (!free) { this.held = held; return; }
+      // my own move is playing out
+      if (G.trans) { this.held = held; return; }
+      if (me.act.type !== 'idle') { this.held = held; return; }
       this.timer -= dt;
-      if (this.timer > 0) { this.held = held; return; }
-      this.timer = 0.3 + (1 - d) * 0.5 + r() * 0.4;
+      if (this.timer > 0) { this.held = this.holdPlan || held; return; }
+      this.timer = 0.3 + (1 - d) * 0.5 + r() * 0.45;
+      this.holdPlan = 0;
       const moves = MOVES[role][G.pos], subs = SUBS_BY[role][G.pos];
       const cdOk = G.cd[this.idx] <= 0;
+      const opExposed = op.act.type === 'hit' || op.act.type === 'strike';      // caught: a move now can't be denied
       // candidate actions with weights
       const w = [];
-      if (cdOk && me.stam > 20) {
+      if (cdOk && me.stam > 14) {
         for (const dir in moves) {
           const mv = moves[dir];
           let wt = 0;
-          if (role === 'top') wt = 1.2 + me.stats.wre * 1.5 + (G.pos === 'guard' ? 0.5 : 0);
+          if (role === 'top') wt = 1.1 + me.stats.wre * 1.4 + (G.pos === 'guard' ? 0.4 : 0);
           else {
             wt = 1.0 + me.stats.bjj * 1.2 + (G.pos === 'mount' || G.pos === 'back' ? 1.4 : 0) + (me.dmg.head > 50 ? 0.8 : 0);
             if (mv.stand) wt *= (me.stats.wre > 0.7 ? 1.3 : 0.7) * (op.stam < 40 ? 1.3 : 1);
-            if (mv.flip) wt *= 0.8 + me.stats.bjj * 0.8;
+            if (mv.flip) wt *= 0.5 + me.stats.bjj * 0.7;
           }
-          if (op.act.type === 'strike') wt *= 1.6;     // they're swinging: go now
-          if (op.posture || (this.inputsPostureHint)) wt *= 0.6;
-          w.push([{ held: IN[dir], pressed: IN.GRAPPLE }, wt * (0.5 + d * 0.5)]);
+          if (mv.read) wt *= opExposed || G.mom[this.idx] > 0 ? 1.2 : 0.55;   // risky moves: when they can't answer
+          if (opExposed) wt *= 1.8;
+          if (op.cover) wt *= 1.2;                                            // covering up: not reading
+          w.push([{ held: IN[dir], pressed: IN.GRAPPLE }, wt * 0.7 * (0.5 + d * 0.5)]);
         }
       }
-      if (cdOk && subs.length && me.stam > 35) {
+      if (cdOk && subs.length && me.stam > 30) {
         // hunt for holds when they're worth it: strong BJJ, a dominant position, or an opponent who is exposed, rocked or gassed
-        let wt = (me.stats.bjj - 0.35) * 3.0 + (op.stam < 30 ? 0.8 : 0) + (op.rocked > 0 ? 1.2 : 0) + (G.pos === 'back' || G.pos === 'mount' ? 1.2 : 0) + (op.act.type === 'hit' ? 1.5 : 0);
+        let wt = (me.stats.bjj - 0.35) * 3.0 + (op.stam < 30 ? 0.8 : 0) + (op.rocked > 0 ? 1.2 : 0) + (G.pos === 'back' || G.pos === 'mount' ? 1.2 : 0) + (opExposed ? 1.5 : 0);
         if (wt > 0) w.push([{ held: 0, pressed: IN.GRAPPLE }, wt * (0.4 + d * 0.6)]);
       }
       if (me.stam > 10 && (role === 'top' || BOTTOM_CAN_STRIKE[G.pos])) {
-        const base = role === 'top' ? 2.2 + (G.pos === 'mount' ? 1.5 : 0) + me.stats.pow : 0.7;
+        const base = role === 'top' ? 2.8 + (G.pos === 'mount' ? 1.8 : 0) + me.stats.pow * 1.5 + (op.cover ? -0.8 : 0) : 0.7;
         const k = r();
         const strike = k < 0.5 ? { held: 0, pressed: r() < 0.5 ? IN.LHAND : IN.RHAND } : k < 0.7 ? { held: IN.MOD1, pressed: IN.RHAND } : k < 0.85 ? { held: IN.MOD2, pressed: r() < 0.5 ? IN.LHAND : IN.RHAND } : { held: 0, pressed: r() < 0.5 ? IN.LLEG : IN.RLEG };
-        w.push([strike, base]);
+        w.push([strike, Math.max(0.2, base)]);
       }
-      // posture / rest
-      w.push([{ held: IN.BLOCK, pressed: 0 }, (role === 'top' ? 0.8 : 1.2) + (me.stam < 30 ? 1.5 : 0) + (role === 'bottom' && op.act.type === 'strike' ? 2.5 : 0) + (role === 'bottom' && me.dmg.head > 60 ? 2 : 0)]);
+      // cover / posture / rest
+      w.push([{ held: IN.BLOCK, pressed: 0, plan: true }, (role === 'top' ? 0.6 : 1.0) + (me.stam < 30 ? 1.5 : 0) + (role === 'bottom' && op.act.type === 'strike' ? 2.5 : 0) + (role === 'bottom' && me.dmg.head > 60 ? 2 : 0)]);
       let tot = 0; for (const x of w) tot += x[1];
       let k = r() * tot, pick = w[w.length - 1][0];
       for (const x of w) { k -= x[1]; if (k <= 0) { pick = x[0]; break; } }
       held |= pick.held; this.pressed |= pick.pressed;
+      if (pick.plan) this.holdPlan = pick.held;                                // keep holding it until the next decision
       this.modHeld = pick.held & (IN.MOD1 | IN.MOD2 | IN.MOD3); this.modT = 0.12;
       this.held = held;
     }

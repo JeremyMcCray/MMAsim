@@ -1,7 +1,8 @@
 /* Fight SFX synth plus looping menu / fight music (MintoDog). */
 (function (root) {
   'use strict';
-  const MUSIC_DEFAULT = 0.2; // modest bed so the tracks sit under hits
+  const MUSIC_DEFAULT = 0.1; // quiet bed so the tracks sit well under hits
+  const MUSIC_SCALE = 0.7; // tracks are mastered hot; trim 30% below the slider value
   class Audio {
     constructor() {
       this.ctx = null; this.master = null; this.muted = false; this.crowdGain = null; this.crowdBase = 0;
@@ -49,7 +50,7 @@
     }
     _applyMusicVolume() {
       if (!this.tracks) return;
-      const v = (this.muted || this.musicMuted) ? 0 : this.musicVol;
+      const v = (this.muted || this.musicMuted) ? 0 : this.musicVol * MUSIC_SCALE;
       this.tracks.menu.volume = v;
       this.tracks.fight.volume = v;
     }

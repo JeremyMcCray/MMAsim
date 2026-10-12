@@ -84,11 +84,20 @@
   const App = {
     mode: null, net: null, sim: null, renderer: null, audio: new Audio(), brain: null,
     myIdx: 0, held: 0, pressed: 0, remote: { h: 0, p: 0 },
-    lobby: { picks: ['striker', 'wrestler'], names: ['', ''], ready: [false, false], settings: { rounds: 3, len: 180, diff: 0.6 }, cpuPick: 'random', movesets: [null, null], looks: [null, null] },
+    lobby: { picks: ['striker', 'wrestler'], names: ['', ''], ready: [false, false], settings: { rounds: 3, len: 180, diff: 0.6, grappling: false }, cpuPick: 'random', movesets: [null, null], looks: [null, null] },
     optionsOpen: false, paused: false,
     state: null, playing: false, lastSnap: 0, lastInputSend: 0, evQueue: [], rematch: [false, false],
-    feedLines: [], hintsHidden: false
+    feedLines: [], hintsHidden: false, gFlash: null
   };
+
+  // ---------- playtest feedback: where SEND FEEDBACK goes ----------
+  // endpoint: the Google Apps Script web app in tools/feedback-sheet.gs; every report lands as a row in the dev's sheet.
+  // Apps Script only takes cross-origin POSTs as text/plain (no preflight); it parses the JSON body on its side.
+  const FEEDBACK = { endpoint: 'https://script.google.com/macros/s/AKfycbw9oMRVcbESqB-gtSHNlm1gg12Y10b9X3mToQ3Mc5Sjo29jzf3qqdo_Dc7LgPxw2ep1pA/exec', subject: 'Cage Rules feedback' };
+  const Diag = { errors: [], started: Date.now() }; // the last few script errors ride along with every report
+  function logErr(m) { Diag.errors.push(new Date().toISOString().slice(11, 19) + ' ' + String(m).slice(0, 200)); if (Diag.errors.length > 8) Diag.errors.shift(); }
+  window.addEventListener('error', (e) => logErr((e.message || 'error') + (e.filename ? ' @ ' + e.filename.split('/').pop() + ':' + e.lineno : '')));
+  window.addEventListener('unhandledrejection', (e) => logErr('promise: ' + (e.reason && (e.reason.message || e.reason))));
 
   // practice (you vs CPU), watch (CPU vs CPU) and career run the sim locally with no network
   const isLocal = () => App.mode === 'practice' || App.mode === 'watch' || App.mode === 'career';
@@ -357,7 +366,7 @@
   //  Fight lifecycle
   // ============================================================
   function ensureRenderer() {
-    if (!App.renderer) App.renderer = new Renderer($('#gl'), App.audio);
+    if (!App.renderer) App.renderer = new Renderer($('#gl'));
     return App.renderer;
   }
 
@@ -462,9 +471,17 @@
         case 'tdfail': case 'shoot': case 'standup': case 'subfail': feed(text); break;
         case 'sub': A.roar(0.2); feed(text, true); break;
         case 'gattempt': feed(text); break;
-        case 'gresult': if (ev.ok) { A.slam(); feed(text, !!(ev.flip || ev.stand)); } else { A.block(); feed(text); } break;
+        case 'gread': {
+          // the read window closed: a flash on the ground panel for whoever had to read it (ev.i = the reader)
+          const mineRead = ev.i === App.myIdx, txt = ev.res === 'denied' ? (mineRead ? 'READ IT!' : 'THEY READ IT') : ev.res === 'wrong' ? (mineRead ? 'WRONG WAY' : 'THEY GUESSED WRONG') : (mineRead ? 'TOO LATE' : 'IT LANDS');
+          App.gFlash = { at: performance.now(), txt };
+          if (ev.res === 'denied') A.block();
+          break;
+        }
+        case 'gresult': if (ev.ok) { A.slam(); feed(text, !!(ev.flip || ev.stand)); } else { if (ev.flip) A.slam(); else A.block(); feed(text, !!ev.flip); } break;
+        case 'subcrank': if (ev.ok) { A.hit(false, 'body'); feed(text); } else { A.block(); feed(text); } break;
+        case 'refwarn': feed(text); break;
         case 'subescape': A.whistle(); feed(text, true); break;
-        case 'subhold': A.block(); feed(text); break;
         case 'tap': A.tap(); feed(text, true); break;
         case 'ko': A.horn(); feed(text, true); break;
         case 'bell':
@@ -534,38 +551,71 @@
       }
     }
     if (kdTxt) { kh.innerHTML = kdTxt; kh.classList.add('show'); } else kh.classList.remove('show');
-    // ground panel
+    // ground panel: a compass of my moves (one per direction, submission in the middle). The opponent's move
+    // lights up the cell in its direction while it can still be denied (GRAPPLE + that direction), with a shrinking
+    // bar for the window; my own move fills its cell as it plays out. Cranks on a hold use the same compass.
     const g = $('#grapple');
     if (S.ground && S.phase === 'fight') {
-      const G = S.ground;
-      g.classList.add('show'); g.classList.toggle('subbing', !!G.sub);
-      const meTop = G.top === App.myIdx, role = meTop ? 'top' : 'bottom';
-      $('#gTitle').textContent = (POS_NAME[G.pos] + ' · ' + S.f[G.top].name + ' on top').toUpperCase();
-      // transition attempt
-      const ar = $('#attRow');
-      if (G.trans) {
-        ar.classList.add('show');
-        $('#attName').textContent = (G.trans.by === App.myIdx && App.mode !== 'watch' ? 'YOU: ' : S.f[G.trans.by].name.toUpperCase() + ': ') + G.trans.name.toUpperCase();
-        ar.querySelector('.fill').style.width = pct(G.trans.t / G.trans.dur * 100);
-        ar.classList.toggle('mine', G.trans.by === App.myIdx);
-      } else ar.classList.remove('show');
-      if (G.sub) {
-        const sub = G.sub, mineAtt = sub.att === App.myIdx;
+      const G = S.ground, T = G.trans, sub = G.sub;
+      const my = App.myIdx, op = 1 - my, meTop = G.top === my, role = meTop ? 'top' : 'bottom';
+      const watch = App.mode === 'watch';
+      g.classList.add('show'); g.classList.toggle('subbing', !!sub);
+      g.classList.toggle('mom-me', G.mom[my] > 0); g.classList.toggle('mom-op', G.mom[op] > 0);
+      const momTxt = G.mom[my] > 0 ? (watch ? ' · ' + S.f[my].name + ' has momentum' : ' · momentum') : G.mom[op] > 0 ? (watch ? ' · ' + S.f[op].name + ' has momentum' : ' · their momentum') : '';
+      $('#gTitle').textContent = (POS_NAME[G.pos] + ' · ' + S.f[G.top].name + ' on top' + momTxt).toUpperCase();
+      $('#gAdvMe').style.width = pct(G.adv[my]); $('#gAdvOp').style.width = pct(G.adv[op]);
+      const incoming = sub ? (sub.crank && sub.att !== my ? sub.crank : null) : (T && T.by !== my ? T : null);
+      const mine = sub ? null : (T && T.by === my ? T : null);
+      const DK = { FWD: 'fwd', BACK: 'back', LEFT: 'left', RIGHT: 'right' };
+      for (const cell of $('#gCompass').querySelectorAll('.g-cell')) {
+        const dir = cell.dataset.dir;
+        let key = '', name = '', cls = 'g-cell c-' + dir.toLowerCase();
+        if (sub) {
+          if (dir !== 'SUB') { if (sub.att === my) { key = kn(DK[dir]); name = 'crank'; cls += ' mine'; } else { key = kn(DK[dir]) + '+' + kn('grapple'); name = 'read a crank'; } }
+        } else if (dir === 'SUB') {
+          const subs = SUBS_BY[role][G.pos];
+          if (subs.length) { key = kn('grapple'); name = subs.length > 1 ? 'submission' : subs[0]; cls += ' mine'; }
+        } else {
+          const mv = MOVES[role][G.pos][dir];
+          if (mv) { key = kn(DK[dir]) + '+' + kn('grapple'); name = mv.name; cls += ' mine'; }
+        }
+        if (incoming && dir === incoming.dir && (incoming.res == null || sub)) {
+          cls += ' in'; key = kn(DK[dir]) + '+' + kn('grapple');
+          name = sub ? 'READ THE CRANK' : 'DENY ' + incoming.name.toUpperCase();
+        }
+        if (incoming && incoming.guess === dir) cls += incoming.guess === incoming.dir ? ' right' : ' guessed';
+        if (mine && (mine.sub ? dir === 'SUB' : dir === mine.dir)) { cls += ' going'; }
+        if (cell.className !== cls) cell.className = cls;
+        const html = key ? '<b>' + esc(key) + '</b><span>' + esc(name) + '</span>' : '';
+        if (cell.innerHTML !== html) cell.innerHTML = html;
+      }
+      // the read bar: their window shrinking (red), or my move playing out (gold)
+      const rd = $('#gRead');
+      if (incoming) {
+        const open = incoming.t < incoming.win;
+        rd.className = 'g-read show in';
+        $('#gReadLbl').textContent = open ? (sub ? 'READ IT' : 'READ IT: ' + kn(DK[incoming.dir]) + ' + ' + kn('grapple')) : (incoming.res === 'denied' ? 'DENIED!' : incoming.res === 'wrong' ? 'WRONG WAY' : sub ? '' : 'TOO LATE');
+        rd.querySelector('.fill').style.width = pct(open ? (1 - incoming.t / incoming.win) * 100 : 0);
+      } else if (mine) {
+        rd.className = 'g-read show mine';
+        $('#gReadLbl').textContent = mine.res === 'denied' ? 'READ!' : mine.res ? (mine.sub ? 'LOCKING' : 'LANDS') : mine.name.toUpperCase();
+        rd.querySelector('.fill').style.width = pct(mine.t / mine.dur * 100);
+      } else rd.className = 'g-read';
+      if (sub) {
+        const mineAtt = sub.att === my;
         g.querySelector('.sub .fill').style.width = pct(sub.prog); $('#subName').textContent = sub.name.toUpperCase();
-        $('#subState').textContent = (sub.squeezing ? 'SQUEEZING' : 'LOOSE') + (sub.defending ? ' · DEFENDING' : '');
-        $('#gHint').textContent = App.mode === 'watch' ? '' : mineAtt
-          ? 'Hold ' + kn('grapple') + ' to squeeze (burns stamina) — let go to breathe, but they can slip out when it\'s loose.'
-          : 'Hold ' + kn('block') + ' to fight the hold (slows it). Tap ' + kn('grapple') + ' to attempt an escape — best when the squeeze is loose.';
+        $('#gState').textContent = (sub.squeezing ? 'SQUEEZING' : 'LOOSE') + (sub.defending ? ' · HAND FIGHTING' : '');
+        $('#gHint').textContent = watch ? '' : mineAtt
+          ? 'Hold ' + kn('grapple') + ' to squeeze (burns stamina) · tap a direction to crank: unread it tightens, read it loosens'
+          : 'Hold ' + kn('block') + ' to fight the hands (slows it) · when a crank lights up, that direction + ' + kn('grapple') + ' loosens it · at 0 you are out';
       } else {
-        const moves = MOVES[role][G.pos], subs = SUBS_BY[role][G.pos];
+        const fl = App.gFlash;
+        $('#gState').textContent = fl && performance.now() - fl.at < 900 ? fl.txt : '';
         const parts = [];
-        for (const dir in moves) parts.push(kn(dir.toLowerCase() === 'fwd' ? 'fwd' : dir.toLowerCase()) + '+' + kn('grapple') + ' ' + moves[dir].name);
-        if (subs.length) parts.push(kn('grapple') + ' ' + (subs.length > 1 ? 'submission' : subs[0]));
-        if (role === 'top' || BOTTOM_CAN_STRIKE[G.pos]) parts.push(kn('lh') + '/' + kn('rh') + '/' + kn('ll') + '/' + kn('rl') + ' strike');
-        parts.push('hold ' + kn('block') + (role === 'top' ? ' base (deny escapes)' : ' frame (deny passes, cover up)'));
+        if (role === 'top' || BOTTOM_CAN_STRIKE[G.pos]) parts.push(kn('lh') + '/' + kn('rh') + '/' + kn('ll') + '/' + kn('rl') + ' strike (builds advantage)');
+        parts.push('hold ' + kn('block') + (role === 'top' ? ' posture' : ' cover') + ' · their move lights a direction: that direction + ' + kn('grapple') + ' denies it');
         if (role === 'top') parts.push(kn('dodge') + ' let them up');
-        const cd = G.cd[App.myIdx] > 0 ? ' · recovering ' + G.cd[App.myIdx].toFixed(1) + 's' : '';
-        $('#gHint').textContent = App.mode === 'watch' ? '' : parts.join(' · ') + cd;
+        $('#gHint').textContent = watch ? '' : parts.join(' · ');
       }
     } else g.classList.remove('show');
   }
@@ -704,12 +754,82 @@
     App.optionsOpen = false; App.paused = false;
     hide($('#options')); updateHint();
   }
+  // ============================================================
+  //  Feedback (playtest notes to the dev)
+  // ============================================================
+  const FB = { kind: 'bug' };
+  function whereAmI() {
+    if (App.playing || App.sim) return 'fight (' + (App.mode || '?') + (App.paused ? ', paused' : '') + ')';
+    if (App.gym && App.gym.active) return 'career gym';
+    for (const id of ['end', 'career', 'careerNew', 'lobby', 'more', 'menu']) if (!$('#' + id).classList.contains('hidden')) return id + (id === 'lobby' && App.mode ? ' (' + App.mode + ')' : '');
+    return 'unknown';
+  }
+  function fbReport() {
+    let gpu = '';
+    try { const gl = App.renderer && App.renderer.getContext(); const dbg = gl && gl.getExtension('WEBGL_debug_renderer_info'); if (dbg) gpu = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL); } catch (_) {}
+    const S = App.state, C = CareerUI.C;
+    return {
+      kind: FB.kind,
+      version: window.desktop && window.desktop.version ? 'desktop v' + window.desktop.version : 'web',
+      page: location.href.split('?')[0],
+      where: whereAmI(),
+      time: new Date().toISOString(),
+      sessionMin: Math.round((Date.now() - Diag.started) / 60000),
+      browser: navigator.userAgent,
+      lang: navigator.language,
+      screen: innerWidth + 'x' + innerHeight + ' @' + (devicePixelRatio || 1) + 'x' + (document.fullscreenElement ? ' fullscreen' : ''),
+      gpu,
+      input: Pad.active ? 'gamepad' : 'keyboard',
+      rules: App.lobby.settings,
+      picks: App.lobby.picks,
+      fight: S ? { round: S.round, clock: Math.round(S.clock), phase: S.phase, ground: !!S.ground } : null,
+      career: C ? { name: C.name, record: C.record } : null,
+      errors: Diag.errors
+    };
+  }
+  function fbText(r, msg, contact) {
+    const lines = ['[' + r.kind.toUpperCase() + '] ' + FEEDBACK.subject, '', msg || '(no message)', ''];
+    if (contact) lines.push('Reply to: ' + contact);
+    lines.push('--- attached ---');
+    for (const k of Object.keys(r)) if (k !== 'kind') lines.push(k + ': ' + (r[k] !== null && typeof r[k] === 'object' ? JSON.stringify(r[k]) : r[k]));
+    return lines.join('\n');
+  }
+  function openFeedback() {
+    if (App.feedbackOpen) return;
+    App.feedbackOpen = true; App.held = 0; App.pressed = 0; releasePointer();
+    if (App.playing && isLocal()) App.paused = true;
+    $('#fbReport').textContent = fbText(fbReport(), '', '').split('--- attached ---')[1].trim();
+    hide($('#fbTab')); show($('#feedback'));
+    $('#fbText').focus();
+  }
+  function closeFeedback() {
+    App.feedbackOpen = false; if (!App.optionsOpen) App.paused = false;
+    hide($('#feedback')); show($('#fbTab'));
+  }
+  async function copyText(t) {
+    try { await navigator.clipboard.writeText(t); return true; } catch (_) {}
+    try { const ta = document.createElement('textarea'); ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); const ok = document.execCommand('copy'); ta.remove(); return ok; } catch (_) { return false; }
+  }
+  async function sendFeedback() {
+    const msg = $('#fbText').value.trim(), contact = $('#fbContact').value.trim();
+    if (msg.length < 3) { toast('Write a line first.'); $('#fbText').focus(); return; }
+    try { localStorage.setItem('cr_fb_contact', contact); } catch (_) {}
+    const r = fbReport(), text = fbText(r, msg, contact);
+    const btn = $('#btnFbSend'); btn.disabled = true; btn.textContent = 'SENDING\u2026';
+    let sent = false;
+    try {
+      const res = await fetch(FEEDBACK.endpoint, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(Object.assign({ message: msg, contact }, r)) });
+      sent = res.ok && (await res.json()).ok === true;
+    } catch (_) {}
+    btn.disabled = false; btn.textContent = 'SEND';
+    if (sent) { toast('Sent. Thank you!', 2500); $('#fbText').value = ''; closeFeedback(); return; }
+    // the inbox is unreachable: keep the report on their clipboard so it can still be pasted to the dev
+    const copied = await copyText(text);
+    toast(copied ? 'Could not reach the inbox. The report is copied to your clipboard, paste it to the dev instead.' : 'Could not reach the inbox. Use COPY and paste the report to the dev.', 6000);
+  }
   function resetControls() {
     Controls.binds = defaultBinds(); Controls.pad = defaultPad(); Controls.moveset = normalizeMoveset(DEFAULT_MOVESET);
     saveControls();
-    if (App.setMusicParticles) App.setMusicParticles(true);
-    if (App.setImpactParticles) App.setImpactParticles(true);
-    if (App.setBackground) App.setBackground('legacy');
     buildOptions(); updateHint(); toast('Options reset to defaults', 1500);
   }
   function menuHint() {
@@ -727,13 +847,14 @@
     $('#controlsHint').innerHTML =
       '<div class="ctl-row">' + [B('fwd'), B('left'), B('back'), B('right')].join(' ') + ' move / circle (stepping into a shot adds power, backing off takes it away) · ' + B('dodge') + ' dash the way you are stepping (straight back if standing still) · ' + B('lh') + ' left hand · ' + B('rh') + ' right hand · ' + B('ll') + ' left leg · ' + B('rl') + ' right leg</div>' +
       '<div class="ctl-row">' + MODS.map(row).join(' · ') + '</div>' +
-      '<div class="ctl-row">' + B('block') + ' hold: block / sprawl (+ ' + B('mod3') + ' drops into a shell that covers the body), press as a strike comes in: block and slip it, tap twice: push them off · ' + B('grapple') + ' takedown / dive on a downed opponent · ' + B('stance') + ' switch stance · knocked down: a direction or ' + B('dodge') + ' gets up, or stay down to recover · ground: hands & legs strike, ' + B('grapple') + ' submission / sweep, ' + B('block') + ' posture / cover, ' + B('dodge') + ' let up · <b>Enter</b> chat · <b>ESC</b>' + (Pad.active ? ' / <b>START</b>' : '') + ' options · <b>H</b> hide this · <b>M</b> mute</div>';
+      '<div class="ctl-row">' + B('block') + ' hold: block / sprawl (+ ' + B('mod3') + ' drops into a shell that covers the body), press as a strike comes in: block and slip it, tap twice: push them off · ' + B('grapple') + ' takedown / dive on a downed opponent · ' + B('stance') + ' switch stance · knocked down: a direction or ' + B('dodge') + ' gets up, or stay down to recover · ground: hands & legs strike, direction + ' + B('grapple') + ' move (see the compass), ' + B('grapple') + ' alone submission, their direction + ' + B('grapple') + ' denies, ' + B('block') + ' covers, ' + B('dodge') + ' let up · <b>Enter</b> chat · <b>ESC</b>' + (Pad.active ? ' / <b>START</b>' : '') + ' options · <b>H</b> hide this · <b>M</b> mute</div>';
   }
 
   // ============================================================
   //  Input
   // ============================================================
   window.addEventListener('keydown', (e) => {
+    if (App.feedbackOpen) { if (e.code === 'Escape' && !e.repeat) { e.preventDefault(); closeFeedback(); } return; } // ESC closes it even from inside the text box
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA')) { if (e.code === 'Escape') e.target.blur(); return; }
     if (e.code === 'Enter' && !e.repeat) {
       const el = document.activeElement;
@@ -776,6 +897,7 @@
   // what ESC (or the pad's START button) does, from the most specific context outward
   function pressEscape() {
     if (capture) { cancelCapture(); return; }
+    if (App.feedbackOpen) { closeFeedback(); return; }
     if (!$('#more').classList.contains('hidden')) { screen('menu'); return; }
     // in the gym, ESC backs out of an open station screen before it reaches the options menu
     if (!App.optionsOpen && App.gym && App.gym.active && CareerUI.station && !$('#career').classList.contains('hidden')) { closeStation(); return; }
@@ -1377,6 +1499,13 @@
   $('#btnPractice').onclick = () => { App.audio.init(); enterLobby('practice'); };
   $('#btnWatch').onclick = () => { App.audio.init(); enterLobby('watch'); };
   $('#btnOptions').onclick = () => openOptions();
+  $('#btnFeedback').onclick = () => openFeedback();
+  $('#fbTab').onclick = () => openFeedback();
+  $('#btnFbClose').onclick = () => closeFeedback();
+  $('#btnFbSend').onclick = () => sendFeedback();
+  $('#btnFbCopy').onclick = async () => { const ok = await copyText(fbText(fbReport(), $('#fbText').value.trim(), $('#fbContact').value.trim())); toast(ok ? 'Copied. Paste it anywhere.' : 'Copy failed. Select the text and copy it by hand.', 2500); };
+  document.querySelectorAll('#fbKind button').forEach(b => b.onclick = () => { FB.kind = b.dataset.kind; document.querySelectorAll('#fbKind button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', x === b ? 'true' : 'false'); }); });
+  try { $('#fbContact').value = localStorage.getItem('cr_fb_contact') || ''; } catch (_) {}
   if (window.desktop) { // Electron build (desktop/preload.js)
     $('#btnQuit').classList.remove('hidden');
     $('#btnQuit').onclick = () => window.desktop.quit();
@@ -1405,79 +1534,6 @@
     const syncMute = () => { for (const box of boxes) box.checked = App.audio.musicMuted; };
     syncMute();
     for (const box of boxes) box.addEventListener('change', () => { App.audio.setMusicMuted(box.checked); syncMute(); });
-  })();
-  (function bindBackground() {
-    const bg = window.MMAMusicBg;
-    const box = $('#bgSwatches');
-    const preview = $('#bgPreview');
-    const menuBtn = $('#bgColorBtn');
-    const menuSub = $('#bgColorSub');
-    const menuName = $('#bgColorName');
-    const musicBox = $('#bgMusicFx');
-    const impactBox = $('#bgImpactFx');
-    if (!bg || !box) return;
-    box.innerHTML = bg.PRESETS.map(p =>
-      '<button type="button" class="bg-swatch" role="radio" data-id="' + p.id + '" style="--swatch:' + p.color + '" aria-checked="false"><i></i>' + p.name + '</button>'
-    ).join('');
-    const chip = (color, label) => '<span><i style="background:' + bg.cssColor(color) + '"></i>' + label + '</span>';
-    let currentId = bg.DEFAULT_PRESET;
-    function syncParticleControls() {
-      const legacy = currentId === 'legacy';
-      if (musicBox) {
-        musicBox.disabled = legacy;
-        musicBox.checked = legacy ? false : bg.loadParticles();
-      }
-      if (impactBox) {
-        impactBox.disabled = legacy;
-        impactBox.checked = legacy ? false : bg.loadImpact();
-      }
-    }
-    function applyBackground(id) {
-      const p = bg.PRESETS.find(x => x.id === id) || bg.PRESETS.find(x => x.id === bg.DEFAULT_PRESET) || bg.PRESETS[0];
-      currentId = p.id;
-      if (App.renderer) App.renderer.setBackdrop(p.id);
-      else {
-        bg.savePresetId(p.id);
-        document.documentElement.style.setProperty('--bg', p.id === 'legacy' ? bg.LEGACY_COLOR : p.color);
-      }
-      if (preview) {
-        if (p.id === 'legacy') preview.innerHTML = '<span>Original arena</span>';
-        else {
-          const pal = bg.paletteFrom(p.color);
-          preview.innerHTML = chip(pal.bg, 'Base') + chip(pal.neon, 'Bass') + chip(pal.gold, 'Mids') + chip(pal.silk, 'Highs');
-        }
-      }
-      if (menuName) menuName.textContent = p.name;
-      box.querySelectorAll('.bg-swatch').forEach(btn => {
-        const on = btn.dataset.id === p.id;
-        btn.classList.toggle('on', on);
-        btn.setAttribute('aria-checked', on ? 'true' : 'false');
-      });
-      syncParticleControls();
-    }
-    box.querySelectorAll('.bg-swatch').forEach(btn => { btn.onclick = () => applyBackground(btn.dataset.id); });
-    if (menuBtn && menuSub) {
-      menuBtn.onclick = () => {
-        const open = !menuSub.classList.toggle('hidden');
-        menuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
-      };
-    }
-    function applyMusicParticles(on) {
-      if (App.renderer && App.renderer.musicBg) App.renderer.musicBg.setMusicParticles(on);
-      else bg.saveParticles(on);
-      syncParticleControls();
-    }
-    function applyImpactParticles(on) {
-      if (App.renderer && App.renderer.musicBg) App.renderer.musicBg.setImpactParticles(on);
-      else bg.saveImpact(on);
-      syncParticleControls();
-    }
-    if (musicBox) musicBox.addEventListener('change', () => { if (!musicBox.disabled) applyMusicParticles(musicBox.checked); });
-    if (impactBox) impactBox.addEventListener('change', () => { if (!impactBox.disabled) applyImpactParticles(impactBox.checked); });
-    App.setBackground = applyBackground;
-    App.setMusicParticles = applyMusicParticles;
-    App.setImpactParticles = applyImpactParticles;
-    applyBackground(bg.loadPresetId());
   })();
   updateHint();
   $('#btnBack').onclick = () => { if (App.net) { App.net.destroy(); App.net = null; } App.mode = null; screen('menu'); };
