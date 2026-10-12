@@ -50,6 +50,18 @@ If Electron prints a Node version or says `app` is undefined, the shell has
 Matchmaking uses the free public PeerJS signaling server (`0.peerjs.com`).
 Once connected, traffic is direct WebRTC between the two browsers.
 
+## Striking tutorial
+
+The first three times the game opens it offers a guided striking session (a
+"don't show this again" box stops the asking; finishing it does too). It is
+always on the main menu under PRACTICE. Eighteen steps against a sparring
+partner who stands in his guard, jabs or low-kicks on cue, and only fights back
+in the final 90-second round: footwork, every punch and kick, power, combos,
+blocking, slipping, checking kicks and the stance switch. Each step names the
+keys from your own bindings and strike mapping. The code is the
+"Striking tutorial" block in `js/main.js`; `tools/tutorial-test.js` drives
+every step in a headless browser.
+
 ## Controls (keyboard)
 
 Every key can be rebound and every strike remapped from **OPTIONS** (main menu,

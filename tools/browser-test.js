@@ -42,7 +42,7 @@ const server = http.createServer((req, res) => {
   await page.screenshot({ path: path.join(outdir, '00-menu.png') });
   await page.click('#btnPractice');
   await page.waitForTimeout(300);
-  await page.evaluate(() => { const s = document.querySelector('#selDiff'); s.value = '0.9'; s.dispatchEvent(new Event('change')); });
+  await page.evaluate(() => { const s = document.querySelector('#selDiff'); s.value = '1'; s.dispatchEvent(new Event('change')); });
   await page.click('#btnReady');
   await page.waitForTimeout(500);
   const t0 = Date.now();

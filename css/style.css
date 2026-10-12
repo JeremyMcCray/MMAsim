@@ -461,3 +461,26 @@ button.small { font-size: 13px; padding: 6px 12px; }
 .fb-details summary { cursor: pointer; }
 .fb-details pre { margin: 8px 0 0; max-height: 160px; overflow: auto; font-size: 11px; line-height: 1.35; white-space: pre-wrap; word-break: break-word; background: rgba(0,0,0,.35); padding: 8px 10px; border-radius: 6px; color: var(--text); }
 @media (max-width: 760px) { #corner { right: 10px; bottom: 10px; } #ctlTab { display: none; } }
+
+/* ---------- striking tutorial: the first-run prompt and the step card over the fight ---------- */
+#tutorPrompt { z-index: 45; }
+.panel.tut-prompt { width: min(540px, 94vw); }
+.panel.tut-prompt .lobby-title { font-size: 38px; line-height: 1; margin: 4px 0 12px; }
+.tut-blurb { color: var(--text); font-size: 15px; line-height: 1.45; margin: 0; }
+.panel.tut-prompt .fine { margin-top: 12px; min-height: 16px; }
+.tut-never { margin-top: 8px; }
+/* the card sits under the blue corner's panel, clear of the centre messages, the knockdown prompt and the feed */
+.tutor { position: fixed; right: 14px; top: 104px; width: min(440px, 94vw); background: rgba(8,8,12,.8); border: 1px solid rgba(224,178,58,.45); border-radius: 10px; padding: 12px 16px 10px; z-index: 12; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+.tutor.flash { animation: tut-done .6s; }
+@keyframes tut-done { 0% { border-color: var(--hp); box-shadow: 0 0 0 3px rgba(82,210,115,.5); } 100% { border-color: rgba(224,178,58,.45); box-shadow: 0 10px 40px rgba(0,0,0,.5); } }
+.tut-step { font-family: var(--font-head); font-size: 11px; letter-spacing: .25em; color: var(--gold); }
+.tut-title { font-family: var(--font-head); font-size: 28px; font-weight: 900; letter-spacing: .04em; line-height: 1; margin: 2px 0 6px; }
+.tut-text { font-size: 14px; line-height: 1.5; color: var(--text); }
+.tut-text b { color: #fff; font-family: var(--font-head); font-size: 13px; letter-spacing: .06em; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.25); border-radius: 4px; padding: 0 6px; white-space: nowrap; }
+.tut-text i { color: var(--muted); }
+.tut-prog { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.tbar { flex: 1; height: 8px; background: rgba(255,255,255,.1); border-radius: 4px; overflow: hidden; }
+.tbar .fill { height: 100%; width: 0; background: var(--gold); transition: width .15s; }
+.tut-prog span { font-family: var(--font-head); font-size: 14px; letter-spacing: .1em; color: var(--gold); min-width: 44px; text-align: right; }
+.tut-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+@media (max-height: 640px) { .tutor { top: 96px; padding: 8px 12px 8px; } .tut-title { font-size: 22px; } .tut-text { font-size: 13px; } }

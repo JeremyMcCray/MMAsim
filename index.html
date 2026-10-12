@@ -6,7 +6,7 @@
 <title>Cage Rules — 1v1 MMA</title>
 <meta name="description" content="Cage Rules: a 3D one-on-one mixed martial arts simulation you can play online against a friend, right in the browser.">
 <link href="lib/fonts/fonts.css" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=29">
+<link rel="stylesheet" href="css/style.css?v=30">
 </head>
 <body>
 <canvas id="gl"></canvas>
@@ -63,6 +63,7 @@
       <button class="big gold" id="btnCareer">CAREER</button>
       <button class="ghost small hidden" id="btnCareerNew">NEW CAREER</button>
       <button class="big" id="btnPractice">PRACTICE VS CPU</button>
+      <button class="ghost small" id="btnTutorial">STRIKING TUTORIAL</button>
       <button class="big" id="btnWatch">WATCH AI VS AI</button>
       <button class="ghost small" id="btnFighter">YOUR FIGHTER · LOOK</button>
       <div class="menu-sep">ONLINE</div>
@@ -117,7 +118,7 @@
         <label>Rounds <select id="selRounds"><option>1</option><option selected>3</option><option>5</option></select></label>
         <label>Round length <select id="selLen"><option value="60">1:00</option><option value="120">2:00</option><option value="180" selected>3:00</option><option value="300">5:00</option></select></label>
         <label>Rules <select id="selGrapple"><option value="0" selected>Striking only</option><option value="1">Grappling (Experimental)</option></select></label>
-        <label id="diffWrap">CPU level <select id="selDiff"><option value="0.3">Rookie</option><option value="0.6" selected>Contender</option><option value="0.9">Champion</option></select></label>
+        <label id="diffWrap">CPU level <select id="selDiff"><option value="0.12">Novice</option><option value="0.3">Rookie</option><option value="0.55" selected>Contender</option><option value="0.8">Champion</option><option value="1">Legend</option></select></label>
       </div>
     </div>
     <div class="opp-pick" id="oppPick"></div>
@@ -304,10 +305,10 @@
     <div class="opt-page hidden" data-page="strikes" role="tabpanel">
       <div class="opt-strikes">
         <h3>STRIKES</h3>
-        <p class="opt-help">Each limb key throws a different strike depending on which modifier you are holding. Strikes only do damage when the hand or foot actually reaches the target: step in to add power, and don't throw long shots from the clinch. Press the next strike while one is still landing to chain it.</p>
+        <p class="opt-help">Each limb key throws a different strike depending on which modifier you are holding.</p>
         <table class="moves" id="moveTable"></table>
         <h3>ON THE GROUND</h3>
-        <p class="opt-help">Positions: closed guard → half guard → side control → mount, or back control. Every move is a <b>read</b>, not a dice roll. <b>Takedown key + a direction</b> starts a pass, sweep, escape or stand-up; for a short window the other fighter can deny it with <b>the same direction + the takedown key</b> (the compass on screen shows which): one key, your move when you are free, your read while theirs is up. Read it and the attacker is left exposed, and a risky move gets punished; miss it and it lands. Landing moves, denying them and landing strikes build <b>momentum and advantage</b>, which shrink the other fighter's windows. <b>Takedown key alone</b> goes for a submission (deny it with <b data-dir="back">S</b> + the takedown key). Once it is locked: hold the takedown key to squeeze and tap a direction to <b>crank</b>; the defender holds block to fight the hands and answers a crank with its direction + the takedown key. 100 taps, 0 escapes. Block covers up and never reads; reading leaves you open. Hands punch; hold <b data-mod="mod1">Q</b> for elbows, <b data-mod="mod2">E</b> for hammer fists, <b data-mod="mod3">R</b> for body shots; leg keys knee the body. Strikes hit hardest from mount; the bottom fighter can only strike from guard. The referee stands up a stalled fight after eight seconds.</p>
+        <p class="opt-help"><b>Takedown key + a direction</b> starts a pass, sweep, escape or stand-up; for a short window the other fighter can deny it with <b>the same direction + the takedown key</b> (the compass on screen shows which): one key, your move when you are free, your read while theirs is up.Landing moves, denying them and landing strikes build <b>momentum and advantage</b>, which shrink the other fighter's windows. <b>Takedown key alone</b> goes for a submission (deny it with <b data-dir="back">S</b> + the takedown key). Once it is locked: hold the takedown key to squeeze and tap a direction to <b>crank</b>; the defender holds block to fight the hands and answers a crank with its direction + the takedown key. Block covers up and never reads; reading leaves you open. Hands punch; hold <b data-mod="mod1">Q</b> for elbows, <b data-mod="mod2">E</b> for hammer fists, <b data-mod="mod3">R</b> for body shots; leg keys knee the body. Strikes hit hardest from mount; the bottom fighter can only strike from guard. The referee stands up a stalled fight after eight seconds.</p>
       </div>
     </div>
     <div class="lobby-btns">
@@ -348,6 +349,30 @@
   </div>
 </div>
 
+<!-- ===== STRIKING TUTORIAL: the step card over the fight (js/main.js, "Striking tutorial") ===== -->
+<div id="tutor" class="tutor hidden" role="region" aria-live="polite">
+  <div class="tut-step" id="tutStep"></div>
+  <div class="tut-title" id="tutTitle"></div>
+  <div class="tut-text" id="tutText"></div>
+  <div class="tut-prog" id="tutProg"><div class="tbar"><div class="fill"></div></div><span id="tutCount"></span></div>
+  <div class="tut-btns"><button type="button" class="ghost small" id="btnTutSkip">SKIP STEP</button><button type="button" class="ghost small" id="btnTutQuit">QUIT TUTORIAL</button></div>
+</div>
+
+<!-- ===== FIRST RUNS: offer the striking tutorial ===== -->
+<div id="tutorPrompt" class="layer screen hidden" role="dialog" aria-labelledby="tutPromptTitle">
+  <div class="panel tut-prompt">
+    <div class="end-method">NEW HERE?</div>
+    <div class="lobby-title" id="tutPromptTitle">LEARN THE STRIKING GAME</div>
+    <p class="tut-blurb">A five-minute guided session with a sparring partner: footwork, every punch and kick, power, combinations, blocking, slipping and checking kicks. Then one round for real.</p>
+    <p class="fine" id="tutPromptNote"></p>
+    <label class="mute-music tut-never"><input type="checkbox" id="tutNever"> Don't show this again</label>
+    <div class="lobby-btns">
+      <button class="ghost" id="btnTutNo">NOT NOW</button>
+      <button class="big gold" id="btnTutYes">PLAY THE TUTORIAL</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast" class="hidden"></div>
 
 <!-- Vendored three.js r128 and PeerJS 1.5.x, so the desktop build runs offline. -->
@@ -363,7 +388,7 @@
 <script src="js/net.js?v=12"></script>
 <script src="js/audio.js?v=19"></script>
 <script src="js/chat.js?v=1"></script>
-<script src="js/main.js?v=35"></script>
+<script src="js/main.js?v=36"></script>
 <script src="lib/rapier3d-compat.js?v=12"></script>
 <script>
   // Rapier physics engine (vendored, WASM inlined, plain script so the game also runs from file://).

@@ -3,7 +3,7 @@
    ============================================================ */
 (function () {
   'use strict';
-  const { IN, Sim, ROSTER, describe, LIMBS, LIMB_NAME, MODS, HAND_KINDS, LEG_KINDS, KIND_LABEL, DEFAULT_MOVESET, normalizeMoveset, POS_NAME, MOVES, SUBS_BY, BOTTOM_CAN_STRIKE, KD, BREAK_T } = window.MMASim;
+  const { IN, Sim, ROSTER, describe, LIMBS, LIMB_NAME, LIMB_BIT, MODS, MOD_BIT, HAND_KINDS, LEG_KINDS, KIND_LABEL, DEFAULT_MOVESET, normalizeMoveset, POS_NAME, MOVES, SUBS_BY, BOTTOM_CAN_STRIKE, KD, BREAK_T } = window.MMASim;
   const { CpuBrain } = window.MMAAI;
   const { Renderer } = window.MMARender;
   const { Net } = window.MMANet;
@@ -84,7 +84,7 @@
   const App = {
     mode: null, net: null, sim: null, renderer: null, audio: new Audio(), brain: null,
     myIdx: 0, held: 0, pressed: 0, remote: { h: 0, p: 0 },
-    lobby: { picks: ['striker', 'wrestler'], names: ['', ''], ready: [false, false], settings: { rounds: 3, len: 180, diff: 0.6, grappling: false }, cpuPick: 'random', movesets: [null, null], looks: [null, null] },
+    lobby: { picks: ['striker', 'wrestler'], names: ['', ''], ready: [false, false], settings: { rounds: 3, len: 180, diff: 0.55, grappling: false }, cpuPick: 'random', movesets: [null, null], looks: [null, null] },
     optionsOpen: false, paused: false,
     state: null, playing: false, lastSnap: 0, lastInputSend: 0, evQueue: [], rematch: [false, false],
     feedLines: [], hintsHidden: true, gFlash: null
@@ -99,8 +99,8 @@
   window.addEventListener('error', (e) => logErr((e.message || 'error') + (e.filename ? ' @ ' + e.filename.split('/').pop() + ':' + e.lineno : '')));
   window.addEventListener('unhandledrejection', (e) => logErr('promise: ' + (e.reason && (e.reason.message || e.reason))));
 
-  // practice (you vs CPU), watch (CPU vs CPU) and career run the sim locally with no network
-  const isLocal = () => App.mode === 'practice' || App.mode === 'watch' || App.mode === 'career';
+  // practice (you vs CPU), watch (CPU vs CPU), career and the striking tutorial run the sim locally with no network
+  const isLocal = () => App.mode === 'practice' || App.mode === 'watch' || App.mode === 'career' || App.mode === 'tutorial';
   // a roster key that arrived over the network (an own key: '__proto__' or 'toString' must not pass)
   const isFighter = (k) => typeof k === 'string' && Object.prototype.hasOwnProperty.call(ROSTER, k);
 
@@ -382,6 +382,7 @@
     }
     if (isHost && App.physFailed) return; // the host needs physics to run a fight; the failure toast was already shown
     if (App.sim) App.sim.destroy();
+    if (App.mode !== 'tutorial') tutorStop();
     clearTimeout(App.endT); App.endT = 0;
     App.sim = null; App.state = null; App.evQueue = []; App.remote = { h: 0, p: 0 }; App.rematch = [false, false];
     App.lobby.ready = [false, false];
@@ -389,7 +390,7 @@
       App.sim = new Sim({ seed: msg.seed, rounds: msg.settings.rounds, roundLen: msg.settings.len, players: msg.players, grappling: msg.settings.grappling !== false });
       App.state = App.sim.state;
       const diff = App.lobby.settings.diff;
-      App.brain = isLocal() ? new CpuBrain(1, diff) : null;
+      App.brain = App.mode === 'tutorial' ? Tutor.brain : isLocal() ? new CpuBrain(1, diff) : null;
       // watch mode: the CPU drives the red corner too. ?auto=1 in practice: the CPU also drives your fighter (testing aid)
       App.autoPilot = App.mode === 'watch' ? new CpuBrain(0, diff)
         : App.mode === 'practice' && /[?&]auto=1/.test(location.search) ? new CpuBrain(0, diff) : null;
@@ -412,7 +413,7 @@
     centerMsg('ROUND 1<small>' + esc(App.state.f[0].name) + ' vs ' + esc(App.state.f[1].name) + (App.state.grappling === false ? ' · striking only' : '') + '</small>', 2600);
   }
 
-  function stopFight() { clearTimeout(App.endT); App.endT = 0; App.playing = false; App.paused = false; if (App.sim) App.sim.destroy(); App.sim = null; App.audio.setCrowd(0); hideCenter(); $('#grapple').classList.remove('show'); }
+  function stopFight() { clearTimeout(App.endT); App.endT = 0; App.playing = false; App.paused = false; if (App.sim) App.sim.destroy(); App.sim = null; App.audio.setCrowd(0); hideCenter(); $('#grapple').classList.remove('show'); tutorStop(); }
 
   function showEnd(S) {
     const R = S.result; if (!R) return;
@@ -435,6 +436,10 @@
       row('Strikes landed / blocked / thrown', s => (s.landed | 0) + ' / ' + (s.blocked | 0) + ' / ' + (s.thrown | 0)) + row('Damage dealt', s => Math.round(s.sig)) +
       row('Takedowns', s => (s.td | 0) + ' / ' + (s.tdAtt | 0)) + row('Control time', s => Math.round(s.ctrl) + 's') + row('Submission attempts', s => s.subs | 0) + row('Knockdowns', s => s.kd | 0);
     $('#btnRematch').textContent = 'REMATCH'; $('#btnRematch').disabled = false;
+    if (App.mode === 'tutorial') {
+      $('#endDetail').textContent = 'Tutorial complete. ' + (w ? (R.winner === 0 ? 'You finished the sparring round on top.' : 'The sparring partner got the better of you this time.') : 'Nothing between you and the sparring partner.') + ' Practice vs CPU is the next step.';
+      $('#btnRematch').textContent = 'RUN IT AGAIN';
+    }
     if (App.mode === 'career') {
       settleCareerFight();
       const lf = CareerUI.C && CareerUI.C.lastFight;
@@ -457,6 +462,7 @@
     const R = App.renderer, A = App.audio;
     for (const ev of evs) {
       R && R.handleEvent(ev, S);
+      if (Tutor.active) tutorEvent(ev);
       const text = describe(ev, S);
       switch (ev.k) {
         case 'hit': A.hit(ev.big || ev.rocked, ev.part); feed(text, ev.big || ev.rocked || ev.counter); break;
@@ -535,7 +541,7 @@
     }
     $('#roundLbl').textContent = App.paused ? 'PAUSED' : S.phase === 'break' ? 'BREAK ' + Math.ceil(BREAK_T - S.phaseT) : 'ROUND ' + S.round + '/' + S.rounds;
     const c = Math.max(0, S.clock); $('#clock').textContent = Math.floor(c / 60) + ':' + String(Math.floor(c % 60)).padStart(2, '0');
-    $('#pingLbl').textContent = App.net && App.net.connected ? App.net.ping + ' ms' : App.mode === 'practice' ? 'CPU' : App.mode === 'watch' ? 'AI vs AI' : '';
+    $('#pingLbl').textContent = App.net && App.net.connected ? App.net.ping + ' ms' : App.mode === 'practice' ? 'CPU' : App.mode === 'watch' ? 'AI vs AI' : App.mode === 'tutorial' ? 'TUTORIAL' : '';
     // knockdown prompt: the downed fighter chooses when to get up; the other may dive on him
     const kh = $('#kdHint');
     const me = S.f[App.myIdx], op = S.f[1 - App.myIdx];
@@ -841,6 +847,7 @@
   }
   function updateHint() {
     menuHint();
+    Tutor.dirty = true; Tutor.shown = -1; // the step card names keys for whichever device is in use
     const B = id => '<b>' + bindName(id) + '</b>';
     const ms = Controls.moveset;
     const kind = k => KIND_LABEL[k].toLowerCase();
@@ -870,6 +877,11 @@
   // ============================================================
   window.addEventListener('keydown', (e) => {
     if (App.feedbackOpen) { if (e.code === 'Escape' && !e.repeat) { e.preventDefault(); closeFeedback(); } return; } // ESC closes it even from inside the text box
+    if (tutorPromptOpen()) { // the first-run prompt: ESC is NOT NOW, arrows move between its buttons, Enter / Space press the focused one
+      if (e.code === 'Escape') { e.preventDefault(); if (!e.repeat) closeTutorPrompt(); }
+      else if (/^Arrow(Up|Down|Left|Right)$/.test(e.code)) { e.preventDefault(); padFocusMove(e.code.slice(5).toLowerCase()); }
+      return;
+    }
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA')) { if (e.code === 'Escape') e.target.blur(); return; }
     if (e.code === 'Enter' && !e.repeat) {
       const el = document.activeElement;
@@ -913,6 +925,7 @@
   function pressEscape() {
     if (capture) { cancelCapture(); return; }
     if (App.feedbackOpen) { closeFeedback(); return; }
+    if (tutorPromptOpen()) { closeTutorPrompt(); return; }
     if (!$('#more').classList.contains('hidden')) { screen('menu'); return; }
     // in the gym, ESC backs out of an open station screen before it reaches the options menu
     if (!App.optionsOpen && App.gym && App.gym.active && CareerUI.station && !$('#career').classList.contains('hidden')) { closeStation(); return; }
@@ -984,12 +997,13 @@
     }
     if (b) {
       if (App.optionsOpen) closeOptions();
-      else { const back = ['#btnCareerNewBack', '#btnMoreClose', '#btnBack', '#btnMenu'].map(s => $(s)).find(b => b && !b.closest('.hidden') && b.getBoundingClientRect().width > 0); if (back) back.click(); }
+      else { const back = ['#btnTutNo', '#btnCareerNewBack', '#btnMoreClose', '#btnBack', '#btnMenu'].map(s => $(s)).find(b => b && !b.closest('.hidden') && b.getBoundingClientRect().width > 0); if (back) back.click(); }
     }
   }
   const PAD_FOCUSABLE = 'button, a[href], input[type=range], input[type=checkbox], select, .card';
   function padFocusMove(dir) {
-    const els = Array.from(document.querySelectorAll(PAD_FOCUSABLE)).filter(e => { if (e.disabled || e.closest('.hidden') || e.classList.contains('letter')) return false; /* the title's G is an easter egg, not a menu item */ const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+    const modal = ['#tutorPrompt', '#feedback'].map(s => $(s)).find(m => m && !m.classList.contains('hidden')); // a dialog over the screen keeps the focus to itself
+    const els = Array.from((modal || document).querySelectorAll(PAD_FOCUSABLE)).filter(e => { if (e.disabled || e.closest('.hidden') || e.classList.contains('letter')) return false; /* the title's G is an easter egg, not a menu item */ const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
     if (!els.length) return;
     const cur = document.activeElement, from = cur && els.includes(cur) ? cur.getBoundingClientRect() : null;
     if (!from) { els[0].focus(); return; }
@@ -1046,6 +1060,7 @@
       sim.step(dt);
       const evs = sim.drainEvents();
       if (evs.length) processEvents(evs, sim.state);
+      if (Tutor.active) tutorTick(sim.state, dt);
       if (App.mode === 'host' && App.net) {
         App.evQueue.push(...evs);
         if (now - App.lastSnap >= 50) {
@@ -1505,6 +1520,212 @@
   document.querySelectorAll('#cTabs .tab').forEach(b => b.onclick = () => { CareerUI.tab = b.dataset.tab; renderCareer(); });
 
   // ============================================================
+  //  Striking tutorial: a guided session against a sparring partner (markup: #tutor, #tutorPrompt)
+  //  Steps are drills checked against sim events and state; the partner's behaviour follows the step.
+  // ============================================================
+  const TUT_KEYS = { shown: 'cr_tut_shown', off: 'cr_tut_off', done: 'cr_tut_done' };
+  const TUT_PROMPT_TIMES = 3; // opens of the game that offer the tutorial before it stops asking
+  const TUT_SPAR_LEN = 90;    // seconds on the clock for the final round
+  // The sparring partner. 'idle': stands in his guard and lets you work. 'jab' / 'lowkick': throws that strike every
+  // couple of seconds so you can practise the answer. 'spar': the rookie CPU, fighting for real.
+  class TutorBrain {
+    constructor() { this.mode = 'idle'; this.t = 1.2; this.modHeld = 0; this.modT = 0; this.cpu = null; }
+    set(mode) { this.mode = mode; this.t = 1.0; if (mode === 'spar' && !this.cpu) this.cpu = new CpuBrain(1, 0.3); }
+    update(S, dt) {
+      if (this.mode === 'spar') return this.cpu.update(S, dt);
+      if (S.phase !== 'fight') return { held: 0, pressed: 0 };
+      const me = S.f[1], op = S.f[0];
+      let held = 0, pressed = 0;
+      if (me.act.type === 'kd') { if (me.act.name === 'down' && me.act.t > 0.6) pressed |= IN.FWD; return { held: 0, pressed }; }
+      const dist = Math.hypot(op.x - me.x, op.z - me.z);
+      // he keeps the range the drill needs: steps back out of the clinch (nothing lands from there), and when he is
+      // throwing he walks after you so the strikes you have to answer actually come
+      if (dist < 0.72) held |= IN.BACK;
+      else if (this.mode !== 'idle' && dist > 1.45) held |= IN.FWD;
+      if (this.mode === 'jab' || this.mode === 'lowkick') {
+        this.t -= dt;
+        if (this.t <= 0 && dist < 1.55 && me.act.type !== 'strike' && me.act.type !== 'hit' && me.rocked <= 0) {
+          const kind = this.mode === 'jab' ? 'straight' : 'lkick';
+          const limb = (this.mode === 'jab' ? ['lh', 'rh'] : ['ll', 'rl'])[Math.random() < 0.5 ? 0 : 1];
+          const mod = MODS.find(m => DEFAULT_MOVESET[m][limb] === kind) || 'none';
+          this.modHeld = MOD_BIT[mod]; this.modT = 0.35;
+          pressed |= LIMB_BIT[limb];
+          this.t = (this.mode === 'jab' ? 1.3 : 1.9) + Math.random() * 0.8;
+        }
+      }
+      if (this.modT > 0) { this.modT -= dt; held |= this.modHeld; }
+      return { held, pressed };
+    }
+  }
+  const K = (id) => '<b>' + esc(bindName(id)) + '</b>';
+  // how the player throws this strike with their own mapping: 'hold Q + U / I', or every way if it is mapped twice
+  function strikeHow(kind) {
+    const ms = Controls.moveset, ways = [];
+    for (const m of MODS) { const limbs = LIMBS.filter(l => ms[m][l] === kind); if (limbs.length) ways.push((m === 'none' ? 'no modifier, ' : 'hold ' + K(m) + ' + ') + limbs.map(K).join(' / ')); }
+    return ways.length ? ways.join(', or ') : '<i>not in your strike mapping: see OPTIONS, STRIKES</i>';
+  }
+  // goal: how many times the check must pass. hit(ev): a strike of yours that reached him (landed or into the guard).
+  // block(ev): a strike of his that you blocked. push: a push of yours that reached him. tick(): checked every frame, returns the progress to add.
+  // mode: what the partner does. Every step but the last keeps both fighters fresh and the clock still.
+  const TUT_STEPS = [
+    { id: 'close', title: 'CLOSE THE DISTANCE', goal: 1, mode: 'idle',
+      text: () => 'Movement is relative to your opponent: ' + K('fwd') + ' always walks toward him. Hold ' + K('fwd') + ' until you are in punching range.',
+      tick: (S, me, op, dist) => dist < 1.12 ? 1 : 0 },
+    { id: 'circle', title: 'CIRCLE', goal: 3, mode: 'idle', float: true,
+      text: () => 'Hold ' + K('left') + ' or ' + K('right') + ' to circle him. Three seconds of footwork.',
+      tick: (S, me, op, dist, dt) => (App.held & (IN.LEFT | IN.RIGHT)) && dist < 2.6 ? dt : 0 }, // circling drifts outward; only footwork far off him is not circling
+    { id: 'out', title: 'GET OUT OF RANGE', goal: 1, mode: 'idle',
+      text: () => 'Hold ' + K('back') + ' to step out, or tap ' + K('dodge') + ' to dash the way you are stepping (straight back when you stand still). Get out past kicking range.',
+      tick: (S, me, op, dist) => dist > Math.max(1.75, Tutor.d0 + 0.5) ? 1 : 0 }, // measured from where the step began, so it never completes on its own
+    { id: 'straight', title: 'STRAIGHT PUNCHES', goal: 3, mode: 'idle',
+      text: () => 'Your hands are ' + K('lh') + ' and ' + K('rh') + '; the modifier you hold decides the punch. Straights: ' + strikeHow('straight') + '. Step back in and hit him with three.',
+      hit: (ev) => ev.kind === 'straight' },
+    { id: 'hook', title: 'HOOKS', goal: 3, mode: 'idle',
+      text: () => 'Hooks come around the guard: ' + strikeHow('hook') + '. Land three.',
+      hit: (ev) => ev.kind === 'hook' },
+    { id: 'uppercut', title: 'UPPERCUTS', goal: 2, mode: 'idle',
+      text: () => 'Uppercuts come up the middle and are at their best in close: ' + strikeHow('uppercut') + '. Land two.',
+      hit: (ev) => ev.kind === 'uppercut' },
+    { id: 'overhand', title: 'OVERHANDS', goal: 2, mode: 'idle',
+      text: () => 'The overhand loops over the top: ' + strikeHow('overhand') + '. Land two.',
+      hit: (ev) => ev.kind === 'overhand' },
+    { id: 'lowkick', title: 'LOW KICKS', goal: 2, mode: 'idle',
+      text: () => 'Your legs are ' + K('ll') + ' and ' + K('rl') + '. Low kicks: ' + strikeHow('lkick') + '. Leg damage slows him down and takes the power out of his own kicks. Land two.',
+      hit: (ev) => ev.kind === 'lkick' },
+    { id: 'bkick', title: 'BODY KICKS', goal: 2, mode: 'idle',
+      text: () => 'Body kicks: ' + strikeHow('bkick') + '. Body damage shrinks his stamina tank for the rest of the fight. Land two.',
+      hit: (ev) => ev.kind === 'bkick' },
+    { id: 'hkick', title: 'HEAD KICKS', goal: 1, mode: 'idle',
+      text: () => 'Head kicks: ' + strikeHow('hkick') + '. Land one.',
+      hit: (ev) => ev.kind === 'hkick' },
+    { id: 'teep', title: 'TEEP AND KNEE', goal: 2, mode: 'idle',
+      text: () => 'Teep: ' + strikeHow('teep') + '. Knee: ' + strikeHow('knee') + '. The teep is a push kick that keeps him off you; the knee wants him close. Land two of either.',
+      hit: (ev) => ev.kind === 'teep' || ev.kind === 'knee' },
+    { id: 'power', title: 'PUT YOUR WEIGHT INTO IT', goal: 1, mode: 'idle',
+      text: () => 'Stepping in (' + K('fwd') + ') as you throw adds power; backing off takes it away. Land one heavy shot off a step in. Watch the feed: it tells you when a shot lands big.',
+      hit: (ev) => !!(ev.big || ev.momentum), landed: true },
+    { id: 'block', title: 'BLOCK', goal: 3, mode: 'jab',
+      text: () => 'He is going to jab. Hold ' + K('block') + ' to put your guard up and block three. Holding ' + K('mod3') + ' with it drops you into a shell that covers the body too.',
+      block: (ev) => !ev.passive && !ev.checked },
+    { id: 'push', title: 'PUSH', goal: 2, mode: 'idle',
+      text: () => 'Tap ' + K('block') + ' twice quickly to stiff-arm him off you. It only works at arm\'s length, and the closer he is the harder he stumbles. Push him off twice.',
+      push: true },
+    { id: 'check', title: 'CHECK THE LOW KICK', goal: 2, mode: 'lowkick',
+      text: () => 'Now he is kicking your lead leg. Hold ' + K('check') + ' to lift it and check the kick: his shin hits your knee and it hurts him instead of you. Check two.',
+      block: (ev) => !!ev.checked },
+    { id: 'stance', title: 'SWITCH STANCE', goal: 1, mode: 'idle',
+      text: () => 'Tap ' + K('stance') + ' to switch to southpaw (right foot forward). Your lead and rear limbs swap, so the same keys now throw mirrored strikes.',
+      stance: true },
+    { id: 'spar', title: 'SPAR', goal: 0, mode: 'spar',
+      text: () => 'That is the striking game. Now he fights back: one round of ' + TUT_SPAR_LEN + ' seconds, real damage both ways. Finish him or hear the bell. <b>ESC</b> pauses and opens the options; QUIT TUTORIAL leaves any time.' }
+  ];
+  const Tutor = { active: false, brain: null, i: 0, n: 0, dirty: true, shown: -1, d0: 2.6 }; // d0: the distance between the fighters when the step began
+  function tutorPromptOpen() { return !$('#tutorPrompt').classList.contains('hidden'); }
+  function startTutorial() {
+    App.audio.init();
+    hide($('#tutorPrompt'));
+    if (App.net) { App.net.destroy(); App.net = null; }
+    App.mode = 'tutorial'; App.myIdx = 0; App.lobby.ready = [false, false]; App.lobby.settings.diff = 0.3;
+    const players = [
+      { fighter: 'striker', name: myName() || 'You', moveset: Controls.moveset },
+      { fighter: 'balanced', name: 'Sparring Partner', moveset: DEFAULT_MOVESET }
+    ];
+    applyProfile(players[0], Profile.get()); applyProfile(players[1], null);
+    Tutor.brain = new TutorBrain(); Tutor.active = true;
+    tutorEnter(0);
+    beginFight({ t: 'start', seed: (Math.random() * 1e9) | 0, players, settings: { rounds: 1, len: 180, grappling: false } });
+  }
+  function tutorStop() {
+    if (!Tutor.active && !Tutor.brain) return;
+    Tutor.active = false; Tutor.brain = null; Tutor.shown = -1;
+    hide($('#tutor'));
+  }
+  function tutorEnter(i) {
+    Tutor.i = i; Tutor.n = 0; Tutor.dirty = true;
+    const S = App.sim && App.state; Tutor.d0 = S ? Math.hypot(S.f[1].x - S.f[0].x, S.f[1].z - S.f[0].z) : 2.6;
+    const st = TUT_STEPS[i];
+    if (Tutor.brain) Tutor.brain.set(st.mode);
+    if (st.id === 'spar') {
+      try { localStorage.setItem(TUT_KEYS.done, '1'); } catch (_) {} // every drill seen: the prompt stops asking
+      if (App.state) App.state.clock = TUT_SPAR_LEN;
+      centerMsg('SPAR<small>' + TUT_SPAR_LEN + ' seconds, for real</small>', 2200);
+    }
+  }
+  function tutorProgress(add) {
+    const st = TUT_STEPS[Tutor.i];
+    if (!st.goal) return;
+    Tutor.n = Math.min(st.goal, Tutor.n + add); Tutor.dirty = true;
+    if (Tutor.n >= st.goal - 1e-6) tutorAdvance();
+  }
+  function tutorAdvance() {
+    if (Tutor.i + 1 >= TUT_STEPS.length) return;
+    App.audio.roar(0.12);
+    const el = $('#tutor'); el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+    tutorEnter(Tutor.i + 1);
+  }
+  function tutorEvent(ev) {
+    if (!App.sim) return;
+    const st = TUT_STEPS[Tutor.i];
+    if (ev.k === 'end') { Tutor.active = false; hide($('#tutor')); return; } // the spar round is over: the end screen takes it from here
+    if (st.hit && ev.i === 0 && (ev.k === 'hit' || (ev.k === 'block' && !st.landed)) && st.hit(ev)) tutorProgress(1);
+    else if (st.block && ev.k === 'block' && ev.j === 0 && st.block(ev)) tutorProgress(1);
+    else if (st.push && ev.k === 'push' && ev.i === 0 && ev.ok) tutorProgress(1);
+    else if (st.stance && ev.k === 'stance' && ev.i === 0) tutorProgress(1);
+  }
+  function tutorFresh(f) { f.dmg.head = 0; f.dmg.body = 0; f.dmg.legs = 0; f.stamMax = 100; f.stam = 100; if (f.rocked > 0) f.rocked = 0; }
+  function tutorTick(S, dt) {
+    if (!App.sim) return;
+    const st = TUT_STEPS[Tutor.i], me = S.f[0], op = S.f[1];
+    if (st.id !== 'spar') {
+      S.clock = S.roundLen;      // the clock waits until the spar
+      tutorFresh(me); tutorFresh(op); // nobody gets hurt or tired during the drills
+      if (S.phase === 'fight' && st.tick) {
+        const add = st.tick(S, me, op, Math.hypot(op.x - me.x, op.z - me.z), dt);
+        if (add) tutorProgress(add);
+      }
+    }
+    if (Tutor.dirty) tutorRender();
+  }
+  function tutorRender() {
+    Tutor.dirty = false;
+    const el = $('#tutor'); if (!el || !Tutor.active) return;
+    show(el);
+    const st = TUT_STEPS[Tutor.i];
+    if (Tutor.shown !== Tutor.i) { // the words change with the step (and with the device the keys are named for)
+      Tutor.shown = Tutor.i;
+      $('#tutStep').textContent = 'STRIKING TUTORIAL · STEP ' + (Tutor.i + 1) + ' OF ' + TUT_STEPS.length;
+      $('#tutTitle').textContent = st.title;
+      $('#tutText').innerHTML = st.text();
+      $('#tutProg').classList.toggle('hidden', !st.goal);
+      $('#btnTutSkip').classList.toggle('hidden', st.id === 'spar');
+    }
+    if (st.goal) {
+      $('#tutCount').textContent = Math.min(st.goal, Math.floor(Tutor.n + 1e-6)) + ' / ' + st.goal;
+      $('#tutProg .fill').style.width = pct(Tutor.n / st.goal * 100);
+    }
+  }
+  // the first few times the game opens, offer the tutorial; the checkbox or finishing it stops the asking
+  function maybeTutorPrompt() {
+    let shown = 0, off = false, done = false;
+    try { shown = parseInt(localStorage.getItem(TUT_KEYS.shown) || '0', 10) || 0; off = localStorage.getItem(TUT_KEYS.off) === '1'; done = localStorage.getItem(TUT_KEYS.done) === '1'; } catch (_) {}
+    if (off || done || shown >= TUT_PROMPT_TIMES) return;
+    try { localStorage.setItem(TUT_KEYS.shown, String(shown + 1)); } catch (_) {}
+    $('#tutPromptNote').textContent = shown + 1 >= TUT_PROMPT_TIMES ? 'This is the last time we ask. The tutorial stays on the main menu.' : 'The tutorial is always on the main menu, under PRACTICE.';
+    $('#tutNever').checked = false;
+    show($('#tutorPrompt'));
+    $('#btnTutYes').focus();
+  }
+  function closeTutorPrompt() {
+    if ($('#tutNever').checked) { try { localStorage.setItem(TUT_KEYS.off, '1'); } catch (_) {} }
+    hide($('#tutorPrompt'));
+  }
+  $('#btnTutNo').onclick = () => closeTutorPrompt();
+  $('#btnTutYes').onclick = () => { closeTutorPrompt(); startTutorial(); };
+  $('#btnTutorial').onclick = () => startTutorial();
+  $('#btnTutSkip').onclick = (e) => { e.currentTarget.blur(); if (Tutor.active) tutorAdvance(); };
+  $('#btnTutQuit').onclick = (e) => { e.currentTarget.blur(); stopFight(); App.mode = null; screen('menu'); };
+
+  // ============================================================
   //  Wire up buttons
   // ============================================================
   $('#btnHost').onclick = () => { App.audio.init(); startHost(); };
@@ -1565,6 +1786,7 @@
   $('#btnOptQuit').onclick = () => { closeOptions(); if (App.mode === 'career') { leaveCareerFight(); return; } if (App.mode === 'gym') { careerSave(); screen('menu'); return; } stopFight(); if (App.net) { App.net.destroy(); App.net = null; } App.mode = null; screen('menu'); };
   $('#btnRematch').onclick = () => {
     if (App.mode === 'career') { leaveCareerFight(); return; }
+    if (App.mode === 'tutorial') { startTutorial(); return; }
     if (App.mode === 'guest') { App.net.send({ t: 'rematch' }); $('#btnRematch').textContent = 'WAITING FOR HOST…'; $('#btnRematch').disabled = true; return; }
     App.rematch[0] = true;
     if (App.mode === 'host' && !App.rematch[1]) { $('#btnRematch').textContent = 'WAITING FOR OPPONENT…'; $('#btnRematch').disabled = true; }
@@ -1651,8 +1873,10 @@
   App.talk = new CageTalk.Talk();
   App.talk.mount();
   App.talk.onLine = postLine;
+  maybeTutorPrompt();
 
   window.CageRules = App; // dev hook: window.CageRules.sim / .state / .renderer
+  App.tutor = Tutor; App.startTutorial = startTutorial; // dev hook: the striking tutorial's step state (tools / scratch tests)
   // dev hook: advance the career gym by n 60 Hz frames with these inputs (tools/gym-test.js)
   App.gymTick = (n, held, pressed) => { if (!App.gym || !App.gym.active) return; for (let k = 0; k < n; k++) { App.gym.update(1 / 60, held | 0, k === 0 ? (pressed | 0) : 0, IN_INTERACT, IN_LOCK); } };
   // dev hook: advance a practice fight by n sim ticks regardless of frame rate (used by tools/browser-test.js)
